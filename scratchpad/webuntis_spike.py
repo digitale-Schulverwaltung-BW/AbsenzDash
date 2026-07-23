@@ -369,6 +369,21 @@ def main():
             if result:
                 print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
 
+        section("10) Neu - Schuljahre per API (getSchoolyears / getCurrentSchoolyear)")
+        result, error = rpc_call(client, session_id, "getSchoolyears", {})
+        if error:
+            print(f"getSchoolyears: FEHLER {error}")
+        else:
+            print(f"{len(result) if result else 0} Schuljahre erhalten:")
+            for sy in result or []:
+                print(f"  id={sy.get('id')} name={sy.get('name')!r} start={sy.get('startDate')} end={sy.get('endDate')}")
+
+        result, error = rpc_call(client, session_id, "getCurrentSchoolyear", {})
+        if error:
+            print(f"getCurrentSchoolyear: FEHLER {error}")
+        else:
+            print(f"Aktuelles Schuljahr: {json.dumps(result, indent=2, ensure_ascii=False)}")
+
         section("Logout")
         rpc_call(client, session_id, "logout", {})
         print("Fertig. Bitte die komplette Ausgabe oben zurückmelden.")
