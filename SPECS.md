@@ -32,7 +32,7 @@ Alle drei Rollen können als zusätzliche Empfänger einer Eskalationsstufe konf
 
 ## 4. Datenmodell (fachlich)
 
-- **Schüler**: Stammdaten aus WebUntis (Name, Klasse), lokal referenziert über WebUntis-ID.
+- **Schüler**: Stammdaten aus WebUntis (Name, Klasse), lokal referenziert über WebUntis-ID. Die Klassenzuordnung wird technisch aufwändiger ermittelt als andere Stammdaten und läuft daher über einen separaten, selteneren Hintergrund-Abgleich (siehe TECH-SPEC.md Abschnitt 1.3) statt bei jedem regulären Sync — ein neu angelegter Schüler kann daher bis zu 24 Stunden ohne Klassenzuordnung im Dashboard erscheinen.
 - **Klassen:** Stammdaten aus WebUntis (Name, Klassenlehrkräfte), lokal referenziert über WebUntis-ID. Die WebUntis-Klassenlehrkraft-Angabe seedet die Zuordnung aus Abschnitt 3; im WP-Backend können weitere Personen ergänzt werden.
 - **Bereiche**: lokal (nicht aus WebUntis) im WP-Backend gepflegte Gruppierung von Klassen, inkl. Zuordnung der/des Bereichsleiter(s).
 - **Fehlzeiten-Einträge**: aus WebUntis synchronisiert; Status (entschuldigt/unentschuldigt), Dauer (Tag oder Einzelstunden), Zeitraum.
@@ -44,7 +44,7 @@ Alle drei Rollen können als zusätzliche Empfänger einer Eskalationsstufe konf
     - Schwellenwert (Zahl).
     - Fehlzeiten-Filter: nur unentschuldigt / alle (entschuldigt + unentschuldigt), konfigurierbar je Regel.
     - Empfänger: Klassenlehrkraft (bzw. bei Bereichsleiter-Bearbeitung: Bereichsleiter) immer zusätzlich zu ggf. konfigurierten weiteren Empfängern dieser Stufe (Bereichsleiter und/oder Schulleitung, z.B. Bereichsleiter ab Stufe 2, Schulleitung ab Stufe 3).
-  - Zähler pro Schüler und Regel läuft ab Schuljahresbeginn bzw. ab letztem Reset (siehe Maßnahmen). Das Schuljahresbeginn-Datum ist bundeslandabhängig und jahresabhängig unterschiedlich, daher kein Fixwert im System, sondern ein zentral im Dashboard-Admin-Bereich hinterlegtes Datum, das die Schulleitung/Admin jährlich pflegt.
+  - Zähler pro Schüler und Regel läuft ab Schuljahresbeginn bzw. ab letztem Reset (siehe Maßnahmen). Das Schuljahresbeginn-Datum ist bundeslandabhängig und jahresabhängig unterschiedlich; statt einer manuellen Pflege wird es automatisch aus WebUntis übernommen (WebUntis führt Schuljahre bereits als eigene Stammdaten, siehe TECH-SPEC.md Abschnitt 1.3a) — kein jährlicher Pflegeaufwand nötig.
 - **Maßnahmen-Katalog**: von der Schulleitung/Admin konfigurierbar. Je Maßnahmen-Typ: Name, Flag "setzt Schwellwert-Zähler zurück" (ja/nein), betroffene Eskalationsstufe/Regel(n). Default Maßnahmen-Set, das bei Installation mit ausgeliefert wird (von Schulleitung/Admin änderbar: Gespräch, Elterngespräch, Nachsitzen, 4h Nachsitzen, Schulverweis, Bußgeld, Zwangsgeld)
 - **Maßnahmen-Einträge**: pro Schüler protokolliert — Typ (aus Katalog), Datum, Notiz, erfassende Lehrkraft. Ein als zurücksetzend markierter Maßnahmen-Typ setzt den/die betroffenen Zähler auf 0 bzw. auf die konfigurierte Ausgangsstufe zurück.
 - **Ausnahmen**: pro Schüler und Kategorie (Fehlzeiten und/oder Klassenbuch getrennt abschaltbar). Enthält Grund/Notiz und optionales Enddatum — mit Enddatum greifen die Schwellwerte danach automatisch wieder, ohne Enddatum gilt die Ausnahme bis zur manuellen Aufhebung.
@@ -77,7 +77,7 @@ Der allererste Sync-Lauf (Rollout, ggf. mitten im laufenden Schuljahr) liest und
 
 - **Übersicht** (rollenabhängig gefiltert): Liste der Schüler mit aktuellem Status je Regel (Ampel/Badge bei erreichter Stufe), Filter nach Klasse/Stufe/Status. Zusätzlich ein „Benachrichtigt“-Badge pro Schüler mit Hover-/Flyout-Detail (an wen wann eine Benachrichtigung ging, bzw. „kein Empfänger ermittelbar“ oder „aus initialem Import“, siehe Abschnitt 4/5.1). Für Schulleitung/Bereichsleitung zusätzlich hervorgehoben: Fälle, in denen seit der letzten Benachrichtigung keine Maßnahme erfasst wurde.
 - **Schüler-Detail**: Fehlzeiten-Verlauf, Klassenbucheinträge, Maßnahmen-Historie, aktive Ausnahmen, Benachrichtigungs-Historie; Formulare zum Erfassen neuer Maßnahmen und zum Setzen/Aufheben von Ausnahmen.
-- **Admin-Bereich** (nur Schulleitung/Admin): Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-/Prüfintervall und Schuljahresbeginn-Datum konfigurieren, manueller „Sync jetzt ausführen“-Button (löst einen außerplanmäßigen WebUntis-Sync + Schwellwert-Prüfung aus, z.B. damit eine geänderte Regel sofort statt erst beim nächsten geplanten Lauf wirksam wird).
+- **Admin-Bereich** (nur Schulleitung/Admin): Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-/Prüfintervall konfigurieren (aktuelles Schuljahr wird informativ angezeigt, automatisch aus WebUntis übernommen, nicht editierbar), manueller „Sync jetzt ausführen“-Button (löst einen außerplanmäßigen WebUntis-Sync + Schwellwert-Prüfung aus, z.B. damit eine geänderte Regel sofort statt erst beim nächsten geplanten Lauf wirksam wird).
 - **Export**: PDF/Druckansicht pro Schüler mit Fehlzeiten- und Maßnahmen-Historie, z.B. für §90-Meldungen an das Schulamt oder Bußgeldverfahren.
 
 ## 8. Datenschutz & Historie
