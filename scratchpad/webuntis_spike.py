@@ -291,7 +291,7 @@ def main():
                 if result:
                     print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
 
-        section("7c) Neu - getTimetable für Klassen-Element (evtl. Schueler-Liste im 'kl'-Feld)")
+        section("7c) Neu - getTimetable für Klassen-Element (30 Tage statt 1 Tag)")
         result, error = rpc_call(
             client,
             session_id,
@@ -300,18 +300,19 @@ def main():
                 "options": {
                     "element": {"id": test_klasse_id, "type": 1},
                     "startDate": start_int,
-                    "endDate": start_int,
+                    "endDate": end_int,
                 }
             },
         )
         if error:
-            print(f"getTimetable: FEHLER {error}")
+            print(f"getTimetable(type=1, id={test_klasse_id}): FEHLER {error}")
         else:
-            print(f"{len(result) if result else 0} Timetable-Einträge. Erster Eintrag:")
+            print(f"{len(result) if result else 0} Timetable-Einträge über 30 Tage. Erster Eintrag:")
             if result:
                 print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
 
         section("8) Neu - sind getStudents-'id' und Fehlzeiten/Klassenbuch-'studentId' dieselbe Entität?")
+        example_pair = None
         if all_students and classreg_entries:
             by_name = {}
             for s in all_students:
@@ -345,7 +346,10 @@ def main():
             print("Übersprungen - all_students oder classreg_entries leer/fehlerhaft.")
 
         section("9) Neu - getTimetable fuer Schueler-Element (type=5) - liefert 'kl' die Klasse?")
-        test_student_id = all_students[0]["id"] if all_students else None
+        test_student_id = example_pair[0] if example_pair else (
+            all_students[0]["id"] if all_students else None
+        )
+        print(f"Nutze bestätigt aktiven Schüler id={test_student_id} (aus Abschnitt 8)")
         result, error = rpc_call(
             client,
             session_id,
