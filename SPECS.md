@@ -22,11 +22,11 @@ Referenzprojekt: [VertretungsFlow](https://github.com/digitale-Schulverwaltung-B
 
 Dreistufige Hierarchie:
 
-| Rolle | Zugriff |
-|---|---|
-| Klassenlehrkraft | Eigene Klasse(n): Fehlzeiten, Klassenbucheinträge, Maßnahmen erfassen, Ausnahmen setzen/aufheben. Zuordnung wird aus WebUntis geseedet (Klassenlehrkraft-Stammdatum je Klasse), im WP-Backend um weitere Personen ergänzbar (z.B. Co-Klassenlehrkraft, Vertretung). |
-| Bereichsleiter | Alle Klassen des zugeordneten Bereichs (mehrere Klassen), mit denselben Bearbeitungsrechten wie eine Klassenlehrkraft (Maßnahmen erfassen, Ausnahmen setzen/aufheben) für alle Schüler des Bereichs. Bereichsdefinition (Klassen ↔ Bereich, Bereich ↔ Bereichsleiter) wird manuell im WP-Backend gepflegt. |
-| Schulleitung/Admin | Alle Klassen; zusätzlich: Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-Intervall konfigurieren (im Dashboard-Admin-Bereich, siehe Abschnitt 7). |
+| Rolle              | Zugriff                                                                                                                                                                                                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Klassenlehrkraft   | Eigene Klasse(n): Fehlzeiten, Klassenbucheinträge, Maßnahmen erfassen, Ausnahmen setzen/aufheben. Zuordnung wird aus WebUntis geseedet (Klassenlehrkraft-Stammdatum je Klasse), im WP-Backend um weitere Personen ergänzbar (z.B. Co-Klassenlehrkraft, Vertretung).                                        |
+| Bereichsleiter     | Alle Klassen des zugeordneten Bereichs (mehrere Klassen), mit denselben Bearbeitungsrechten wie eine Klassenlehrkraft (Maßnahmen erfassen, Ausnahmen setzen/aufheben) für alle Schüler des Bereichs. Bereichsdefinition (Klassen ↔ Bereich, Bereich ↔ Bereichsleiter) wird manuell im WP-Backend gepflegt. |
+| Schulleitung/Admin | Alle Klassen; zusätzlich: Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-Intervall konfigurieren (im Dashboard-Admin-Bereich, siehe Abschnitt 7).                                                                                                                                           |
 
 Alle drei Rollen können als zusätzliche Empfänger einer Eskalationsstufe konfiguriert werden (siehe Abschnitt 4/6).
 
