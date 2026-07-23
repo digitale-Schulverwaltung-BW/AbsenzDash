@@ -212,6 +212,7 @@ def main():
             "getClassregEvents",
             {"startDate": start_int, "endDate": end_int},
         )
+        classreg_entries = result if not error else None
         if error:
             print(f"FEHLER (evtl. fehlende Berechtigung 'classregevents read for all'): {error}")
         else:
@@ -307,6 +308,60 @@ def main():
             print(f"getTimetable: FEHLER {error}")
         else:
             print(f"{len(result) if result else 0} Timetable-Einträge. Erster Eintrag:")
+            if result:
+                print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
+
+        section("8) Neu - sind getStudents-'id' und Fehlzeiten/Klassenbuch-'studentId' dieselbe Entität?")
+        if all_students and classreg_entries:
+            by_name = {}
+            for s in all_students:
+                fore = (s.get("foreName") or "").strip().lower()
+                long_ = (s.get("longName") or "").strip().lower()
+                if fore and long_:
+                    by_name[(fore, long_)] = s["id"]
+
+            matched = 0
+            example_pair = None
+            for entry in classreg_entries:
+                fore = (entry.get("forname") or "").strip().lower()
+                sur = (entry.get("surname") or "").strip().lower()
+                key = (fore, sur)
+                if key in by_name:
+                    matched += 1
+                    if example_pair is None:
+                        example_pair = (by_name[key], entry.get("studentid"))
+            print(
+                f"{matched} von {len(classreg_entries)} Klassenbuch-Einträgen per Namensabgleich "
+                f"einem getStudents-Datensatz zugeordnet."
+            )
+            if example_pair:
+                print(
+                    f"Beispiel-Korrelation: getStudents.id={example_pair[0]} "
+                    f"<-> Klassenbuch/Fehlzeiten.studentId={example_pair[1]!r}"
+                )
+            else:
+                print("Keine Korrelation per Namensabgleich gefunden.")
+        else:
+            print("Übersprungen - all_students oder classreg_entries leer/fehlerhaft.")
+
+        section("9) Neu - getTimetable fuer Schueler-Element (type=5) - liefert 'kl' die Klasse?")
+        test_student_id = all_students[0]["id"] if all_students else None
+        result, error = rpc_call(
+            client,
+            session_id,
+            "getTimetable",
+            {
+                "options": {
+                    "element": {"id": test_student_id, "type": 5},
+                    "startDate": start_int,
+                    "endDate": end_int,
+                }
+            },
+        )
+        if error:
+            print(f"getTimetable(type=5, id={test_student_id}): FEHLER {error}")
+        else:
+            print(f"{len(result) if result else 0} Timetable-Einträge für Schüler id={test_student_id}.")
             if result:
                 print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
 
