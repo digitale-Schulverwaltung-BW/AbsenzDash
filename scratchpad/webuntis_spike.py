@@ -40,6 +40,7 @@ REDACT_KEYS = {
     "name",
     "surname",
     "forname",
+    "forename",
     "fore_name",
     "sur_name",
     "studentname",
@@ -49,6 +50,11 @@ REDACT_KEYS = {
     "lastname",
     "text",
     "username",
+    "email",
+    "mail",
+    "birthdate",
+    "phone",
+    "address",
 }
 
 
@@ -243,6 +249,23 @@ def main():
                 print(f"{method}: FEHLER {error.get('message', error)}")
             else:
                 print(f"{method}: ERFOLG -> {json.dumps(redact(result), indent=2, ensure_ascii=False)[:1500]}")
+
+        section("7) Neu - Schueler-Stammdaten (getStudents)")
+        result, error = rpc_call(client, session_id, "getStudents", {})
+        if error:
+            print(f"getStudents: FEHLER {error}")
+        else:
+            print(f"{len(result) if result else 0} Schüler erhalten. Felder im ersten Datensatz:")
+            if result:
+                print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
+                has_klasse_ref = any(
+                    k in result[0] for k in ("klasseId", "klasse", "schoolclasses", "classId")
+                )
+                print(f"-> Enthält ein Klassen-Referenz-Feld? {has_klasse_ref}")
+                keys_union = set()
+                for r in result[:50]:
+                    keys_union |= set(r.keys())
+                print(f"Feldnamen über die ersten 50 Datensätze: {sorted(keys_union)}")
 
         section("Logout")
         rpc_call(client, session_id, "logout", {})
