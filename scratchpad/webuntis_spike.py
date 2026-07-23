@@ -269,6 +269,21 @@ def main():
                     keys_union |= set(r.keys())
                 print(f"Feldnamen über die ersten 50 Datensätze: {sorted(keys_union)}")
 
+        section("7a) Neu - getStudents mit schoolyearId-Filter (Reduktion auf aktive Schueler?)")
+        schoolyears_result, _ = rpc_call(client, session_id, "getSchoolyears", {})
+        current_sy, _ = rpc_call(client, session_id, "getCurrentSchoolyear", {})
+        current_sy_id = current_sy.get("id") if current_sy else None
+        for param_variant in (
+            {"schoolyearId": current_sy_id},
+            {"schoolyear": current_sy_id},
+        ):
+            result, error = rpc_call(client, session_id, "getStudents", param_variant)
+            if error:
+                print(f"getStudents({param_variant}): FEHLER {error}")
+            else:
+                count = len(result) if result else 0
+                print(f"getStudents({param_variant}): {count} Schüler zurück (Gesamtliste war {len(all_students) if all_students else '?'})")
+
         section("7b) Neu - getStudents mit Klassen-Filter (Schueler<->Klasse-Zuordnung)")
         klassen_result, klassen_error = rpc_call(client, session_id, "getKlassen", {})
         test_klasse_id = klassen_result[0]["id"] if klassen_result else None
