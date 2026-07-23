@@ -228,6 +228,22 @@ def main():
             names = [r.get("name") for r in result] if result else []
             print(f"Kategorie-Gruppen ({len(names)}): {names}")
 
+        section("6) Neu - Methodenname für Entschuldigungsstatus-Stammdaten (Name/Langname/zaehlt/aktiv)")
+        candidates = [
+            "getExcuseStatuses",
+            "getExcuseStatus",
+            "getStudentExcuseStatuses",
+            "getAbsenceReasons",
+            "getAbsenceStatuses",
+            "getStudentAbsenceReasons",
+        ]
+        for method in candidates:
+            result, error = rpc_call(client, session_id, method, {})
+            if error:
+                print(f"{method}: FEHLER {error.get('message', error)}")
+            else:
+                print(f"{method}: ERFOLG -> {json.dumps(redact(result), indent=2, ensure_ascii=False)[:1500]}")
+
         section("Logout")
         rpc_call(client, session_id, "logout", {})
         print("Fertig. Bitte die komplette Ausgabe oben zurückmelden.")
