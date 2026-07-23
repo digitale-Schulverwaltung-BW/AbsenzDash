@@ -175,6 +175,30 @@ def main():
             if entries:
                 print(json.dumps(redact(entries[0]), indent=2, ensure_ascii=False))
 
+                section("3c) Vertiefung - welche Felder tragen Entschuldigungs-Infos?")
+                all_keys = set()
+                for e in entries:
+                    all_keys |= set(e.keys())
+                print(f"Alle in {len(entries)} Einträgen vorkommenden Feldnamen: {sorted(all_keys)}")
+
+                checked_true = [e for e in entries if e.get("checked") is True]
+                print(f"Einträge mit checked=true: {len(checked_true)}")
+                if checked_true:
+                    print("Beispiel checked=true:")
+                    print(json.dumps(redact(checked_true[0]), indent=2, ensure_ascii=False))
+
+                statuses = {}
+                for e in entries:
+                    s = e.get("status")
+                    statuses[s] = statuses.get(s, 0) + 1
+                print(f"Verteilung des 'status'-Felds: {statuses}")
+
+                for candidate_key in ("absenceReason", "excuseStatus", "reason", "isExcused"):
+                    with_key = [e for e in entries if candidate_key in e]
+                    print(f"Einträge mit Feld '{candidate_key}': {len(with_key)}")
+                    if with_key:
+                        print(json.dumps(redact(with_key[0]), indent=2, ensure_ascii=False))
+
         section("4) Risiko #3 - Berechtigung getClassregEvents")
         result, error = rpc_call(
             client,
