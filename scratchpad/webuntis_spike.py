@@ -252,6 +252,7 @@ def main():
 
         section("7) Neu - Schueler-Stammdaten (getStudents)")
         result, error = rpc_call(client, session_id, "getStudents", {})
+        all_students = result
         if error:
             print(f"getStudents: FEHLER {error}")
         else:
@@ -266,6 +267,48 @@ def main():
                 for r in result[:50]:
                     keys_union |= set(r.keys())
                 print(f"Feldnamen über die ersten 50 Datensätze: {sorted(keys_union)}")
+
+        section("7b) Neu - getStudents mit Klassen-Filter (Schueler<->Klasse-Zuordnung)")
+        klassen_result, klassen_error = rpc_call(client, session_id, "getKlassen", {})
+        test_klasse_id = klassen_result[0]["id"] if klassen_result else None
+        print(f"Teste gegen Klasse id={test_klasse_id}")
+        for param_variant in (
+            {"klasseId": test_klasse_id},
+            {"id": test_klasse_id, "type": 1},
+            {"schoolclassId": test_klasse_id},
+        ):
+            result, error = rpc_call(client, session_id, "getStudents", param_variant)
+            if error:
+                print(f"getStudents({param_variant}): FEHLER {error}")
+            else:
+                count = len(result) if result else 0
+                scoped = all_students is not None and count < len(all_students)
+                print(
+                    f"getStudents({param_variant}): {count} Schüler zurück "
+                    f"(gefiltert gegenüber Gesamtliste: {scoped})"
+                )
+                if result:
+                    print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
+
+        section("7c) Neu - getTimetable für Klassen-Element (evtl. Schueler-Liste im 'kl'-Feld)")
+        result, error = rpc_call(
+            client,
+            session_id,
+            "getTimetable",
+            {
+                "options": {
+                    "element": {"id": test_klasse_id, "type": 1},
+                    "startDate": start_int,
+                    "endDate": start_int,
+                }
+            },
+        )
+        if error:
+            print(f"getTimetable: FEHLER {error}")
+        else:
+            print(f"{len(result) if result else 0} Timetable-Einträge. Erster Eintrag:")
+            if result:
+                print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
 
         section("Logout")
         rpc_call(client, session_id, "logout", {})
