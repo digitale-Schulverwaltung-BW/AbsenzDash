@@ -38,16 +38,17 @@ Alle drei Rollen können als zusätzliche Empfänger einer Eskalationsstufe konf
 - **Fehlzeiten-Einträge**: aus WebUntis synchronisiert; Status (entschuldigt/unentschuldigt), Dauer (Tag oder Einzelstunden), Zeitraum.
 - **Klassenbucheinträge**: aus WebUntis synchronisiert (z.B. Verspätung, Verhaltenshinweis).
 - **Schwellwert-Regeln**: getrennt konfigurierbar für (a) Fehlzeiten und (b) Klassenbucheinträge. Je Regel:
-  - Geltungsbereich: schulweit oder differenziert nach Klassenstufe/Schulart.
+  - Geltungsbereich: schulweit (Default/Fallback) oder differenziert nach Klassenstufe/Schulart. Präzedenz: eine spezifische (nicht-schulweite) Regel bricht für die betroffenen Schüler die schulweite Regel; pro Klassenstufe/Schulart und Regel-Typ darf nur eine spezifische Regel aktiv sein (bei der Regel-Anlage im Admin-Bereich validiert, um überlappende spezifische Regeln zu verhindern).
   - Mehrere Eskalationsstufen (Stufe 1, 2, 3, …), je Stufe:
     - Einheit: Fehltage **oder** Fehlstunden (bei Fehlzeiten-Regeln).
     - Schwellenwert (Zahl).
     - Fehlzeiten-Filter: nur unentschuldigt / alle (entschuldigt + unentschuldigt), konfigurierbar je Regel.
     - Empfänger: Klassenlehrkraft (bzw. bei Bereichsleiter-Bearbeitung: Bereichsleiter) immer zusätzlich zu ggf. konfigurierten weiteren Empfängern dieser Stufe (Bereichsleiter und/oder Schulleitung, z.B. Bereichsleiter ab Stufe 2, Schulleitung ab Stufe 3).
-  - Zähler pro Schüler und Regel läuft ab Schuljahresbeginn bzw. ab letztem Reset (siehe Maßnahmen).
+  - Zähler pro Schüler und Regel läuft ab Schuljahresbeginn bzw. ab letztem Reset (siehe Maßnahmen). Das Schuljahresbeginn-Datum ist bundeslandabhängig und jahresabhängig unterschiedlich, daher kein Fixwert im System, sondern ein zentral im Dashboard-Admin-Bereich hinterlegtes Datum, das die Schulleitung/Admin jährlich pflegt.
 - **Maßnahmen-Katalog**: von der Schulleitung/Admin konfigurierbar. Je Maßnahmen-Typ: Name, Flag "setzt Schwellwert-Zähler zurück" (ja/nein), betroffene Eskalationsstufe/Regel(n). Default Maßnahmen-Set, das bei Installation mit ausgeliefert wird (von Schulleitung/Admin änderbar: Gespräch, Elterngespräch, Nachsitzen, 4h Nachsitzen, Schulverweis, Bußgeld, Zwangsgeld)
 - **Maßnahmen-Einträge**: pro Schüler protokolliert — Typ (aus Katalog), Datum, Notiz, erfassende Lehrkraft. Ein als zurücksetzend markierter Maßnahmen-Typ setzt den/die betroffenen Zähler auf 0 bzw. auf die konfigurierte Ausgangsstufe zurück.
 - **Ausnahmen**: pro Schüler und Kategorie (Fehlzeiten und/oder Klassenbuch getrennt abschaltbar). Enthält Grund/Notiz und optionales Enddatum — mit Enddatum greifen die Schwellwerte danach automatisch wieder, ohne Enddatum gilt die Ausnahme bis zur manuellen Aufhebung.
+- **Benachrichtigungen (Log)**: pro ausgelöster Schwellwertstufe protokolliert — Schüler, Regel, Stufe, Zeitpunkt, tatsächliche Empfänger (Rolle + Person), oder Status „kein Empfänger ermittelbar“ bzw. „aus initialem Datenimport übernommen, keine E-Mail versendet“ (siehe Abschnitt 5.1). Grundlage für die Badge-/Flyout-Anzeige im Dashboard (Abschnitt 7).
 - **Audit-Log**: erfasst, welcher Nutzer wann welche Maßnahme oder Ausnahme angelegt, geändert oder entfernt hat.
 
 ## 5. Eskalationslogik
@@ -59,17 +60,24 @@ Kombination aus zwei Mechanismen:
 
 Schüler mit aktiver Ausnahme in der jeweiligen Kategorie (Fehlzeiten bzw. Klassenbuch) werden bei der Schwellwert-Prüfung dieser Kategorie übersprungen.
 
+**Schuljahreswechsel:** Beim Erreichen des konfigurierten Schuljahresbeginn-Datums (Abschnitt 4) werden alle Zähler zurückgesetzt, unabhängig von Maßnahmen. Wechselt ein Schüler während des Schuljahres die Klasse (Versetzung), bleibt sein bisheriger Zählerstand erhalten; ab dem Wechsel wird die für die neue Klasse zutreffende Regel angewendet (Geltungsbereich-Präzedenz siehe Abschnitt 4).
+
+### 5.1 Initialer Datenimport
+
+Der allererste Sync-Lauf (Rollout, ggf. mitten im laufenden Schuljahr) liest und zählt alle vorhandenen Fehlzeiten/Klassenbucheinträge des laufenden Schuljahres wie gewohnt und berechnet so den korrekten Zählerstand bzw. die korrekte Eskalationsstufe pro Schüler. Dabei werden aber **keine echten E-Mails verschickt**: bereits erreichte Stufen werden im Benachrichtigungs-Log als „aus initialem Datenimport übernommen“ markiert, damit der erste reguläre Folge-Lauf nicht sofort einen Benachrichtigungs-Schwall auslöst. Ab dem zweiten Sync-Lauf laufen Benachrichtigungen normal.
+
 ## 6. E-Mail-Benachrichtigungen
 
 - Ausgelöst bei jeder Sync-/Prüfrunde, wenn ein Schüler eine Schwellwertstufe **neu** erreicht (keine wiederholte Benachrichtigung bei unverändertem Zählerstand).
 - Inhalt: Schülername, Klasse, ausgelöste Regel und Stufe, aktueller Zähler-Stand, Link zum Schüler-Detail im Dashboard.
 - Empfänger: Klassenlehrkraft plus ggf. Bereichsleiter/Schulleitung je nach Stufe, siehe Schwellwert-Regel (Abschnitt 4/5).
+- Kann für eine erreichte Stufe kein Empfänger ermittelt werden (z.B. weil die laut WebUntis zuständige Klassenlehrkraft sich noch nie im Dashboard angemeldet hat), wird **keine** E-Mail versendet (auch nicht ersatzweise an Schulleitung) — der Fall bleibt aber im Benachrichtigungs-Log sichtbar und wird im Dashboard hervorgehoben (Abschnitt 7).
 
 ## 7. Dashboard-Funktionen
 
-- **Übersicht** (rollenabhängig gefiltert): Liste der Schüler mit aktuellem Status je Regel (Ampel/Badge bei erreichter Stufe), Filter nach Klasse/Stufe/Status.
-- **Schüler-Detail**: Fehlzeiten-Verlauf, Klassenbucheinträge, Maßnahmen-Historie, aktive Ausnahmen; Formulare zum Erfassen neuer Maßnahmen und zum Setzen/Aufheben von Ausnahmen.
-- **Admin-Bereich** (nur Schulleitung/Admin): Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-/Prüfintervall konfigurieren.
+- **Übersicht** (rollenabhängig gefiltert): Liste der Schüler mit aktuellem Status je Regel (Ampel/Badge bei erreichter Stufe), Filter nach Klasse/Stufe/Status. Zusätzlich ein „Benachrichtigt“-Badge pro Schüler mit Hover-/Flyout-Detail (an wen wann eine Benachrichtigung ging, bzw. „kein Empfänger ermittelbar“ oder „aus initialem Import“, siehe Abschnitt 4/5.1). Für Schulleitung/Bereichsleitung zusätzlich hervorgehoben: Fälle, in denen seit der letzten Benachrichtigung keine Maßnahme erfasst wurde.
+- **Schüler-Detail**: Fehlzeiten-Verlauf, Klassenbucheinträge, Maßnahmen-Historie, aktive Ausnahmen, Benachrichtigungs-Historie; Formulare zum Erfassen neuer Maßnahmen und zum Setzen/Aufheben von Ausnahmen.
+- **Admin-Bereich** (nur Schulleitung/Admin): Schwellwert-Regeln verwalten, Maßnahmen-Katalog pflegen, Sync-/Prüfintervall und Schuljahresbeginn-Datum konfigurieren, manueller „Sync jetzt ausführen“-Button (löst einen außerplanmäßigen WebUntis-Sync + Schwellwert-Prüfung aus, z.B. damit eine geänderte Regel sofort statt erst beim nächsten geplanten Lauf wirksam wird).
 - **Export**: PDF/Druckansicht pro Schüler mit Fehlzeiten- und Maßnahmen-Historie, z.B. für §90-Meldungen an das Schulamt oder Bußgeldverfahren.
 
 ## 8. Datenschutz & Historie
@@ -77,6 +85,7 @@ Schüler mit aktiver Ausnahme in der jeweiligen Kategorie (Fehlzeiten bzw. Klass
 - Aufbewahrung der Daten mindestens bis Schuljahresende bzw. bis Schulabschluss des Schülers; danach Löschung/Archivierung möglich.
 - Audit-Log für Änderungen an Maßnahmen und Ausnahmen (siehe Abschnitt 4).
 - Kein Internet-Zugriff auf das Backend; Kommunikation ausschließlich innerhalb des Schul-Intranets.
+- Diese Auswertungen bestehen fachlich bereits (z.B. manuell in WebUntis) und sind zur gesetzeskonformen Erfüllung des Erziehungs- und Bildungsauftrags erforderlich. AbsenzDash automatisiert diese Auswertung lediglich; dennoch sollte die neue automatisierte Verarbeitung als organisatorischer Schritt (nicht Teil dieser technischen Spezifikation) in das Verfahrensverzeichnis der Schule (Art. 30 DSGVO) aufgenommen werden.
 
 ## 9. Nicht-Ziele (explizit außerhalb des Scopes)
 
