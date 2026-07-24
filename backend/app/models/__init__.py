@@ -7,6 +7,9 @@ from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
+from app.models.nutzer import ROLLEN, Nutzer
+from app.models.nutzer_bereich import nutzer_bereich
+from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 
 __all__ = [
@@ -20,5 +23,9 @@ __all__ = [
     "Fehlzeit",
     "Klasse",
     "KlassenbuchEintrag",
+    "Nutzer",
+    "nutzer_bereich",
+    "NutzerKlasse",
+    "ROLLEN",
     "Schueler",
 ]
