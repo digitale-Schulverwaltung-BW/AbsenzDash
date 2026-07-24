@@ -19,6 +19,12 @@
 - Commit-Messages auf Englisch (Nutzer-Vorgabe, globale CLAUDE.md).
 - Nach Abschluss dieses Plans: sofort committen; sobald ein Git-Remote existiert, zusätzlich pushen (`CLAUDE.md`).
 - User-/Admin-relevante Informationen (Setup, Betrieb) gehören in `docs/`, nicht nur in Commit-Messages (`CLAUDE.md`).
+- **Ausführungsumgebung (Nachtrag, ab Task 2):** Auf der Entwicklungsmaschine ist kein Python 3.11 installiert (nur 3.9, kein Homebrew/pyenv). Da ohnehin ein Docker-Deployment geplant ist (TECH-SPEC.md Abschnitt 6), läuft die gesamte Entwicklung ab Task 2 containerisiert. Task 2 richtet dafür `backend/Dockerfile` (Python 3.11-slim) und einen `backend`-Service in `backend/docker-compose.yml` ein. Jeder `Run:`-Befehl in Tasks 2–10, der `python`/`pip`/`pytest`/`alembic`/`uvicorn` aufruft, ist wie folgt zu übersetzen:
+  - `cd backend && pytest ...` → `docker compose -f backend/docker-compose.yml run --rm backend pytest ...`
+  - `cd backend && alembic ...` → `docker compose -f backend/docker-compose.yml run --rm backend alembic ...`
+  - Reine Datei-/Git-Operationen (z.B. `cp .env.example .env`) laufen weiterhin direkt auf dem Host.
+  - Vor jedem `run --rm backend ...`-Aufruf muss `docker compose -f backend/docker-compose.yml up -d postgres` gelaufen sein (Postgres muss `healthy` sein).
+  - `DATABASE_URL` in `.env`/`.env.example` referenziert deshalb den Docker-Netzwerk-Hostnamen `postgres`, nicht `localhost`.
 
 ---
 
@@ -187,16 +193,17 @@ git commit -m "feat: add FastAPI project skeleton with health endpoint"
 
 ---
 
-### Task 2: DB-Verbindung, TimestampMixin, Alembic-Setup
+### Task 2: DB-Verbindung, TimestampMixin, Alembic-Setup, Docker-Dev-Umgebung
 
 **Files:**
+- Create: `backend/Dockerfile`
+- Create: `backend/docker-compose.yml`
+- Create: `backend/.env.example`
 - Create: `backend/app/core/__init__.py`
 - Create: `backend/app/core/config.py`
 - Create: `backend/app/core/database.py`
 - Create: `backend/app/models/__init__.py`
 - Create: `backend/app/models/base.py`
-- Create: `backend/.env.example`
-- Create: `backend/docker-compose.yml` (Repo-Root-relativ als `docker-compose.yml` im Backend-Verzeichnis für lokale Entwicklung)
 - Create: `backend/alembic.ini`
 - Create: `backend/alembic/env.py`
 - Create: `backend/alembic/script.py.mako`
@@ -205,7 +212,7 @@ git commit -m "feat: add FastAPI project skeleton with health endpoint"
 
 **Interfaces:**
 - Consumes: nichts (Fundament).
-- Produces: `app.core.config.settings` (mit `database_url`), `app.core.database.engine`, `app.core.database.async_session_factory`, `app.core.database.get_db()` (FastAPI-Dependency), `app.models.base.Base`, `app.models.base.TimestampMixin`.
+- Produces: `app.core.config.settings` (mit `database_url`), `app.core.database.engine`, `app.core.database.async_session_factory`, `app.core.database.get_db()` (FastAPI-Dependency), `app.models.base.Base`, `app.models.base.TimestampMixin`. Außerdem die Docker-Dev-Umgebung, in der alle weiteren Tasks dieses Plans laufen (Global Constraints, "Ausführungsumgebung").
 
 - [ ] **Step 1: Requirements erweitern**
 
@@ -221,10 +228,21 @@ pydantic-settings>=2.4,<3.0
 python-dotenv>=1.0,<2.0
 ```
 
-Run: `cd backend && pip install -r requirements-dev.txt`
-Expected: Installation ohne Fehler.
+- [ ] **Step 2: Dockerfile + docker-compose (Postgres + Backend) + .env.example**
 
-- [ ] **Step 2: docker-compose für lokale Postgres**
+```dockerfile
+# backend/Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+COPY . .
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
 ```yaml
 # backend/docker-compose.yml
@@ -246,17 +264,31 @@ services:
     volumes:
       - absenzdash-db-data:/var/lib/postgresql/data
 
+  backend:
+    build: .
+    container_name: absenzdash-backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
 volumes:
   absenzdash-db-data:
 ```
 
 ```text
 # backend/.env.example
-DATABASE_URL=postgresql+asyncpg://absenzdash:absenzdash@localhost:5432/absenzdash
+DATABASE_URL=postgresql+asyncpg://absenzdash:absenzdash@postgres:5432/absenzdash
 ```
 
-Run: `cd backend && cp .env.example .env && docker compose up -d postgres`
-Expected: Container `absenzdash-db` läuft (`docker compose ps` zeigt `healthy`).
+> `postgres` (nicht `localhost`) als Hostname — `backend` und `postgres` kommunizieren über das von docker-compose erzeugte interne Netzwerk (Global Constraints, "Ausführungsumgebung").
+
+Run (vom Repo-Root aus): `cp backend/.env.example backend/.env && docker compose -f backend/docker-compose.yml build backend && docker compose -f backend/docker-compose.yml up -d postgres`
+Expected: Backend-Image baut ohne Fehler; `docker compose -f backend/docker-compose.yml ps` zeigt `postgres` als `healthy`.
 
 - [ ] **Step 3: Config und DB-Verbindung**
 
@@ -363,10 +395,10 @@ async def test_database_connection_executes_simple_query():
         assert result.scalar_one() == 1
 ```
 
-- [ ] **Step 6: Test ausführen, Fehlschlag bestätigen (falls DATABASE_URL fehlt/Postgres nicht läuft)**
+- [ ] **Step 6: Test ausführen**
 
-Run: `cd backend && pytest tests/test_database.py -v`
-Expected: PASS, sofern `docker compose up -d postgres` aus Step 2 lief und `.env` existiert. Falls FAIL: `docker compose ps` prüfen, ob Postgres `healthy` ist.
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_database.py -v`
+Expected: PASS, sofern Postgres aus Step 2 `healthy` ist. Falls FAIL: `docker compose -f backend/docker-compose.yml ps` prüfen.
 
 - [ ] **Step 7: Alembic einrichten**
 
@@ -490,16 +522,16 @@ def downgrade() -> None:
 
 - [ ] **Step 8: Baseline-Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "baseline (no tables yet)"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "baseline (no tables yet)"`
 Expected: Neue Datei unter `alembic/versions/`, `upgrade()`/`downgrade()` sind leer (`pass`), da noch keine Modelle existieren.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: `INFO  [alembic.runtime.migration] Running upgrade  -> <revision>, baseline (no tables yet)`
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/requirements.txt backend/docker-compose.yml backend/.env.example backend/app/core backend/app/models backend/alembic.ini backend/alembic/env.py backend/alembic/script.py.mako backend/alembic/versions backend/tests/conftest.py backend/tests/test_database.py
+git add backend/Dockerfile backend/requirements.txt backend/docker-compose.yml backend/.env.example backend/app/core backend/app/models backend/alembic.ini backend/alembic/env.py backend/alembic/script.py.mako backend/alembic/versions backend/tests/conftest.py backend/tests/test_database.py
 git commit -m "feat: add async DB connection, TimestampMixin, and Alembic setup"
 ```
 
@@ -558,7 +590,7 @@ async def test_bereich_klasse_association(db_session):
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_models_klasse.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_klasse.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.models.klasse'`
 
 - [ ] **Step 3: Modelle implementieren**
@@ -620,15 +652,15 @@ __all__ = ["Base", "Bereich", "bereich_klasse", "Klasse"]
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_models_klasse.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_klasse.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "add klasse, bereich tables"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add klasse, bereich tables"`
 Expected: Neue Migrationsdatei mit `create_table('klasse', ...)`, `create_table('bereich', ...)`, `create_table('bereich_klasse', ...)`.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration wird angewendet, keine Fehler.
 
 - [ ] **Step 6: Commit**
@@ -719,7 +751,7 @@ async def test_fehlzeit_unique_constraint_prevents_duplicate_sync(db_session):
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_models_schueler.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_schueler.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.models.schueler'`
 
 - [ ] **Step 3: Modelle implementieren**
@@ -817,15 +849,15 @@ __all__ = ["Base", "Bereich", "bereich_klasse", "ExcuseStatus", "Fehlzeit", "Kla
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_models_schueler.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_schueler.py -v`
 Expected: PASS (2 Tests)
 
 - [ ] **Step 5: Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "add excuse_status, schueler, fehlzeit tables"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add excuse_status, schueler, fehlzeit tables"`
 Expected: Neue Migrationsdatei mit den drei `create_table(...)`-Aufrufen und dem Unique-Constraint auf `fehlzeit`.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
 
 - [ ] **Step 6: Commit**
@@ -891,7 +923,7 @@ async def test_klassenbuch_eintrag_roundtrip(db_session):
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_models_klassenbuch.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_klassenbuch.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.models.classreg_category'`
 
 - [ ] **Step 3: Modelle implementieren**
@@ -968,15 +1000,15 @@ __all__ = [
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_models_klassenbuch.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_klassenbuch.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "add classreg_category, klassenbuch_eintrag tables"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add classreg_category, klassenbuch_eintrag tables"`
 Expected: Neue Migrationsdatei mit beiden `create_table(...)`-Aufrufen.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
 
 - [ ] **Step 6: Commit**
@@ -1046,7 +1078,7 @@ async def test_audit_log_roundtrip(db_session):
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_models_einstellung_audit.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_einstellung_audit.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.models.einstellung'`
 
 - [ ] **Step 3: Modelle implementieren**
@@ -1128,15 +1160,15 @@ __all__ = [
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_models_einstellung_audit.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_einstellung_audit.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "add einstellung, audit_log tables"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add einstellung, audit_log tables"`
 Expected: Neue Migrationsdatei mit beiden `create_table(...)`-Aufrufen.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
 
 - [ ] **Step 6: Commit**
@@ -1227,7 +1259,7 @@ async def test_nutzer_bereich_association(db_session):
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_models_nutzer.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_nutzer.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.models.nutzer'`
 
 - [ ] **Step 3: Modelle implementieren**
@@ -1332,15 +1364,15 @@ __all__ = [
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_models_nutzer.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_nutzer.py -v`
 Expected: PASS (3 Tests)
 
 - [ ] **Step 5: Migration erzeugen und anwenden**
 
-Run: `cd backend && alembic revision --autogenerate -m "add nutzer, nutzer_klasse, nutzer_bereich tables"`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add nutzer, nutzer_klasse, nutzer_bereich tables"`
 Expected: Neue Migrationsdatei mit den drei `create_table(...)`-Aufrufen inkl. Unique-Constraints.
 
-Run: `cd backend && alembic upgrade head`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
 
 - [ ] **Step 6: Commit**
@@ -1384,7 +1416,7 @@ settings = Settings()
 
 ```text
 # backend/.env.example
-DATABASE_URL=postgresql+asyncpg://absenzdash:absenzdash@localhost:5432/absenzdash
+DATABASE_URL=postgresql+asyncpg://absenzdash:absenzdash@postgres:5432/absenzdash
 WORDPRESS_PROXY_SECRET=changeme
 ```
 
@@ -1482,7 +1514,7 @@ Hinweis: `test_app` überschreibt `get_db` nicht — er nutzt in diesem Test bew
 
 - [ ] **Step 3: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_deps_wordpress_proxy.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_deps_wordpress_proxy.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.api'`
 
 - [ ] **Step 4: Dependency implementieren**
@@ -1563,7 +1595,7 @@ async def get_wordpress_proxy_nutzer(
 
 - [ ] **Step 5: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_deps_wordpress_proxy.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_deps_wordpress_proxy.py -v`
 Expected: PASS (4 Tests)
 
 - [ ] **Step 6: Commit**
@@ -1654,7 +1686,7 @@ async def test_preserves_manual_assignments_and_refreshes_seeded_ones(db_session
 
 - [ ] **Step 2: Test ausführen, Fehlschlag bestätigen**
 
-Run: `cd backend && pytest tests/test_nutzer_klasse_sync.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_nutzer_klasse_sync.py -v`
 Expected: FAIL mit `ModuleNotFoundError: No module named 'app.services'`
 
 - [ ] **Step 3: Implementieren**
@@ -1701,7 +1733,7 @@ async def seed_nutzer_klasse_from_webuntis(db: AsyncSession) -> None:
 
 - [ ] **Step 4: Test ausführen, Erfolg bestätigen**
 
-Run: `cd backend && pytest tests/test_nutzer_klasse_sync.py -v`
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_nutzer_klasse_sync.py -v`
 Expected: PASS (3 Tests)
 
 - [ ] **Step 5: Commit**
@@ -1713,81 +1745,30 @@ git commit -m "feat: add nutzer_klasse seeding service from WebUntis teacher ass
 
 ---
 
-### Task 10: Docker-Compose-Wiring & Dokumentation
+### Task 10: Vollständiger Stack-Check & Dokumentation
 
 **Files:**
-- Modify: `backend/docker-compose.yml`
-- Create: `backend/Dockerfile`
 - Create: `docs/backend-setup.md`
 - Test: manuell (kein pytest-Test — Infrastruktur-Task)
 
 **Interfaces:**
-- Consumes: alle vorherigen Tasks (komplettes Backend).
-- Produces: `docker compose up` startet Postgres + Backend zusammen; `docs/backend-setup.md` dokumentiert das für Admins/Entwickler (CLAUDE.md-Konvention: user-/admin-relevante Infos sofort in `docs/`).
+- Consumes: alle vorherigen Tasks (komplettes Backend, inkl. `backend/Dockerfile`/`backend/docker-compose.yml` aus Task 2).
+- Produces: `docs/backend-setup.md` dokumentiert Setup/Betrieb für Admins/Entwickler (CLAUDE.md-Konvention: user-/admin-relevante Infos sofort in `docs/`).
 
-- [ ] **Step 1: Dockerfile**
+> Dockerfile und der `backend`-Service in `docker-compose.yml` existieren bereits seit Task 2 (Docker-Dev-Umgebung) — dieser Task baut nichts davon neu, sondern verifiziert den kompletten Stack (Backend als eigener, laufender Service statt nur `run --rm` für Einzelbefehle) und dokumentiert ihn.
 
-```dockerfile
-# backend/Dockerfile
-FROM python:3.11-slim
+- [ ] **Step 1: Vollständigen Stack starten und verifizieren**
 
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-- [ ] **Step 2: docker-compose um Backend-Service erweitern**
-
-```yaml
-# backend/docker-compose.yml
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: absenzdash-db
-    environment:
-      POSTGRES_USER: absenzdash
-      POSTGRES_PASSWORD: absenzdash
-      POSTGRES_DB: absenzdash
-    ports:
-      - "127.0.0.1:5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U absenzdash"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - absenzdash-db-data:/var/lib/postgresql/data
-
-  backend:
-    build: .
-    container_name: absenzdash-backend
-    env_file: .env
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - .:/app
-
-volumes:
-  absenzdash-db-data:
-```
-
-- [ ] **Step 3: Manuell verifizieren**
-
-Run: `cd backend && docker compose up -d --build`
-Expected: Beide Container laufen (`docker compose ps` zeigt `postgres` als `healthy`, `backend` als `running`).
+Run: `docker compose -f backend/docker-compose.yml up -d --build`
+Expected: Beide Container laufen (`docker compose -f backend/docker-compose.yml ps` zeigt `postgres` als `healthy`, `backend` als `running`).
 
 Run: `curl http://localhost:8000/health`
 Expected: `{"status":"ok"}`
 
-- [ ] **Step 4: Setup-Dokumentation**
+Run: `docker compose -f backend/docker-compose.yml down`
+Expected: Container werden sauber gestoppt (Aufräumen nach der Verifikation).
+
+- [ ] **Step 2: Setup-Dokumentation**
 
 ```markdown
 # docs/backend-setup.md
@@ -1796,42 +1777,34 @@ Expected: `{"status":"ok"}`
 
 ## Voraussetzungen
 
-- Python 3.11
-- Docker (für PostgreSQL und/oder den kompletten Stack)
+- Docker (Python 3.11 läuft ausschließlich containerisiert — auf der Entwicklungsmaschine muss kein Python installiert sein)
 
-## Lokale Entwicklung (ohne Docker für das Backend selbst)
+## Setup
 
-1. `cd backend && cp .env.example .env` und `WORDPRESS_PROXY_SECRET` auf einen echten Wert setzen.
-2. `docker compose up -d postgres`
-3. `python3.11 -m venv .venv && source .venv/bin/activate`
-4. `pip install -r requirements-dev.txt`
-5. `alembic upgrade head`
-6. `uvicorn app.main:app --reload`
+1. `cp backend/.env.example backend/.env` und `WORDPRESS_PROXY_SECRET` auf einen echten Wert setzen.
+2. `docker compose -f backend/docker-compose.yml up -d --build`
+3. `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 
 Das Backend läuft danach unter `http://localhost:8000`, Health-Check unter `GET /health`.
 
-## Alles über Docker Compose
-
-`cd backend && docker compose up -d --build` startet PostgreSQL **und** das Backend. `.env` muss vorher aus `.env.example` erstellt sein.
-
 ## Tests
 
-`pytest` im `backend/`-Verzeichnis (benötigt laufende PostgreSQL-Instanz, `DATABASE_URL` aus `.env`). Jeder Test läuft in einer frisch aufgesetzten Datenbank (`tests/conftest.py` erstellt/verwirft alle Tabellen automatisch pro Test).
+`docker compose -f backend/docker-compose.yml run --rm backend pytest` (benötigt laufende PostgreSQL-Instanz: `docker compose -f backend/docker-compose.yml up -d postgres`). Jeder Test läuft in einer frisch aufgesetzten Datenbank (`tests/conftest.py` erstellt/verwirft alle Tabellen automatisch pro Test).
 
 ## Migrationen
 
-Nach jeder Modelländerung: `alembic revision --autogenerate -m "<beschreibung>"`, danach `alembic upgrade head`. Handgeschriebene SQL-Migrationsdateien sind für dieses Projekt bewusst nicht vorgesehen (siehe TECH-SPEC.md Abschnitt 2).
+Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "<beschreibung>"`, danach `... alembic upgrade head`. Handgeschriebene SQL-Migrationsdateien sind für dieses Projekt bewusst nicht vorgesehen (siehe TECH-SPEC.md Abschnitt 2).
 
 ## Aktueller Stand
 
 Dieser Plan (`docs/superpowers/plans/2026-07-24-backend-grundgeruest.md`) deckt das komplette Datenschema (TECH-SPEC.md Abschnitt 2) und die WordPress-Proxy-Authentifizierung ab — noch **keine** WebUntis-Anbindung und noch keine fachlichen REST-Endpunkte (`/students`, `/admin/...`). Beides folgt in separaten Plänen.
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add backend/docker-compose.yml backend/Dockerfile docs/backend-setup.md
-git commit -m "feat: wire up backend service in docker-compose and document setup"
+git add docs/backend-setup.md
+git commit -m "docs: add backend setup and operations guide"
 ```
 
 ---
@@ -1842,3 +1815,4 @@ git commit -m "feat: wire up backend service in docker-compose and document setu
 - **Bewusst außerhalb dieses Plans:** WebUntis-Client/-Sync (TECH-SPEC.md Abschnitt 1), `SchuelerRosterProvider`-Abstraktion, Schwellwert-/Eskalations-Tabellen, REST-Endpunkte aus Abschnitt 3 (`/students`, `/admin/...`) — folgen in eigenen Plänen, damit dieser Plan überschaubar bleibt und für sich lauffähige, testbare Software liefert.
 - **Typkonsistenz geprüft:** `Nutzer.wp_user_id` als `String` (nicht `Integer`) durchgängig in Modell, Test und `deps.py` konsistent. `Fehlzeit`/`Schueler` referenzieren `excuse_status_id`/`klasse_id` korrekt auf die in früheren Tasks definierten Tabellen. `AuditLog.user_id` bewusst ohne FK-Constraint (dokumentiert).
 - **Platzhalter-Scan:** keine TBD/TODO, jeder Code-Schritt enthält vollständigen, lauffähigen Code.
+- **Nachtrag nach Task 1 (Ausführungsumgebung):** Die Entwicklungsmaschine hat kein Python 3.11 (nur 3.9, kein Homebrew/pyenv) — `X | None`-Syntax in den Modellen (ab Task 3) würde dort zur Laufzeit crashen. Da ohnehin Docker-Deployment geplant ist, wurde auf Nutzerentscheidung hin die Docker-Dev-Umgebung von Task 10 nach Task 2 vorgezogen; alle `Run:`-Befehle ab Task 2 laufen über `docker compose -f backend/docker-compose.yml run --rm backend ...` statt über einen Host-venv (siehe Global Constraints, "Ausführungsumgebung"). Task 1 selbst ist davon nicht betroffen (kein 3.10+-Syntax) und bleibt wie bereits ausgeführt.
