@@ -43,8 +43,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['kategorie_id'], ['classreg_category.id'], ),
     sa.ForeignKeyConstraint(['schueler_id'], ['schueler.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('webuntis_id')
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_klassenbuch_eintrag_webuntis_id'), 'klassenbuch_eintrag', ['webuntis_id'], unique=True)
     # ### end Alembic commands ###
