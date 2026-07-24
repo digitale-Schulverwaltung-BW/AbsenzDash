@@ -399,6 +399,173 @@ def main():
         else:
             print(f"Aktuelles Schuljahr: {json.dumps(result, indent=2, ensure_ascii=False)}")
 
+        section("11) Neu - Tragen getTimetableWithAbsences-Einträge (Fehlzeiten) einen Namen?")
+        print(
+            "Frage: TECH-SPEC.md Abschnitt 1.3 setzt Namensabgleich für Fehlzeiten UND "
+            "Klassenbuch voraus, aber Abschnitt 1.2 listet für Fehlzeiten-Einträge keine "
+            "Namensfelder. Prüfung: welche Feldnamen kommen in periodsWithAbsences wirklich vor?"
+        )
+        if entries:
+            all_keys = set()
+            for e in entries:
+                all_keys |= set(e.keys())
+            print(f"Alle Feldnamen über {len(entries)} Fehlzeiten-Einträge: {sorted(all_keys)}")
+
+            name_like_keys = [
+                k for k in all_keys if k.lower() in
+                {"forname", "surname", "name", "studentname", "displayname", "longname", "fore_name", "sur_name"}
+            ]
+            print(f"-> Namens-artige Feldnamen gefunden: {name_like_keys or 'KEINE'}")
+
+            if name_like_keys and all_students:
+                by_name = {}
+                for s in all_students:
+                    fore = (s.get("foreName") or "").strip().lower()
+                    long_ = (s.get("longName") or "").strip().lower()
+                    if fore and long_:
+                        by_name[(fore, long_)] = s["id"]
+                fore_key = next((k for k in name_like_keys if "fore" in k.lower()), None)
+                sur_key = next((k for k in name_like_keys if k.lower() in ("surname", "name", "longname")), None)
+                if fore_key and sur_key:
+                    matched = 0
+                    for e in entries:
+                        fore = (e.get(fore_key) or "").strip().lower()
+                        sur = (e.get(sur_key) or "").strip().lower()
+                        if (fore, sur) in by_name:
+                            matched += 1
+                    print(
+                        f"-> {matched} von {len(entries)} Fehlzeiten-Einträgen per Namensabgleich "
+                        f"({fore_key}+{sur_key}) einem getStudents-Datensatz zugeordnet."
+                    )
+            else:
+                print(
+                    "-> Kein Namensabgleich für Fehlzeiten möglich mit den beobachteten Feldern. "
+                    "studentId müsste über einen anderen Weg (z.B. Klassenbuch-Eintrag mit "
+                    "derselben studentId, oder eine noch unbekannte Zusatzabfrage) aufgelöst werden."
+                )
+        else:
+            print("Keine Fehlzeiten-Einträge im Testzeitraum - Prüfung nicht möglich.")
+
+        section("12) Neu - getTimetableWithAbsences pro Schüler-Element (type=5) - UUID ohne Namensabgleich lernbar?")
+        print(
+            "Frage: akzeptiert getTimetableWithAbsences denselben options.element-Filter wie "
+            "getTimetable? Falls ja: liefert ein auf einen bekannten Schüler (per Integer-ID) "
+            "gescopter Aufruf konsistent dessen studentId-UUID zurück - ganz ohne Namensabgleich?"
+        )
+        result, error = rpc_call(
+            client,
+            session_id,
+            "getTimetableWithAbsences",
+            {
+                "options": {
+                    "element": {"id": test_student_id, "type": 5},
+                    "startDate": start_int,
+                    "endDate": end_int,
+                }
+            },
+        )
+        if error:
+            print(f"getTimetableWithAbsences(element type=5, id={test_student_id}): FEHLER {error}")
+        else:
+            scoped_entries = result.get("periodsWithAbsences", []) if isinstance(result, dict) else result
+            print(f"{len(scoped_entries) if scoped_entries else 0} Fehlzeiten-Einträge für Schüler id={test_student_id}.")
+            if scoped_entries:
+                uuids_found = {e.get("studentId") for e in scoped_entries}
+                print(f"-> Darin vorkommende studentId-UUIDs: {uuids_found}")
+                print(f"-> Genau eine UUID für den einen angefragten Schüler? {len(uuids_found) == 1}")
+                if example_pair and example_pair[0] == test_student_id:
+                    print(
+                        f"-> Abgleich gegen Abschnitt 8 (per Namensabgleich ermittelte UUID "
+                        f"{example_pair[1]!r} für denselben Schüler): "
+                        f"{'UEBEREINSTIMMUNG' if example_pair[1] in uuids_found else 'KEINE UEBEREINSTIMMUNG'}"
+                    )
+                print(json.dumps(redact(scoped_entries[0]), indent=2, ensure_ascii=False))
+            else:
+                print(
+                    "-> Keine Fehlzeiten-Einträge für diesen Schüler im Testzeitraum - "
+                    "Prüfung mit einem anderen Schüler wiederholen, der im Zeitraum sicher "
+                    "Fehlzeiten hat, falls möglich."
+                )
+
+        section("13) Neu - Gibt es eine direkte UUID<->Integer-ID-Umwandlung für Schüler?")
+        print(
+            "Der element-Filter wird von getTimetableWithAbsences ignoriert (Abschnitt 12) - "
+            "letzter Versuch, die studentId-UUID ohne Namensabgleich auf getStudents.id "
+            "zurückzuführen: unbekannte RPC-Methodennamen sowie reverse getStudents-Filter."
+        )
+        known_uuid = example_pair[1] if example_pair else None
+        known_int_id = example_pair[0] if example_pair else None
+        print(f"Bekanntes Paar aus Abschnitt 8 zum Gegenprüfen: id={known_int_id} <-> uuid={known_uuid!r}")
+
+        method_candidates = [
+            ("getPersonId", {"id": known_int_id, "type": 5}),
+            ("getPersonsId", {"id": known_int_id, "type": 5}),
+            ("convertPersonId", {"id": known_int_id}),
+            ("getStudentPersonId", {"studentId": known_int_id}),
+            ("getPersonIdForStudent", {"studentId": known_int_id}),
+            ("getUuidForStudent", {"id": known_int_id}),
+            ("getPerson", {"id": known_int_id, "type": 5}),
+            ("getPersonData", {"id": known_int_id, "type": 5}),
+        ]
+        for method, params in method_candidates:
+            result, error = rpc_call(client, session_id, method, params)
+            if error:
+                print(f"{method}({params}): FEHLER {error.get('message', error)}")
+            else:
+                print(f"{method}({params}): ERFOLG -> {json.dumps(redact(result), indent=2, ensure_ascii=False)[:800]}")
+
+        if known_uuid:
+            print("\nReverse-Versuch: getStudents mit der bekannten UUID als Filterwert:")
+            for param_key in ("personId", "studentId", "id", "key", "uuid"):
+                result, error = rpc_call(client, session_id, "getStudents", {param_key: known_uuid})
+                if error:
+                    print(f"getStudents({{'{param_key}': uuid}}): FEHLER {error.get('message', error)}")
+                else:
+                    count = len(result) if result else 0
+                    print(f"getStudents({{'{param_key}': uuid}}): {count} Schüler zurück")
+                    if result and count <= 3:
+                        print(json.dumps(redact(result[0]), indent=2, ensure_ascii=False))
+
+        section("14) Neu - studentId als direkter Parameter + Inhalt des 'user'-Felds")
+        known_uuid = example_pair[1] if example_pair else None
+        print("14a) getTimetableWithAbsences mit studentId direkt als Options-Feld (statt element):")
+        if known_uuid:
+            for param_variant in (
+                {"studentId": known_uuid, "startDate": start_int, "endDate": end_int},
+                {"options": {"studentId": known_uuid, "startDate": start_int, "endDate": end_int}},
+                {"student": {"id": known_uuid}, "startDate": start_int, "endDate": end_int},
+            ):
+                result, error = rpc_call(client, session_id, "getTimetableWithAbsences", param_variant)
+                if error:
+                    print(f"getTimetableWithAbsences({param_variant}): FEHLER {error.get('message', error)}")
+                else:
+                    scoped = result.get("periodsWithAbsences", []) if isinstance(result, dict) else result
+                    count = len(scoped) if scoped else 0
+                    uuids = {e.get("studentId") for e in scoped} if scoped else set()
+                    print(
+                        f"getTimetableWithAbsences({param_variant}): {count} Einträge, "
+                        f"{len(uuids)} unterschiedliche UUID(s) darin: {uuids if len(uuids) <= 3 else '(zu viele, ungescoped)'}"
+                    )
+        else:
+            print("Kein bekanntes UUID-Beispiel vorhanden - übersprungen.")
+
+        print("\n14b) Was steht im 'user'-Feld der Fehlzeiten-Einträge?")
+        if entries:
+            user_values = [e.get("user") for e in entries if e.get("user")]
+            distinct_users = set(user_values)
+            print(f"{len(user_values)} von {len(entries)} Einträgen haben ein nicht-leeres 'user'-Feld.")
+            print(f"Anzahl unterschiedlicher Werte: {len(distinct_users)}")
+            print(f"Beispielwerte (redigiert falls namensartig): {redact(list(distinct_users)[:10], key='user')}")
+            entries_with_group = [e for e in entries if e.get("studentGroup")]
+            print(
+                f"\n{len(entries_with_group)} von {len(entries)} Einträgen haben ein nicht-leeres "
+                f"'studentGroup'-Feld (Beispiel 12 hatte null)."
+            )
+            if entries_with_group:
+                print(json.dumps(redact(entries_with_group[0]), indent=2, ensure_ascii=False))
+        else:
+            print("Keine Fehlzeiten-Einträge im Testzeitraum - Prüfung nicht möglich.")
+
         section("Logout")
         rpc_call(client, session_id, "logout", {})
         print("Fertig. Bitte die komplette Ausgabe oben zurückmelden.")
