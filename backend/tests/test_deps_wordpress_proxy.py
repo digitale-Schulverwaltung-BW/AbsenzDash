@@ -82,3 +82,23 @@ async def test_updates_existing_nutzer_on_repeat_request(db_session):
 
     result = await db_session.execute(select(Nutzer).where(Nutzer.wp_user_id == "jseyfried"))
     assert len(result.scalars().all()) == 1  # kein Duplikat
+
+
+@pytest.mark.asyncio
+async def test_decodes_utf8_name_header_without_mojibake(db_session):
+    """A UTF-8-sending WordPress proxy must not corrupt umlauts in Nutzer.name.
+
+    Starlette always decodes incoming header bytes as Latin-1. If the proxy
+    actually sent UTF-8 bytes for the name, that decode alone would produce
+    mojibake (e.g. "Jörg" -> "JÃ¶rg"). get_wordpress_proxy_nutzer must recover
+    the original UTF-8 text before storing it.
+    """
+    transport = ASGITransport(app=test_app)
+    headers = {**HEADERS_BASE, "X-WordPress-Name": "Jörg Müller".encode("utf-8")}
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/whoami", headers=headers)
+    assert response.status_code == 200
+
+    result = await db_session.execute(select(Nutzer).where(Nutzer.wp_user_id == "jseyfried"))
+    nutzer = result.scalar_one()
+    assert nutzer.name == "Jörg Müller"
