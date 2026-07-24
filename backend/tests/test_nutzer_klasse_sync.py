@@ -37,6 +37,22 @@ async def test_skips_teacher_without_matching_nutzer(db_session):
 
 
 @pytest.mark.asyncio
+async def test_dedupes_when_both_teacher_slots_resolve_to_same_nutzer(db_session):
+    nutzer = Nutzer(wp_user_id="u2", email="c@d.de", name="C", rolle="klassenlehrkraft", webuntis_teacher_id=77)
+    klasse = Klasse(webuntis_id=42, name="9c", webuntis_teacher1_id=77, webuntis_teacher2_id=77)
+    db_session.add_all([nutzer, klasse])
+    await db_session.commit()
+
+    await seed_nutzer_klasse_from_webuntis(db_session)
+
+    result = await db_session.execute(select(NutzerKlasse))
+    rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].nutzer_id == nutzer.id
+    assert rows[0].klasse_id == klasse.id
+
+
+@pytest.mark.asyncio
 async def test_preserves_manual_assignments_and_refreshes_seeded_ones(db_session):
     nutzer_alt = Nutzer(wp_user_id="alt", email="alt@b.de", name="Alt", rolle="klassenlehrkraft", webuntis_teacher_id=1)
     nutzer_neu = Nutzer(wp_user_id="neu", email="neu@b.de", name="Neu", rolle="klassenlehrkraft", webuntis_teacher_id=2)

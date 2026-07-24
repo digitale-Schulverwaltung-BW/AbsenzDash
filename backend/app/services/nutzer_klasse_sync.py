@@ -21,12 +21,15 @@ async def seed_nutzer_klasse_from_webuntis(db: AsyncSession) -> None:
     nutzer_by_teacher_id = {nutzer.webuntis_teacher_id: nutzer for nutzer in nutzer_result.scalars()}
 
     for klasse in klassen:
+        nutzer_ids: set[int] = set()
         for teacher_id in (klasse.webuntis_teacher1_id, klasse.webuntis_teacher2_id):
             if teacher_id is None:
                 continue
             nutzer = nutzer_by_teacher_id.get(teacher_id)
             if nutzer is None:
                 continue
-            db.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+            nutzer_ids.add(nutzer.id)
+        for nutzer_id in nutzer_ids:
+            db.add(NutzerKlasse(nutzer_id=nutzer_id, klasse_id=klasse.id, quelle="webuntis_seed"))
 
     await db.commit()
