@@ -1158,18 +1158,20 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Test ausführen, Erfolg bestätigen**
+- [ ] **Step 4: Migration erzeugen und anwenden (vor dem Testlauf!)**
 
-Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_einstellung_audit.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Migration erzeugen und anwenden**
+> Reihenfolge bewusst so: `conftest.py`s `_reset_database`-Fixture (Task 2) räumt bei jedem Testlauf per `create_all` alle aktuellen Modelle in dieselbe Dev-Datenbank, die auch Alembic verwaltet. Liefe der Testlauf zuerst, existierten die neuen Tabellen schon, bevor Alembic sie sieht — `autogenerate` fände dann keinen Unterschied und die Migration bliebe leer bzw. würde bei `upgrade` mit "already exists" fehlschlagen (siehe Task 5, wo das erst nachträglich per Downgrade/Upgrade-Zyklus aufgefallen ist). Migration deshalb erzeugen, solange die DB noch den Stand des vorherigen Tasks hat.
 
 Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add einstellung, audit_log tables"`
-Expected: Neue Migrationsdatei mit beiden `create_table(...)`-Aufrufen.
+Expected: Neue Migrationsdatei mit beiden `create_table(...)`-Aufrufen (nicht leer).
 
 Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
+
+- [ ] **Step 5: Test ausführen, Erfolg bestätigen**
+
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_einstellung_audit.py -v`
+Expected: PASS
 
 - [ ] **Step 6: Commit**
 
@@ -1362,18 +1364,20 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Test ausführen, Erfolg bestätigen**
+- [ ] **Step 4: Migration erzeugen und anwenden (vor dem Testlauf!)**
 
-Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_nutzer.py -v`
-Expected: PASS (3 Tests)
-
-- [ ] **Step 5: Migration erzeugen und anwenden**
+> Reihenfolge bewusst so (siehe Begründung in Task 6, Step 4): Migration erzeugen, solange die DB noch den Stand des vorherigen Tasks hat, bevor `conftest.py`s `create_all`-Fixture beim Testlauf die neuen Tabellen schon anlegt.
 
 Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "add nutzer, nutzer_klasse, nutzer_bereich tables"`
-Expected: Neue Migrationsdatei mit den drei `create_table(...)`-Aufrufen inkl. Unique-Constraints.
+Expected: Neue Migrationsdatei mit den drei `create_table(...)`-Aufrufen inkl. Unique-Constraints (nicht leer).
 
 Run: `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 Expected: Migration angewendet, keine Fehler.
+
+- [ ] **Step 5: Test ausführen, Erfolg bestätigen**
+
+Run: `docker compose -f backend/docker-compose.yml run --rm backend pytest tests/test_models_nutzer.py -v`
+Expected: PASS (3 Tests)
 
 - [ ] **Step 6: Commit**
 
@@ -1815,4 +1819,5 @@ git commit -m "docs: add backend setup and operations guide"
 - **Bewusst außerhalb dieses Plans:** WebUntis-Client/-Sync (TECH-SPEC.md Abschnitt 1), `SchuelerRosterProvider`-Abstraktion, Schwellwert-/Eskalations-Tabellen, REST-Endpunkte aus Abschnitt 3 (`/students`, `/admin/...`) — folgen in eigenen Plänen, damit dieser Plan überschaubar bleibt und für sich lauffähige, testbare Software liefert.
 - **Typkonsistenz geprüft:** `Nutzer.wp_user_id` als `String` (nicht `Integer`) durchgängig in Modell, Test und `deps.py` konsistent. `Fehlzeit`/`Schueler` referenzieren `excuse_status_id`/`klasse_id` korrekt auf die in früheren Tasks definierten Tabellen. `AuditLog.user_id` bewusst ohne FK-Constraint (dokumentiert).
 - **Platzhalter-Scan:** keine TBD/TODO, jeder Code-Schritt enthält vollständigen, lauffähigen Code.
+- **Nachtrag nach Task 5 (Migration-vs-Test-Reihenfolge):** Task-Review deckte auf, dass `conftest.py`s `create_all`-Fixture (Task 2) dieselbe Dev-DB wie Alembic verwaltet — lief der Testlauf vor der Migrationserzeugung, fand `autogenerate` keinen Unterschied mehr (Tabellen existierten schon), was den Implementer zu einem `stamp`-Workaround statt eines echten `upgrade` verleitete. Durch einen manuellen Downgrade-auf-`base`/Upgrade-auf-`head`-Zyklus direkt gegen die echte DB verifiziert: alle vier bis dahin existierenden Migrationen (Tasks 2–5) wenden sich tatsächlich fehlerfrei an und erzeugen exakt die erwarteten 9 Tabellen — der Code war korrekt, nur der ursprüngliche Verifikationsweg unzureichend. Für Task 6/7 wurde die Schrittreihenfolge angepasst (Migration jetzt vor dem Testlauf), um das für die verbleibenden Tasks zu vermeiden.
 - **Nachtrag nach Task 1 (Ausführungsumgebung):** Die Entwicklungsmaschine hat kein Python 3.11 (nur 3.9, kein Homebrew/pyenv) — `X | None`-Syntax in den Modellen (ab Task 3) würde dort zur Laufzeit crashen. Da ohnehin Docker-Deployment geplant ist, wurde auf Nutzerentscheidung hin die Docker-Dev-Umgebung von Task 10 nach Task 2 vorgezogen; alle `Run:`-Befehle ab Task 2 laufen über `docker compose -f backend/docker-compose.yml run --rm backend ...` statt über einen Host-venv (siehe Global Constraints, "Ausführungsumgebung"). Task 1 selbst ist davon nicht betroffen (kein 3.10+-Syntax) und bleibt wie bereits ausgeführt.
