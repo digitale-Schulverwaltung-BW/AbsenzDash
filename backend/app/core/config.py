@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     webuntis_school: str
     webuntis_username: str
     webuntis_password: str
+    asv_csv_path: str
+    asv_csv_column_externe_id: str = "idnumber"
+    asv_csv_column_vorname: str = "firstname"
+    asv_csv_column_nachname: str = "lastname"
+    asv_csv_column_klasse: str = "Klasse"
+    asv_csv_column_eintrittsdatum: str = "Eintrittsdatum"
+    asv_csv_column_austrittsdatum: str = "Austrittsdatum"
 
 
 settings = Settings()

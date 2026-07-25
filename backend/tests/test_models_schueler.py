@@ -17,8 +17,7 @@ async def test_schueler_roundtrip(db_session):
     await db_session.flush()
 
     schueler = Schueler(
-        webuntis_id=49845,
-        webuntis_key="fuch_9464",
+        externe_id="8a9041a6-95a2b47f-0195-a30963ad-0018",
         vorname="Max",
         nachname="Mustermann",
         klasse_id=klasse.id,
@@ -27,7 +26,9 @@ async def test_schueler_roundtrip(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    result = await db_session.execute(select(Schueler).where(Schueler.webuntis_id == 49845))
+    result = await db_session.execute(
+        select(Schueler).where(Schueler.externe_id == "8a9041a6-95a2b47f-0195-a30963ad-0018")
+    )
     loaded = result.scalar_one()
     assert loaded.nachname == "Mustermann"
     assert loaded.aktiv is True
@@ -36,7 +37,7 @@ async def test_schueler_roundtrip(db_session):
 
 @pytest.mark.asyncio
 async def test_fehlzeit_unique_constraint_prevents_duplicate_sync(db_session):
-    schueler = Schueler(webuntis_id=1, vorname="A", nachname="B")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     excuse_status = ExcuseStatus(name="nicht entsch.", long_name="nicht entschuldigt", zaehlt_als_entschuldigt=False)
     db_session.add_all([schueler, excuse_status])
     await db_session.flush()
