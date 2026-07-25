@@ -30,7 +30,11 @@ class WebUntisClient:
         return f"https://{self._settings.webuntis_server}/WebUntis/jsonrpc.do"
 
     async def __aenter__(self) -> WebUntisClient:
-        await self._authenticate()
+        try:
+            await self._authenticate()
+        except:
+            await self._http.aclose()
+            raise
         return self
 
     async def __aexit__(
@@ -39,9 +43,11 @@ class WebUntisClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        if self._session_id is not None:
-            await self._raw_call("logout", {})
-        await self._http.aclose()
+        try:
+            if self._session_id is not None:
+                await self._raw_call("logout", {})
+        finally:
+            await self._http.aclose()
 
     async def _authenticate(self) -> None:
         payload = {

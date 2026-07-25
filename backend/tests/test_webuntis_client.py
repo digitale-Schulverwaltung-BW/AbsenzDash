@@ -83,3 +83,38 @@ async def test_context_manager_calls_logout_on_exit():
         pass
 
     assert logout_route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_client_closed_on_authentication_failure():
+    """Verify that httpx.AsyncClient is closed even when authentication fails."""
+    respx.post(RPC_URL, params={"school": "test"}, json__method="authenticate").mock(
+        return_value=httpx.Response(200, json={"id": "auth", "error": {"code": -8504, "message": "bad credentials"}, "jsonrpc": "2.0"})
+    )
+
+    client = WebUntisClient(settings)
+    with pytest.raises(WebUntisError):
+        async with client:
+            pass
+
+    # Verify the underlying httpx.AsyncClient was closed
+    assert client._http.is_closed
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_client_closed_on_logout_failure():
+    """Verify that httpx.AsyncClient is closed even when logout fails."""
+    _auth_route()
+    respx.post(RPC_URL, params={"school": "test"}, json__method="logout").mock(
+        return_value=httpx.Response(500, json={"id": "logout", "error": {"message": "Server error"}, "jsonrpc": "2.0"})
+    )
+
+    client = WebUntisClient(settings)
+    with pytest.raises(Exception):  # logout failure raises from raise_for_status()
+        async with client:
+            pass
+
+    # Verify the underlying httpx.AsyncClient was closed despite logout failure
+    assert client._http.is_closed
