@@ -1,3 +1,4 @@
+from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -84,3 +85,38 @@ async def test_run_full_sync_gives_up_after_max_attempts(db_session, monkeypatch
     result = await db_session.execute(select(Einstellung))
     einstellung = result.scalars().first()
     assert einstellung is None or einstellung.letzter_sync_am is None
+
+
+def test_fehlzeiten_zeitraum_with_letzter_sync_am():
+    """Branch 1: letzter_sync_am is set, von = letzter_sync_am - 1 day."""
+    sync_date = datetime(2024, 7, 15, 10, 30, tzinfo=timezone.utc)
+    einstellung = Einstellung(letzter_sync_am=sync_date)
+    heute = date(2024, 7, 20)
+
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+
+    assert von == date(2024, 7, 14)
+    assert bis == heute
+
+
+def test_fehlzeiten_zeitraum_with_schuljahr_start_cache():
+    """Branch 2: schuljahr_start_cache is set, von = schuljahr_start_cache."""
+    schuljahr_start = date(2024, 9, 1)
+    einstellung = Einstellung(schuljahr_start_cache=schuljahr_start)
+    heute = date(2024, 7, 20)
+
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+
+    assert von == schuljahr_start
+    assert bis == heute
+
+
+def test_fehlzeiten_zeitraum_fallback():
+    """Branch 3: Both letzter_sync_am and schuljahr_start_cache are None, von = heute."""
+    einstellung = Einstellung()
+    heute = date(2024, 7, 20)
+
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+
+    assert von == heute
+    assert bis == heute
