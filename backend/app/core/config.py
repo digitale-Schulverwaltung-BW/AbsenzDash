@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     asv_csv_column_klasse: str = "Klasse"
     asv_csv_column_eintrittsdatum: str = "Eintrittsdatum"
     asv_csv_column_austrittsdatum: str = "Austrittsdatum"
+    webuntis_sync_retry_delay_minutes: int = 30
+    webuntis_sync_retry_max_attempts: int = 4
 
 
 settings = Settings()
