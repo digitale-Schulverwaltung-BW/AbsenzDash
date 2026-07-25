@@ -29,7 +29,7 @@ async def sync_klassenbuch(client: WebUntisClient, db: AsyncSession, von: date, 
     )
 
     schueler_id_by_externe_id = dict((await db.execute(select(Schueler.externe_id, Schueler.id))).all())
-    kategorie_id_by_name = dict((await db.execute(select(ClassregCategory.name, ClassregCategory.id))).all())
+    kategorie_id_by_webuntis_id = dict((await db.execute(select(ClassregCategory.webuntis_id, ClassregCategory.id))).all())
 
     existing = (await db.execute(select(KlassenbuchEintrag))).scalars().all()
     by_webuntis_id = {e.webuntis_id: e for e in existing}
@@ -40,9 +40,9 @@ async def sync_klassenbuch(client: WebUntisClient, db: AsyncSession, von: date, 
             logger.warning("Klassenbuch-Sync: unbekannte externe_id=%s, uebersprungen", row["studentid"])
             continue
 
-        kategorie_id = kategorie_id_by_name.get(row["subject"])
+        kategorie_id = kategorie_id_by_webuntis_id.get(row["categoryId"])
         if kategorie_id is None:
-            logger.warning("Klassenbuch-Sync: unbekannte Kategorie %r, uebersprungen", row["subject"])
+            logger.warning("Klassenbuch-Sync: unbekannte categoryId=%s, uebersprungen", row["categoryId"])
             continue
 
         eintrag = by_webuntis_id.get(row["eventId"])

@@ -13,14 +13,14 @@ from app.services.webuntis_klassenbuch_sync import sync_klassenbuch
 @pytest.mark.asyncio
 async def test_sync_klassenbuch_creates_entry(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
-    kategorie = ClassregCategory(name="stören")
+    kategorie = ClassregCategory(name="stören", webuntis_id=1)
     db_session.add_all([schueler, kategorie])
     await db_session.commit()
 
     client = AsyncMock()
     client.call.return_value = [
         {
-            "eventId": 19245, "studentid": "ext-1", "subject": "stören", "date": 20260623,
+            "eventId": 19245, "studentid": "ext-1", "subject": "D", "categoryId": 1, "date": 20260623,
             "text": "Hat gestört", "lessonId": 152327,
             "createTeacher": {"id": 51, "name": "X"}, "updateTeacher": {"id": 51, "name": "X"},
         }
@@ -39,13 +39,13 @@ async def test_sync_klassenbuch_creates_entry(db_session):
 
 @pytest.mark.asyncio
 async def test_sync_klassenbuch_skips_unknown_externe_id(db_session):
-    kategorie = ClassregCategory(name="stören")
+    kategorie = ClassregCategory(name="stören", webuntis_id=1)
     db_session.add(kategorie)
     await db_session.commit()
 
     client = AsyncMock()
     client.call.return_value = [
-        {"eventId": 1, "studentid": "unbekannt", "subject": "stören", "date": 20260623, "text": ""}
+        {"eventId": 1, "studentid": "unbekannt", "subject": "D", "categoryId": 1, "date": 20260623, "text": ""}
     ]
 
     await sync_klassenbuch(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
@@ -62,7 +62,7 @@ async def test_sync_klassenbuch_skips_unknown_kategorie(db_session):
 
     client = AsyncMock()
     client.call.return_value = [
-        {"eventId": 1, "studentid": "ext-1", "subject": "unbekannt", "date": 20260623, "text": ""}
+        {"eventId": 1, "studentid": "ext-1", "subject": "D", "categoryId": 999, "date": 20260623, "text": ""}
     ]
 
     await sync_klassenbuch(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
@@ -74,7 +74,7 @@ async def test_sync_klassenbuch_skips_unknown_kategorie(db_session):
 @pytest.mark.asyncio
 async def test_sync_klassenbuch_upserts_existing_entry(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
-    kategorie = ClassregCategory(name="stören")
+    kategorie = ClassregCategory(name="stören", webuntis_id=1)
     db_session.add_all([schueler, kategorie])
     await db_session.commit()
 
@@ -87,7 +87,7 @@ async def test_sync_klassenbuch_upserts_existing_entry(db_session):
 
     client = AsyncMock()
     client.call.return_value = [
-        {"eventId": 1, "studentid": "ext-1", "subject": "stören", "date": 20260623, "text": "neu"}
+        {"eventId": 1, "studentid": "ext-1", "subject": "D", "categoryId": 1, "date": 20260623, "text": "neu"}
     ]
 
     await sync_klassenbuch(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
