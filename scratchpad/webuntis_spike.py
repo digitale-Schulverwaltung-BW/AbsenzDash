@@ -566,6 +566,48 @@ def main():
         else:
             print("Keine Fehlzeiten-Einträge im Testzeitraum - Prüfung nicht möglich.")
 
+        section("15) Neu - Welches getClassregEvents-Feld traegt die Klassenbuch-Kategorie?")
+        print(
+            "Frage: TECH-SPEC.md nimmt an, 'subject' (Kuerzel wie 'LBT1') liesse sich gegen "
+            "classreg_category.name (z.B. 'stoeren') abgleichen - das sind aber vermutlich "
+            "zwei verschiedene Namensraeume (Unterrichtsfach vs. Klassenbuch-Kategorie). "
+            "Pruefung: welches Feld traegt wirklich die Kategorie?"
+        )
+        category_result, category_error = rpc_call(client, session_id, "getClassregCategories", {})
+        known_category_names = (
+            {c.get("name") for c in category_result if c.get("name")} if category_result else set()
+        )
+        print(f"Bekannte Kategorie-Namen: {sorted(known_category_names)}")
+
+        if classreg_entries:
+            all_keys = set()
+            for e in classreg_entries:
+                all_keys |= set(e.keys())
+            print(f"Alle Feldnamen ueber {len(classreg_entries)} Klassenbuch-Eintraege: {sorted(all_keys)}")
+
+            subject_values = {e.get("subject") for e in classreg_entries if e.get("subject")}
+            print(f"Beobachtete 'subject'-Werte (Stichprobe): {sorted(subject_values)[:15]}")
+            print(
+                f"-> Ueberschneidung 'subject' mit bekannten Kategorie-Namen: "
+                f"{subject_values & known_category_names or 'KEINE'}"
+            )
+
+            for key in sorted(all_keys):
+                if key == "subject":
+                    continue
+                values = {str(e.get(key)) for e in classreg_entries if e.get(key) not in (None, "")}
+                overlap = values & known_category_names
+                if overlap:
+                    print(f"-> Feld '{key}' ueberschneidet sich mit Kategorie-Namen: {overlap}")
+
+            print(
+                "\nBeispiel-Eintrag mit allen Feldern (falls noch nicht offensichtlich, welches "
+                "Feld die Kategorie traegt):"
+            )
+            print(json.dumps(redact(classreg_entries[0]), indent=2, ensure_ascii=False))
+        else:
+            print("Keine Klassenbuch-Eintraege im Testzeitraum - Pruefung nicht moeglich.")
+
         section("Logout")
         rpc_call(client, session_id, "logout", {})
         print("Fertig. Bitte die komplette Ausgabe oben zurückmelden.")
