@@ -1,8 +1,16 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.core.scheduler import create_scheduler, start_scheduler
+
+# Configure logging for APScheduler
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logging.getLogger("apscheduler").setLevel(logging.INFO)
 
 
 @asynccontextmanager
