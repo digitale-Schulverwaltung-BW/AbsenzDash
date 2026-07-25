@@ -10,7 +10,7 @@ from app.models.schueler import Schueler
 
 @pytest.mark.asyncio
 async def test_klassenbuch_eintrag_roundtrip(db_session):
-    schueler = Schueler(webuntis_id=1, vorname="A", nachname="B")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     kategorie = ClassregCategory(name="stören", long_name="Störung des Unterrichts", group_name="Störung")
     db_session.add_all([schueler, kategorie])
     await db_session.flush()
