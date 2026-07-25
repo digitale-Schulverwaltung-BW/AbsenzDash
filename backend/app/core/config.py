@@ -6,6 +6,10 @@ class Settings(BaseSettings):
 
     database_url: str
     wordpress_proxy_secret: str
+    webuntis_server: str
+    webuntis_school: str
+    webuntis_username: str
+    webuntis_password: str
 
 
 settings = Settings()
