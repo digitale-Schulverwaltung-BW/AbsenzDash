@@ -19,10 +19,12 @@ async def _read_sync_interval_cron() -> str:
 
 
 async def _run_main_sync_job(scheduler: AsyncIOScheduler) -> None:
-    async with async_session_factory() as db:
-        await run_full_sync(db)
-    cron_expr = await _read_sync_interval_cron()
-    scheduler.reschedule_job(MAIN_SYNC_JOB_ID, trigger=CronTrigger.from_crontab(cron_expr))
+    try:
+        async with async_session_factory() as db:
+            await run_full_sync(db)
+    finally:
+        cron_expr = await _read_sync_interval_cron()
+        scheduler.reschedule_job(MAIN_SYNC_JOB_ID, trigger=CronTrigger.from_crontab(cron_expr))
 
 
 def create_scheduler() -> AsyncIOScheduler:
