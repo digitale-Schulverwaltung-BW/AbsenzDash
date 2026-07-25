@@ -11,3 +11,4 @@
 
 - [SPECS.md](SPECS.md) — fachliche Spezifikation.
 - [TECH-SPEC.md](TECH-SPEC.md) — Datenmodell, API-Vertrag, WebUntis-Feldmapping; gegen die reale WebUntis-Instanz der Schule validiert (siehe dort Abschnitt 5).
+- [ROADMAP.md](ROADMAP.md) — Fortschritts-Tracker: welcher Plan deckt welchen Teil von SPECS.md ab, was ist noch offen. Nach jedem abgeschlossenen Plan aktualisieren.
