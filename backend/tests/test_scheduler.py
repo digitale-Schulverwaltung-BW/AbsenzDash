@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
@@ -94,6 +95,61 @@ async def test_run_main_sync_job_reschedules_without_waiting_for_sync_to_finish(
 
     release_sync.set()
     await asyncio.wait_for(task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_run_main_sync_job_registers_and_deregisters_task_in_background_set(monkeypatch, db_session):
+    """Regression test for the bookkeeping fix in commit e54c3ff: while a sync
+    is running, its task must be registered in the module-level
+    `_background_sync_tasks` set (the strong reference required per asyncio's
+    docs, since the event loop itself only holds a weak one), and the
+    done-callback must discard it from that set once the task completes.
+
+    Note: this test does NOT demonstrate GC-survival on its own. While the
+    task is suspended on `release_sync.wait()`, the `release_sync`/
+    `sync_started` Event objects held by this test function are themselves
+    GC roots that transitively keep the task alive (Event._waiters ->
+    Future._callbacks -> the task's __wakeup), independent of whether
+    `_background_sync_tasks` exists at all. The `gc.collect()` call below is
+    kept only as harmless defense-in-depth; the real coverage is the
+    set-membership assertions before and after."""
+    db_session.add(Einstellung(sync_interval_cron="*/20 * * * *"))
+    await db_session.commit()
+
+    sync_started = asyncio.Event()
+    release_sync = asyncio.Event()
+
+    async def _slow_sync(_session_factory):
+        sync_started.set()
+        await release_sync.wait()
+
+    monkeypatch.setattr(scheduler_module, "run_full_sync", _slow_sync)
+
+    fake_scheduler = Mock()
+    # Deliberately don't keep our own reference to the returned task anywhere a
+    # GC pass could trivially find it.
+    await scheduler_module._run_main_sync_job(fake_scheduler)
+    await asyncio.wait_for(sync_started.wait(), timeout=1)
+
+    assert len(scheduler_module._background_sync_tasks) == 1
+    assert all(not t.done() for t in scheduler_module._background_sync_tasks)
+
+    gc.collect()
+
+    # Still present and still running.
+    assert len(scheduler_module._background_sync_tasks) == 1
+    assert all(not t.done() for t in scheduler_module._background_sync_tasks)
+
+    release_sync.set()
+
+    async def _wait_until_removed():
+        while scheduler_module._background_sync_tasks:
+            await asyncio.sleep(0.01)
+
+    # Proves the done-callback fired and discarded the task from the set.
+    await asyncio.wait_for(_wait_until_removed(), timeout=1)
+
+    assert scheduler_module._background_sync_tasks == set()
 
 
 @pytest.mark.asyncio
