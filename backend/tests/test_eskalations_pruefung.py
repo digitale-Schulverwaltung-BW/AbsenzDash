@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.models.classreg_category import ClassregCategory
 from app.models.einstellung import Einstellung
+from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
 from app.models.schueler import Schueler
@@ -33,6 +34,40 @@ async def _make_fehlzeiten_regel(db_session, schwellenwert: int = 4) -> Schwellw
             schwellenwert=schwellenwert,
             fehlzeiten_filter="alle",
             empfaenger_rollen=["klassenlehrkraft"],
+        )
+    )
+    await db_session.commit()
+    return regel
+
+
+async def _make_zweistufige_fehlzeiten_regel(
+    db_session,
+    schwellenwert_stufe1: int = 2,
+    schwellenwert_stufe2: int = 5,
+    einheit: str = "fehltage",
+    fehlzeiten_filter: str = "alle",
+) -> SchwellwertRegel:
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id,
+            stufe_nr=1,
+            einheit=einheit,
+            schwellenwert=schwellenwert_stufe1,
+            fehlzeiten_filter=fehlzeiten_filter,
+            empfaenger_rollen=["klassenlehrkraft"],
+        )
+    )
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id,
+            stufe_nr=2,
+            einheit=einheit,
+            schwellenwert=schwellenwert_stufe2,
+            fehlzeiten_filter=fehlzeiten_filter,
+            empfaenger_rollen=["bereichsleiter"],
         )
     )
     await db_session.commit()
@@ -94,7 +129,11 @@ async def test_pruefe_schwellwerte_respects_fenster_start_from_letzter_reset(db_
     regel = await _make_fehlzeiten_regel(db_session, schwellenwert=1)
     db_session.add(
         SchuelerZaehlerstand(
-            schueler_id=schueler.id, regel_id=regel.id, aktueller_stand=0, letzter_reset_am=datetime.date(2026, 1, 15)
+            schueler_id=schueler.id,
+            typ="fehlzeiten",
+            regel_id=regel.id,
+            aktueller_stand=0,
+            letzter_reset_am=datetime.date(2026, 1, 15),
         )
     )
     db_session.add(
@@ -144,4 +183,221 @@ async def test_pruefe_schwellwerte_counts_klassenbuch_eintraege_for_klassenbuch_
         select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
     )
     zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_skips_when_no_fenster_start_determinable(db_session):
+    """Weder schuljahr_start_cache noch ein vorhandener letzter_reset_am -> kein Fenster, kein Zaehlerstand."""
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=None)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_multistage_reaches_highest_met_stufe(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_zweistufige_fehlzeiten_regel(db_session, schwellenwert_stufe1=2, schwellenwert_stufe2=5)
+    for tag in range(6):
+        db_session.add(
+            Fehlzeit(
+                schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 1 + tag), start_zeit=0, end_zeit=0
+            )
+        )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr == 2
+    assert zaehlerstand.aktueller_stand == 6
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_multistage_reaches_lower_stufe_not_higher(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_zweistufige_fehlzeiten_regel(db_session, schwellenwert_stufe1=2, schwellenwert_stufe2=5)
+    for tag in range(3):
+        db_session.add(
+            Fehlzeit(
+                schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 1 + tag), start_zeit=0, end_zeit=0
+            )
+        )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr == 1
+    assert zaehlerstand.aktueller_stand == 3
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_multistage_no_stufe_met_still_counts(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_zweistufige_fehlzeiten_regel(db_session, schwellenwert_stufe1=2, schwellenwert_stufe2=5)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr is None
+    assert zaehlerstand.aktueller_stand == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_nur_unentschuldigt_excludes_entschuldigte_fehlzeiten(db_session):
+    schueler = await _make_schueler(db_session)
+    regel = await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    stufe_result = await db_session.execute(select(SchwellwertStufe).where(SchwellwertStufe.regel_id == regel.id))
+    stufe = stufe_result.scalar_one()
+    stufe.fehlzeiten_filter = "nur_unentschuldigt"
+
+    entschuldigt_status = ExcuseStatus(name="entsch.", zaehlt_als_entschuldigt=True)
+    db_session.add(entschuldigt_status)
+    await db_session.flush()
+
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id,
+            typ="tag",
+            datum=datetime.date(2026, 1, 10),
+            start_zeit=0,
+            end_zeit=0,
+            excuse_status_id=entschuldigt_status.id,
+        )
+    )
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id,
+            typ="tag",
+            datum=datetime.date(2026, 1, 11),
+            start_zeit=0,
+            end_zeit=0,
+            excuse_status_id=None,
+        )
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.aktueller_stand == 1
+    assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_fehlstunden_only_counts_stunde_typ(db_session):
+    schueler = await _make_schueler(db_session)
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id,
+            stufe_nr=1,
+            einheit="fehlstunden",
+            schwellenwert=2,
+            fehlzeiten_filter="alle",
+            empfaenger_rollen=["klassenlehrkraft"],
+        )
+    )
+    for i in range(2):
+        db_session.add(
+            Fehlzeit(
+                schueler_id=schueler.id,
+                typ="stunde",
+                fach="D",
+                datum=datetime.date(2026, 1, 10 + i),
+                start_zeit=800,
+                end_zeit=845,
+            )
+        )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 15), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.aktueller_stand == 2
+    assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_excludes_invalid_fehlzeiten(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id,
+            typ="tag",
+            datum=datetime.date(2026, 1, 10),
+            start_zeit=0,
+            end_zeit=0,
+            invalid=False,
+        )
+    )
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id,
+            typ="tag",
+            datum=datetime.date(2026, 1, 11),
+            start_zeit=0,
+            end_zeit=0,
+            invalid=True,
+        )
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.aktueller_stand == 1
     assert zaehlerstand.erreichte_stufe_nr == 1

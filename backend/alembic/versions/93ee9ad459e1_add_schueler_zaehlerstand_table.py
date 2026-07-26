@@ -20,6 +20,7 @@ def upgrade() -> None:
     op.create_table('schueler_zaehlerstand',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('schueler_id', sa.Integer(), nullable=False),
+    sa.Column('typ', sa.String(length=20), nullable=False),
     sa.Column('regel_id', sa.Integer(), nullable=False),
     sa.Column('aktueller_stand', sa.Integer(), nullable=False),
     sa.Column('erreichte_stufe_nr', sa.Integer(), nullable=True),
@@ -29,7 +30,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['regel_id'], ['schwellwert_regel.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['schueler_id'], ['schueler.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('schueler_id', 'regel_id', name='uq_schueler_zaehlerstand_paar')
+    sa.UniqueConstraint('schueler_id', 'typ', name='uq_schueler_zaehlerstand_schueler_typ')
     )
     # ### end Alembic commands ###
 

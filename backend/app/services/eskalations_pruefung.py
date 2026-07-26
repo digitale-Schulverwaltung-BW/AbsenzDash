@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -14,6 +15,8 @@ from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
+
+logger = logging.getLogger(__name__)
 
 
 async def resolve_schwellwert_regel(
@@ -45,17 +48,21 @@ async def resolve_schwellwert_regel(
     return result.scalar_one_or_none()
 
 
-async def get_or_create_zaehlerstand(db: AsyncSession, schueler_id: int, regel_id: int) -> SchuelerZaehlerstand:
+async def get_or_create_zaehlerstand(
+    db: AsyncSession, schueler_id: int, typ: str, regel_id: int
+) -> SchuelerZaehlerstand:
     result = await db.execute(
         select(SchuelerZaehlerstand).where(
-            SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.regel_id == regel_id
+            SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.typ == typ
         )
     )
     zaehlerstand = result.scalar_one_or_none()
     if zaehlerstand is None:
-        zaehlerstand = SchuelerZaehlerstand(schueler_id=schueler_id, regel_id=regel_id, aktueller_stand=0)
+        zaehlerstand = SchuelerZaehlerstand(schueler_id=schueler_id, typ=typ, regel_id=regel_id, aktueller_stand=0)
         db.add(zaehlerstand)
         await db.flush()
+    else:
+        zaehlerstand.regel_id = regel_id  # kann sich bei Klassenwechsel aendern; Zaehlerstand selbst bleibt erhalten
     return zaehlerstand
 
 
@@ -118,10 +125,32 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
             if regel is None:
                 continue
 
-            zaehlerstand = await get_or_create_zaehlerstand(db, schueler.id, regel.id)
-            fenster_kandidaten = [d for d in (einstellung.schuljahr_start_cache, zaehlerstand.letzter_reset_am) if d is not None]
-            fenster_start = max(fenster_kandidaten) if fenster_kandidaten else date.min
+            bestehender_result = await db.execute(
+                select(SchuelerZaehlerstand).where(
+                    SchuelerZaehlerstand.schueler_id == schueler.id, SchuelerZaehlerstand.typ == typ
+                )
+            )
+            bestehender_zaehlerstand = bestehender_result.scalar_one_or_none()
 
+            fenster_kandidaten = [
+                d
+                for d in (
+                    einstellung.schuljahr_start_cache,
+                    bestehender_zaehlerstand.letzter_reset_am if bestehender_zaehlerstand else None,
+                )
+                if d is not None
+            ]
+            if not fenster_kandidaten:
+                logger.warning(
+                    "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein schuljahr_start_cache, "
+                    "kein letzter_reset_am) - uebersprungen",
+                    schueler.id,
+                    regel.id,
+                )
+                continue
+            fenster_start = max(fenster_kandidaten)
+
+            zaehlerstand = await get_or_create_zaehlerstand(db, schueler.id, typ, regel.id)
             neue_stufe_nr, neuer_stand = await _ermittle_erreichte_stufe(db, regel, schueler.id, fenster_start)
 
             zaehlerstand.erreichte_stufe_nr = neue_stufe_nr

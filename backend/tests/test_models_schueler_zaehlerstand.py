@@ -17,6 +17,7 @@ async def test_schueler_zaehlerstand_roundtrip(db_session):
 
     zaehlerstand = SchuelerZaehlerstand(
         schueler_id=schueler.id,
+        typ="fehlzeiten",
         regel_id=regel.id,
         aktueller_stand=3,
         erreichte_stufe_nr=1,
