@@ -7,8 +7,14 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.integrations.webuntis_client import WebUntisError
+from app.models.benachrichtigung import Benachrichtigung
 from app.models.einstellung import Einstellung
+from app.models.fehlzeit import Fehlzeit
+from app.models.schueler import Schueler
+from app.models.schwellwert_regel import SchwellwertRegel
+from app.models.schwellwert_stufe import SchwellwertStufe
 from app.services import sync_orchestrator
+from app.services.eskalations_pruefung import pruefe_schwellwerte as real_pruefe_schwellwerte
 
 
 class _FakeWebUntisClient:
@@ -31,6 +37,7 @@ def _patch_phases(monkeypatch):
     monkeypatch.setattr(sync_orchestrator, "import_schueler", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_fehlzeiten", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_klassenbuch", AsyncMock())
+    monkeypatch.setattr(sync_orchestrator, "pruefe_schwellwerte", AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -53,10 +60,11 @@ async def test_run_full_sync_calls_phases_in_order(db_session):
     sync_orchestrator.import_schueler.side_effect = lambda *a: calls.append("schueler")
     sync_orchestrator.sync_fehlzeiten.side_effect = lambda *a: calls.append("fehlzeiten")
     sync_orchestrator.sync_klassenbuch.side_effect = lambda *a: calls.append("klassenbuch")
+    sync_orchestrator.pruefe_schwellwerte.side_effect = lambda *a: calls.append("schwellwerte")
 
     await sync_orchestrator.run_full_sync(async_session_factory)
 
-    assert calls == ["abteilungen", "klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch"]
+    assert calls == ["abteilungen", "klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch", "schwellwerte"]
 
 
 @pytest.mark.asyncio
@@ -123,3 +131,33 @@ def test_fehlzeiten_zeitraum_fallback():
 
     assert von == heute
     assert bis == heute
+
+
+@pytest.mark.asyncio
+async def test_run_full_sync_end_to_end_triggers_benachrichtigung(db_session, monkeypatch):
+    """Einziger Test in dieser Datei, der pruefe_schwellwerte NICHT mockt - prueft die reale Verdrahtung."""
+    monkeypatch.setattr(sync_orchestrator, "pruefe_schwellwerte", real_pruefe_schwellwerte)
+
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id, stufe_nr=1, einheit="fehltage", schwellenwert=1, fehlzeiten_filter="alle",
+            empfaenger_rollen=["schulleitung"],
+        )
+    )
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=date(2025, 9, 1))
+    db_session.add(einstellung)
+    await db_session.commit()
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    assert result.scalar_one().status == "kein_empfaenger"
