@@ -4,11 +4,17 @@ import pytest
 from sqlalchemy import select
 
 from app.models.ausnahme import Ausnahme
+from app.models.benachrichtigung import Benachrichtigung
+from app.models.bereich import Bereich, bereich_klasse
 from app.models.classreg_category import ClassregCategory
 from app.models.einstellung import Einstellung
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
+from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
+from app.models.nutzer import Nutzer
+from app.models.nutzer_bereich import nutzer_bereich
+from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
@@ -450,3 +456,125 @@ async def test_pruefe_schwellwerte_excludes_invalid_fehlzeiten(db_session):
     zaehlerstand = result.scalar_one()
     assert zaehlerstand.aktueller_stand == 1
     assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_writes_benachrichtigung_on_newly_reached_stufe(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.status == "gesendet"
+    assert benachrichtigung.empfaenger == [{"rolle": "klassenlehrkraft", "nutzer_id": nutzer.id}]
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_no_repeat_benachrichtigung_on_unchanged_stufe(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 21), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    assert len(result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_kein_empfaenger_when_no_klassenlehrkraft_registered(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.status == "kein_empfaenger"
+    assert benachrichtigung.empfaenger == []
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_initial_import_status_before_first_full_sync(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.status == "initial_import"
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    bereich = Bereich(name="Kaufmaennischer Bereich")
+    db_session.add_all([klasse, bereich])
+    await db_session.flush()
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    bereichsleiter = Nutzer(wp_user_id="u2", email="b@b.de", name="Leiter", rolle="bereichsleiter")
+    db_session.add_all([schueler, bereichsleiter])
+    await db_session.flush()
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=bereichsleiter.id, bereich_id=bereich.id))
+
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id, stufe_nr=1, einheit="fehltage", schwellenwert=1, fehlzeiten_filter="alle",
+            empfaenger_rollen=["bereichsleiter"],
+        )
+    )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter.id}]

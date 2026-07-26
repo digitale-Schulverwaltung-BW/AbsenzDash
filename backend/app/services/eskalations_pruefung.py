@@ -7,11 +7,16 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ausnahme import Ausnahme
+from app.models.benachrichtigung import Benachrichtigung
+from app.models.bereich import bereich_klasse
 from app.models.einstellung import Einstellung
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
+from app.models.nutzer import Nutzer
+from app.models.nutzer_bereich import nutzer_bereich
+from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
@@ -127,6 +132,58 @@ async def _hat_aktive_ausnahme(db: AsyncSession, schueler_id: int, kategorie: st
     return result.first() is not None
 
 
+async def _resolve_empfaenger(db: AsyncSession, klasse_id: int | None, rollen: list[str]) -> list[dict]:
+    empfaenger: list[dict] = []
+    for rolle in rollen:
+        if rolle == "klassenlehrkraft" and klasse_id is not None:
+            result = await db.execute(
+                select(Nutzer.id).join(NutzerKlasse, NutzerKlasse.nutzer_id == Nutzer.id).where(
+                    NutzerKlasse.klasse_id == klasse_id
+                )
+            )
+            empfaenger.extend({"rolle": rolle, "nutzer_id": nutzer_id} for nutzer_id in result.scalars().all())
+        elif rolle == "bereichsleiter" and klasse_id is not None:
+            result = await db.execute(
+                select(Nutzer.id)
+                .join(nutzer_bereich, nutzer_bereich.c.nutzer_id == Nutzer.id)
+                .join(bereich_klasse, bereich_klasse.c.bereich_id == nutzer_bereich.c.bereich_id)
+                .where(bereich_klasse.c.klasse_id == klasse_id)
+            )
+            empfaenger.extend({"rolle": rolle, "nutzer_id": nutzer_id} for nutzer_id in result.scalars().all())
+        elif rolle == "schulleitung":
+            result = await db.execute(select(Nutzer.id).where(Nutzer.rolle == "schulleitung"))
+            empfaenger.extend({"rolle": rolle, "nutzer_id": nutzer_id} for nutzer_id in result.scalars().all())
+    return empfaenger
+
+
+async def _schreibe_benachrichtigung(
+    db: AsyncSession, schueler: Schueler, regel: SchwellwertRegel, stufe_nr: int, einstellung: Einstellung
+) -> None:
+    stufe = (
+        await db.execute(
+            select(SchwellwertStufe).where(SchwellwertStufe.regel_id == regel.id, SchwellwertStufe.stufe_nr == stufe_nr)
+        )
+    ).scalar_one()
+
+    if not einstellung.initialer_import_abgeschlossen:
+        status = "initial_import"
+        empfaenger: list[dict] = []
+    else:
+        empfaenger = await _resolve_empfaenger(db, schueler.klasse_id, stufe.empfaenger_rollen)
+        status = "gesendet" if empfaenger else "kein_empfaenger"
+
+    db.add(
+        Benachrichtigung(
+            schueler_id=schueler.id,
+            regel_id=regel.id,
+            stufe_nr=stufe_nr,
+            gesendet_am=datetime.now(timezone.utc),
+            empfaenger=empfaenger,
+            status=status,
+        )
+    )
+
+
 async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einstellung) -> None:
     """Kernschleife: fuer jeden aktiven Schueler und Regel-Typ Zaehlerstand neu berechnen (SPECS.md Abschnitt 5)."""
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
@@ -169,5 +226,9 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
             zaehlerstand = await get_or_create_zaehlerstand(db, schueler.id, typ, regel.id)
             neue_stufe_nr, neuer_stand = await _ermittle_erreichte_stufe(db, regel, schueler.id, fenster_start)
 
+            alte_stufe_nr = zaehlerstand.erreichte_stufe_nr
             zaehlerstand.erreichte_stufe_nr = neue_stufe_nr
             zaehlerstand.aktueller_stand = neuer_stand
+
+            if neue_stufe_nr is not None and (alte_stufe_nr is None or neue_stufe_nr > alte_stufe_nr):
+                await _schreibe_benachrichtigung(db, schueler, regel, neue_stufe_nr, einstellung)
