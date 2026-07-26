@@ -660,6 +660,8 @@ git commit -m "test: lock in Abteilung-less-Klasse fallback, cross-category Ausn
 
 ## Self-Review
 
+> **Post-merge correction:** Task 1's `bestehender=None` default (as written in this plan's Step 3 and the Self-Review below) was superseded during task review — a plain `None` default couldn't distinguish "caller didn't supply a row" from "caller supplied it and it's `None`", silently defeating the optimization for new counters. Shipped code uses a private sentinel default instead (commit `c3d5fc8`). Kept here as a historical record of the plan as written; the sentinel is the actual behavior.
+
 **Spec coverage:** All four review items are covered — Task 1 (query caching + zaehlerstand reuse), Task 2 (log-spam hoist), Task 3 (missing index migration), Task 4 (three regression tests). No review item left unaddressed.
 
 **Placeholder scan:** No TBD/TODO markers; every step has complete, runnable code and exact commands.

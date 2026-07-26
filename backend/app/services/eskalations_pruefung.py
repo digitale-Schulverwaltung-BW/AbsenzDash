@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,9 @@ from app.models.schwellwert_stufe import SchwellwertStufe
 
 logger = logging.getLogger(__name__)
 
-_ZAEHLERSTAND_NICHT_ANGEGEBEN = object()
+# Sentinel: unterscheidet "Aufrufer hat keine Zeile uebergeben" von "Aufrufer hat
+# uebergeben, dass keine Zeile existiert" - None ist hier ein gueltiger Wert.
+_ZAEHLERSTAND_NICHT_ANGEGEBEN: Any = object()
 
 
 async def resolve_schwellwert_regel(
@@ -234,6 +237,8 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
                 if d is not None
             ]
             if not fenster_kandidaten:
+                # Defensiv: bei gesetztem schuljahr_start_cache aktuell nicht erreichbar
+                # (Kandidatenliste waere nie leer); Warnung nur fuer kuenftige Fenster-Quellen.
                 if not kein_schuljahr_start:
                     logger.warning(
                         "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein letzter_reset_am) - "

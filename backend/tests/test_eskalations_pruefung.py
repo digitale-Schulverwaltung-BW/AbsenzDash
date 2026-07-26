@@ -1,5 +1,6 @@
 import datetime
 import logging
+from contextlib import contextmanager
 from unittest import mock
 
 import pytest
@@ -83,6 +84,22 @@ async def _make_zweistufige_fehlzeiten_regel(
     )
     await db_session.commit()
     return regel
+
+
+@contextmanager
+def _zaehle_zaehlerstand_selects():
+    count = 0
+
+    def _zaehler(conn, cursor, statement, parameters, context, executemany):
+        nonlocal count
+        if statement.strip().upper().startswith("SELECT") and "schueler_zaehlerstand" in statement:
+            count += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _zaehler)
+    try:
+        yield lambda: count
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _zaehler)
 
 
 @pytest.mark.asyncio
@@ -665,20 +682,10 @@ async def test_pruefe_schwellwerte_selects_existing_zaehlerstand_only_once(db_se
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    select_count = 0
-
-    def _count_zaehlerstand_selects(conn, cursor, statement, parameters, context, executemany):
-        nonlocal select_count
-        if statement.strip().upper().startswith("SELECT") and "schueler_zaehlerstand" in statement:
-            select_count += 1
-
-    event.listen(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
-    try:
+    with _zaehle_zaehlerstand_selects() as get_count:
         await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
-    finally:
-        event.remove(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
 
-    assert select_count == 1
+    assert get_count() == 1
 
 
 @pytest.mark.asyncio
@@ -691,20 +698,10 @@ async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exis
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    select_count = 0
-
-    def _count_zaehlerstand_selects(conn, cursor, statement, parameters, context, executemany):
-        nonlocal select_count
-        if statement.strip().upper().startswith("SELECT") and "schueler_zaehlerstand" in statement:
-            select_count += 1
-
-    event.listen(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
-    try:
+    with _zaehle_zaehlerstand_selects() as get_count:
         await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
-    finally:
-        event.remove(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
 
-    assert select_count == 1
+    assert get_count() == 1
 
 
 @pytest.mark.asyncio
@@ -727,7 +724,8 @@ async def test_pruefe_schwellwerte_logs_missing_schuljahr_start_once_not_per_sch
 @pytest.mark.asyncio
 async def test_pruefe_schwellwerte_ausnahme_kategorie_is_independent_across_typen(db_session):
     """Eine aktive Ausnahme fuer Kategorie 'klassenbuch' darf die 'fehlzeiten'-Verarbeitung desselben
-    Schuelers nicht unterdruecken (Kategorien sind unabhaengig voneinander)."""
+    Schuelers nicht unterdruecken (regressionstestet die klassenbuch->fehlzeiten Richtung; die
+    umgekehrte Richtung folgt aus derselben Kategorie-Filterlogik in _hat_aktive_ausnahme)."""
     schueler = await _make_schueler(db_session)
     await _make_fehlzeiten_regel(db_session, schwellenwert=1)
     db_session.add(
