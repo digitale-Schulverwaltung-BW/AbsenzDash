@@ -722,3 +722,77 @@ async def test_pruefe_schwellwerte_logs_missing_schuljahr_start_once_not_per_sch
 
     fenster_warnungen = [r for r in caplog.records if "schuljahr_start_cache" in r.getMessage()]
     assert len(fenster_warnungen) == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_ausnahme_kategorie_is_independent_across_typen(db_session):
+    """Eine aktive Ausnahme fuer Kategorie 'klassenbuch' darf die 'fehlzeiten'-Verarbeitung desselben
+    Schuelers nicht unterdruecken (Kategorien sind unabhaengig voneinander)."""
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    db_session.add(Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Testgrund", aktiv=True))
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(
+            SchuelerZaehlerstand.schueler_id == schueler.id, SchuelerZaehlerstand.typ == "fehlzeiten"
+        )
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_duplicate(db_session):
+    """Ein Bereichsleiter, der zwei Bereiche leitet, die beide auf dieselbe Klasse gemappt sind, darf nur
+    EINMAL als Empfaenger auftauchen (Regression fuer fehlendes .distinct(), bereichsleiter-Fall — bisher
+    nur fuer klassenlehrkraft abgedeckt)."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    bereich_a = Bereich(name="Kaufmaennischer Bereich")
+    bereich_b = Bereich(name="Technischer Bereich")
+    db_session.add_all([klasse, bereich_a, bereich_b])
+    await db_session.flush()
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich_a.id, klasse_id=klasse.id))
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich_b.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    bereichsleiter = Nutzer(wp_user_id="u2", email="b@b.de", name="Leiter", rolle="bereichsleiter")
+    db_session.add_all([schueler, bereichsleiter])
+    await db_session.flush()
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=bereichsleiter.id, bereich_id=bereich_a.id))
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=bereichsleiter.id, bereich_id=bereich_b.id))
+
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id,
+            stufe_nr=1,
+            einheit="fehltage",
+            schwellenwert=1,
+            fehlzeiten_filter="alle",
+            empfaenger_rollen=["bereichsleiter"],
+        )
+    )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    bereichsleiter_id = bereichsleiter.id
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+    db_session.expunge_all()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter_id}]

@@ -75,3 +75,20 @@ async def test_resolve_schwellwert_regel_handles_nonexistent_klasse_id_gracefull
     result = await resolve_schwellwert_regel(db_session, 999999, "fehlzeiten")
 
     assert result.id == schulweit.id
+
+
+@pytest.mark.asyncio
+async def test_resolve_schwellwert_regel_falls_back_to_schulweit_when_klasse_has_no_abteilung(db_session):
+    """Eine Klasse ohne Abteilung (abteilung_id=None) soll die Abteilungs-Auflösung ueberspringen und
+    direkt auf die schulweite Regel zurueckfallen, statt zu crashen oder faelschlich None zu liefern."""
+    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=None)
+    db_session.add(klasse)
+    await db_session.flush()
+
+    schulweit = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(schulweit)
+    await db_session.commit()
+
+    result = await resolve_schwellwert_regel(db_session, klasse.id, "fehlzeiten")
+
+    assert result.id == schulweit.id
