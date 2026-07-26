@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -22,13 +23,22 @@ async def _read_sync_interval_cron() -> str:
         return einstellung.sync_interval_cron if einstellung else "*/30 * * * *"
 
 
-async def _run_main_sync_job(scheduler: AsyncIOScheduler) -> None:
+async def _run_sync_task() -> None:
     try:
-        async with async_session_factory() as db:
-            await run_full_sync(db)
-    finally:
-        cron_expr = await _read_sync_interval_cron()
-        scheduler.reschedule_job(MAIN_SYNC_JOB_ID, trigger=CronTrigger.from_crontab(cron_expr))
+        await run_full_sync(async_session_factory)
+    except Exception:
+        logger.exception("Unerwarteter Fehler im Sync-Hintergrund-Task")
+
+
+async def _run_main_sync_job(scheduler: AsyncIOScheduler) -> asyncio.Task[None]:
+    """Stoesst den Sync-Lauf (inkl. seiner eigenen Retry-Logik) als
+    Hintergrund-Task an und plant den naechsten regulaeren Cron-Termin sofort
+    neu — unabhaengig davon, wie lange der Sync-Lauf (mit Retries bis zu ~2h)
+    noch braucht (TECH-SPEC.md Abschnitt 1.3b)."""
+    task = asyncio.create_task(_run_sync_task())
+    cron_expr = await _read_sync_interval_cron()
+    scheduler.reschedule_job(MAIN_SYNC_JOB_ID, trigger=CronTrigger.from_crontab(cron_expr))
+    return task
 
 
 def create_scheduler() -> AsyncIOScheduler:
