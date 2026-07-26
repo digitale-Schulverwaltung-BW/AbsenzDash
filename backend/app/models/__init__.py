@@ -9,6 +9,8 @@ from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
+from app.models.massnahme import Massnahme
+from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
 from app.models.nutzer import ROLLEN, Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
@@ -30,6 +32,9 @@ __all__ = [
     "Fehlzeit",
     "Klasse",
     "KlassenbuchEintrag",
+    "Massnahme",
+    "MassnahmenTyp",
+    "massnahmen_typ_regel",
     "Nutzer",
     "nutzer_bereich",
     "NutzerKlasse",
