@@ -24,10 +24,6 @@ Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung
 5. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
 6. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 3/4 sein statt eigener Plan.
 
-## Bekannte offene technische Schulden
-
-- **Sync-Orchestrator-Retry-Robustheit** (aus Plan 2, bewusst zurückgestellt): DB-Session bleibt über den gesamten Retry-Loop offen (bis zu ~90 Min bei Default-Settings); ein fehlgeschlagener Lauf blockiert den nächsten regulären Cron-Termin statt unabhängig davon zu laufen (Abweichung von TECH-SPEC.md §1.3b). Siehe Memory `plan2_known_followups` für Details.
-
 ## Nicht-Ziele (dauerhaft außerhalb des Scopes, aus SPECS.md §9)
 
 - Kein direkter E-Mail-Versand an Eltern.
