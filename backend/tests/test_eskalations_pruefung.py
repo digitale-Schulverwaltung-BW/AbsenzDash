@@ -1,4 +1,5 @@
 import datetime
+import logging
 from unittest import mock
 
 import pytest
@@ -704,3 +705,20 @@ async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exis
         event.remove(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
 
     assert select_count == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_logs_missing_schuljahr_start_once_not_per_schueler(db_session, caplog):
+    """Fehlender schuljahr_start_cache soll pro Sync-Lauf nur einmal geloggt werden, nicht einmal pro
+    Schueler (Log-Spam-Fix: vorher eine Warnzeile pro Schueler ohne eigenen letzter_reset_am)."""
+    for i in range(3):
+        db_session.add(Schueler(externe_id=f"ext-{i}", vorname="A", nachname="B", aktiv=True))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=None)
+    with caplog.at_level(logging.WARNING, logger="app.services.eskalations_pruefung"):
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+
+    fenster_warnungen = [r for r in caplog.records if "schuljahr_start_cache" in r.getMessage()]
+    assert len(fenster_warnungen) == 1

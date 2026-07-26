@@ -199,6 +199,13 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
     alle_schueler = schueler_result.scalars().all()
 
+    kein_schuljahr_start = einstellung.schuljahr_start_cache is None
+    if kein_schuljahr_start:
+        logger.warning(
+            "einstellung.schuljahr_start_cache ist nicht gesetzt - Schueler ohne eigenen letzter_reset_am "
+            "werden in diesem Lauf uebersprungen"
+        )
+
     for typ in ("fehlzeiten", "klassenbuch"):
         regel_cache: dict[int | None, SchwellwertRegel | None] = {}
         for schueler in alle_schueler:
@@ -227,12 +234,13 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
                 if d is not None
             ]
             if not fenster_kandidaten:
-                logger.warning(
-                    "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein schuljahr_start_cache, "
-                    "kein letzter_reset_am) - uebersprungen",
-                    schueler.id,
-                    regel.id,
-                )
+                if not kein_schuljahr_start:
+                    logger.warning(
+                        "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein letzter_reset_am) - "
+                        "uebersprungen",
+                        schueler.id,
+                        regel.id,
+                    )
                 continue
             fenster_start = max(fenster_kandidaten)
 
