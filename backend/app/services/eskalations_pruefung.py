@@ -24,6 +24,8 @@ from app.models.schwellwert_stufe import SchwellwertStufe
 
 logger = logging.getLogger(__name__)
 
+_ZAEHLERSTAND_NICHT_ANGEGEBEN = object()
+
 
 async def resolve_schwellwert_regel(
     db: AsyncSession, klasse_id: int | None, typ: str
@@ -59,10 +61,10 @@ async def get_or_create_zaehlerstand(
     schueler_id: int,
     typ: str,
     regel_id: int,
-    bestehender: SchuelerZaehlerstand | None = None,
+    bestehender: SchuelerZaehlerstand | None = _ZAEHLERSTAND_NICHT_ANGEGEBEN,
 ) -> SchuelerZaehlerstand:
     zaehlerstand = bestehender
-    if zaehlerstand is None:
+    if zaehlerstand is _ZAEHLERSTAND_NICHT_ANGEGEBEN:
         result = await db.execute(
             select(SchuelerZaehlerstand).where(
                 SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.typ == typ

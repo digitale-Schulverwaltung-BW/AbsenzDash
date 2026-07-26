@@ -678,3 +678,29 @@ async def test_pruefe_schwellwerte_selects_existing_zaehlerstand_only_once(db_se
         event.remove(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
 
     assert select_count == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exists(db_session):
+    """Auch wenn noch kein SchuelerZaehlerstand existiert (z.B. neuer Schueler), darf nur EIN SELECT
+    auf schueler_zaehlerstand ausgefuehrt werden, kein redundanter zweiter SELECT in
+    get_or_create_zaehlerstand."""
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=5)
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    select_count = 0
+
+    def _count_zaehlerstand_selects(conn, cursor, statement, parameters, context, executemany):
+        nonlocal select_count
+        if statement.strip().upper().startswith("SELECT") and "schueler_zaehlerstand" in statement:
+            select_count += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
+    try:
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _count_zaehlerstand_selects)
+
+    assert select_count == 1
