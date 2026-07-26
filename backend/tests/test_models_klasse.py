@@ -7,7 +7,7 @@ from app.models.klasse import Klasse
 
 @pytest.mark.asyncio
 async def test_klasse_roundtrip(db_session):
-    klasse = Klasse(webuntis_id=3499, name="10a", stufe="10", schulart="BK", webuntis_teacher1_id=63, webuntis_teacher2_id=434)
+    klasse = Klasse(webuntis_id=3499, name="10a", webuntis_teacher1_id=63, webuntis_teacher2_id=434)
     db_session.add(klasse)
     await db_session.commit()
 
