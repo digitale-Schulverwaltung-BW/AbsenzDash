@@ -137,7 +137,7 @@ async def _resolve_empfaenger(db: AsyncSession, klasse_id: int | None, rollen: l
     for rolle in rollen:
         if rolle == "klassenlehrkraft" and klasse_id is not None:
             result = await db.execute(
-                select(Nutzer.id).join(NutzerKlasse, NutzerKlasse.nutzer_id == Nutzer.id).where(
+                select(Nutzer.id).distinct().join(NutzerKlasse, NutzerKlasse.nutzer_id == Nutzer.id).where(
                     NutzerKlasse.klasse_id == klasse_id
                 )
             )
@@ -145,6 +145,7 @@ async def _resolve_empfaenger(db: AsyncSession, klasse_id: int | None, rollen: l
         elif rolle == "bereichsleiter" and klasse_id is not None:
             result = await db.execute(
                 select(Nutzer.id)
+                .distinct()
                 .join(nutzer_bereich, nutzer_bereich.c.nutzer_id == Nutzer.id)
                 .join(bereich_klasse, bereich_klasse.c.bereich_id == nutzer_bereich.c.bereich_id)
                 .where(bereich_klasse.c.klasse_id == klasse_id)

@@ -25,6 +25,7 @@ async def test_benachrichtigung_roundtrip(db_session):
     )
     db_session.add(benachrichtigung)
     await db_session.commit()
+    db_session.expunge_all()
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
     loaded = result.scalar_one()

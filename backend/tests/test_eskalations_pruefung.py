@@ -475,13 +475,16 @@ async def test_pruefe_schwellwerte_writes_benachrichtigung_on_newly_reached_stuf
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    nutzer_id = nutzer.id
+    schueler_id = schueler.id
     await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
     await db_session.commit()
+    db_session.expunge_all()
 
-    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
     benachrichtigung = result.scalar_one()
     assert benachrichtigung.status == "gesendet"
-    assert benachrichtigung.empfaenger == [{"rolle": "klassenlehrkraft", "nutzer_id": nutzer.id}]
+    assert benachrichtigung.empfaenger == [{"rolle": "klassenlehrkraft", "nutzer_id": nutzer_id}]
 
 
 @pytest.mark.asyncio
@@ -498,6 +501,7 @@ async def test_pruefe_schwellwerte_no_repeat_benachrichtigung_on_unchanged_stufe
     await db_session.commit()
     await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 21), einstellung)
     await db_session.commit()
+    db_session.expunge_all()
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
     assert len(result.scalars().all()) == 1
@@ -519,6 +523,7 @@ async def test_pruefe_schwellwerte_kein_empfaenger_when_no_klassenlehrkraft_regi
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
     await db_session.commit()
+    db_session.expunge_all()
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
     benachrichtigung = result.scalar_one()
@@ -538,6 +543,7 @@ async def test_pruefe_schwellwerte_initial_import_status_before_first_full_sync(
     einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=datetime.date(2025, 9, 1))
     await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
     await db_session.commit()
+    db_session.expunge_all()
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
     benachrichtigung = result.scalar_one()
@@ -572,9 +578,43 @@ async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    bereichsleiter_id = bereichsleiter.id
+    schueler_id = schueler.id
     await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
     await db_session.commit()
+    db_session.expunge_all()
 
-    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
     benachrichtigung = result.scalar_one()
-    assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter.id}]
+    assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter_id}]
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_duplicate(db_session):
+    """Ein Lehrer mit zwei NutzerKlasse-Zeilen (webuntis_seed + manuell) fuer dieselbe Klasse
+    darf nur EINMAL als Empfaenger auftauchen (Regression fuer fehlendes .distinct())."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="manuell"))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    nutzer_id = nutzer.id
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+    db_session.expunge_all()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.empfaenger == [{"rolle": "klassenlehrkraft", "nutzer_id": nutzer_id}]
