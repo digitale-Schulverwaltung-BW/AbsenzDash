@@ -5,7 +5,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
@@ -62,17 +62,21 @@ async def _run_once(db: AsyncSession) -> None:
         await db.commit()
 
 
-async def run_full_sync(db: AsyncSession) -> None:
-    """Orchestriert einen vollstaendigen WebUntis-Sync-Lauf mit Retry (TECH-SPEC.md Abschnitt 1.3b)."""
+async def run_full_sync(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Orchestriert einen vollstaendigen WebUntis-Sync-Lauf mit Retry (TECH-SPEC.md Abschnitt 1.3b).
+
+    Oeffnet pro Versuch eine frische DB-Session statt eine einzige Session ueber
+    die komplette Retry-Wartezeit (bis zu ~2h bei Default-Settings) offenzuhalten.
+    """
     max_attempts = settings.webuntis_sync_retry_max_attempts
     delay_seconds = settings.webuntis_sync_retry_delay_minutes * 60
 
     for attempt in range(1, max_attempts + 1):
         try:
-            await _run_once(db)
+            async with session_factory() as db:
+                await _run_once(db)
             return
         except (WebUntisError, OSError) as exc:
-            await db.rollback()
             logger.warning("Sync-Lauf fehlgeschlagen (Versuch %d/%d): %s", attempt, max_attempts, exc)
             if attempt == max_attempts:
                 logger.error("Sync-Lauf endgueltig abgebrochen nach %d Versuchen", max_attempts)

@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.database import async_session_factory
 from app.integrations.webuntis_client import WebUntisError
 from app.models.einstellung import Einstellung
 from app.services import sync_orchestrator
@@ -33,7 +34,7 @@ def _patch_phases(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_full_sync_sets_letzter_sync_am_and_initial_import_flag(db_session):
-    await sync_orchestrator.run_full_sync(db_session)
+    await sync_orchestrator.run_full_sync(async_session_factory)
 
     result = await db_session.execute(select(Einstellung))
     einstellung = result.scalar_one()
@@ -51,7 +52,7 @@ async def test_run_full_sync_calls_phases_in_order(db_session):
     sync_orchestrator.sync_fehlzeiten.side_effect = lambda *a: calls.append("fehlzeiten")
     sync_orchestrator.sync_klassenbuch.side_effect = lambda *a: calls.append("klassenbuch")
 
-    await sync_orchestrator.run_full_sync(db_session)
+    await sync_orchestrator.run_full_sync(async_session_factory)
 
     assert calls == ["klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch"]
 
@@ -63,7 +64,7 @@ async def test_run_full_sync_retries_on_failure_and_succeeds(db_session, monkeyp
     monkeypatch.setattr(settings, "webuntis_sync_retry_max_attempts", 3)
     sync_orchestrator.sync_fehlzeiten.side_effect = [WebUntisError("boom"), None]
 
-    await sync_orchestrator.run_full_sync(db_session)
+    await sync_orchestrator.run_full_sync(async_session_factory)
 
     assert sync_orchestrator.sync_fehlzeiten.await_count == 2
     result = await db_session.execute(select(Einstellung))
@@ -78,7 +79,7 @@ async def test_run_full_sync_gives_up_after_max_attempts(db_session, monkeypatch
     monkeypatch.setattr(settings, "webuntis_sync_retry_max_attempts", 2)
     sync_orchestrator.sync_fehlzeiten.side_effect = WebUntisError("boom")
 
-    await sync_orchestrator.run_full_sync(db_session)
+    await sync_orchestrator.run_full_sync(async_session_factory)
 
     assert sync_orchestrator.sync_fehlzeiten.await_count == 2
     assert sleep_mock.await_count == 1
