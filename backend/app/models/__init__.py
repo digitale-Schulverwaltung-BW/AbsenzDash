@@ -1,5 +1,6 @@
 from app.models.abteilung import Abteilung
 from app.models.audit_log import AuditLog
+from app.models.ausnahme import Ausnahme
 from app.models.base import Base
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.classreg_category import ClassregCategory
@@ -19,6 +20,7 @@ from app.models.schwellwert_stufe import SchwellwertStufe
 __all__ = [
     "Abteilung",
     "AuditLog",
+    "Ausnahme",
     "Base",
     "Bereich",
     "bereich_klasse",

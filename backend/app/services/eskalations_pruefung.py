@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ausnahme import Ausnahme
 from app.models.einstellung import Einstellung
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
@@ -114,6 +115,18 @@ async def _ermittle_erreichte_stufe(
     return None, letzter_stand
 
 
+async def _hat_aktive_ausnahme(db: AsyncSession, schueler_id: int, kategorie: str, heute: date) -> bool:
+    result = await db.execute(
+        select(Ausnahme).where(
+            Ausnahme.schueler_id == schueler_id,
+            Ausnahme.kategorie == kategorie,
+            Ausnahme.aktiv.is_(True),
+            or_(Ausnahme.gueltig_bis.is_(None), Ausnahme.gueltig_bis >= heute),
+        )
+    )
+    return result.first() is not None
+
+
 async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einstellung) -> None:
     """Kernschleife: fuer jeden aktiven Schueler und Regel-Typ Zaehlerstand neu berechnen (SPECS.md Abschnitt 5)."""
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
@@ -121,6 +134,9 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
 
     for typ in ("fehlzeiten", "klassenbuch"):
         for schueler in alle_schueler:
+            if await _hat_aktive_ausnahme(db, schueler.id, typ, heute):
+                continue
+
             regel = await resolve_schwellwert_regel(db, schueler.klasse_id, typ)
             if regel is None:
                 continue

@@ -3,6 +3,7 @@ import datetime
 import pytest
 from sqlalchemy import select
 
+from app.models.ausnahme import Ausnahme
 from app.models.classreg_category import ClassregCategory
 from app.models.einstellung import Einstellung
 from app.models.excuse_status import ExcuseStatus
@@ -319,6 +320,54 @@ async def test_pruefe_schwellwerte_nur_unentschuldigt_excludes_entschuldigte_feh
     zaehlerstand = result.scalar_one()
     assert zaehlerstand.aktueller_stand == 1
     assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_skips_schueler_with_active_ausnahme(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    db_session.add(Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="Testgrund", aktiv=True))
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_ignores_expired_ausnahme(db_session):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    db_session.add(
+        Ausnahme(
+            schueler_id=schueler.id,
+            kategorie="fehlzeiten",
+            grund="Abgelaufen",
+            aktiv=True,
+            gueltig_bis=datetime.date(2026, 1, 1),
+        )
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
+    )
+    assert result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio
