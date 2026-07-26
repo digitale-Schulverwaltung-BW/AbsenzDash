@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,10 @@ from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 
 logger = logging.getLogger(__name__)
+
+# Sentinel: unterscheidet "Aufrufer hat keine Zeile uebergeben" von "Aufrufer hat
+# uebergeben, dass keine Zeile existiert" - None ist hier ein gueltiger Wert.
+_ZAEHLERSTAND_NICHT_ANGEGEBEN: Any = object()
 
 
 async def resolve_schwellwert_regel(
@@ -55,14 +60,21 @@ async def resolve_schwellwert_regel(
 
 
 async def get_or_create_zaehlerstand(
-    db: AsyncSession, schueler_id: int, typ: str, regel_id: int
+    db: AsyncSession,
+    schueler_id: int,
+    typ: str,
+    regel_id: int,
+    bestehender: SchuelerZaehlerstand | None = _ZAEHLERSTAND_NICHT_ANGEGEBEN,
 ) -> SchuelerZaehlerstand:
-    result = await db.execute(
-        select(SchuelerZaehlerstand).where(
-            SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.typ == typ
+    zaehlerstand = bestehender
+    if zaehlerstand is _ZAEHLERSTAND_NICHT_ANGEGEBEN:
+        result = await db.execute(
+            select(SchuelerZaehlerstand).where(
+                SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.typ == typ
+            )
         )
-    )
-    zaehlerstand = result.scalar_one_or_none()
+        zaehlerstand = result.scalar_one_or_none()
+
     if zaehlerstand is None:
         zaehlerstand = SchuelerZaehlerstand(schueler_id=schueler_id, typ=typ, regel_id=regel_id, aktueller_stand=0)
         db.add(zaehlerstand)
@@ -190,12 +202,22 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
     alle_schueler = schueler_result.scalars().all()
 
+    kein_schuljahr_start = einstellung.schuljahr_start_cache is None
+    if kein_schuljahr_start:
+        logger.warning(
+            "einstellung.schuljahr_start_cache ist nicht gesetzt - Schueler ohne eigenen letzter_reset_am "
+            "werden in diesem Lauf uebersprungen"
+        )
+
     for typ in ("fehlzeiten", "klassenbuch"):
+        regel_cache: dict[int | None, SchwellwertRegel | None] = {}
         for schueler in alle_schueler:
             if await _hat_aktive_ausnahme(db, schueler.id, typ, heute):
                 continue
 
-            regel = await resolve_schwellwert_regel(db, schueler.klasse_id, typ)
+            if schueler.klasse_id not in regel_cache:
+                regel_cache[schueler.klasse_id] = await resolve_schwellwert_regel(db, schueler.klasse_id, typ)
+            regel = regel_cache[schueler.klasse_id]
             if regel is None:
                 continue
 
@@ -215,16 +237,21 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
                 if d is not None
             ]
             if not fenster_kandidaten:
-                logger.warning(
-                    "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein schuljahr_start_cache, "
-                    "kein letzter_reset_am) - uebersprungen",
-                    schueler.id,
-                    regel.id,
-                )
+                # Defensiv: bei gesetztem schuljahr_start_cache aktuell nicht erreichbar
+                # (Kandidatenliste waere nie leer); Warnung nur fuer kuenftige Fenster-Quellen.
+                if not kein_schuljahr_start:
+                    logger.warning(
+                        "Kein Fenster-Start ermittelbar fuer Schueler %d, Regel %d (kein letzter_reset_am) - "
+                        "uebersprungen",
+                        schueler.id,
+                        regel.id,
+                    )
                 continue
             fenster_start = max(fenster_kandidaten)
 
-            zaehlerstand = await get_or_create_zaehlerstand(db, schueler.id, typ, regel.id)
+            zaehlerstand = await get_or_create_zaehlerstand(
+                db, schueler.id, typ, regel.id, bestehender=bestehender_zaehlerstand
+            )
             neue_stufe_nr, neuer_stand = await _ermittle_erreichte_stufe(db, regel, schueler.id, fenster_start)
 
             alte_stufe_nr = zaehlerstand.erreichte_stufe_nr

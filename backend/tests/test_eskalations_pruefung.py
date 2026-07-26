@@ -1,8 +1,12 @@
 import datetime
+import logging
+from contextlib import contextmanager
+from unittest import mock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
+from app.core.database import engine
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.bereich import Bereich, bereich_klasse
@@ -19,6 +23,7 @@ from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
+from app.services import eskalations_pruefung
 from app.services.eskalations_pruefung import pruefe_schwellwerte
 
 
@@ -79,6 +84,22 @@ async def _make_zweistufige_fehlzeiten_regel(
     )
     await db_session.commit()
     return regel
+
+
+@contextmanager
+def _zaehle_zaehlerstand_selects():
+    count = 0
+
+    def _zaehler(conn, cursor, statement, parameters, context, executemany):
+        nonlocal count
+        if statement.strip().upper().startswith("SELECT") and "schueler_zaehlerstand" in statement:
+            count += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _zaehler)
+    try:
+        yield lambda: count
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _zaehler)
 
 
 @pytest.mark.asyncio
@@ -618,3 +639,158 @@ async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
     benachrichtigung = result.scalar_one()
     assert benachrichtigung.empfaenger == [{"rolle": "klassenlehrkraft", "nutzer_id": nutzer_id}]
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_resolves_regel_once_per_klasse_not_per_schueler(db_session):
+    """Regel-Aufloesung ist innerhalb eines Sync-Laufs pro (klasse_id, typ) invariant und soll dort
+    nur einmal ausgefuehrt werden, nicht einmal pro Schueler (Performance-Fix)."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    schueler_b = Schueler(externe_id="ext-b", vorname="C", nachname="D", aktiv=True, klasse_id=klasse.id)
+    db_session.add_all([schueler_a, schueler_b])
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    original = eskalations_pruefung.resolve_schwellwert_regel
+    aufrufe: list[tuple[int | None, str]] = []
+
+    async def _zaehlender_wrapper(db, klasse_id, typ):
+        aufrufe.append((klasse_id, typ))
+        return await original(db, klasse_id, typ)
+
+    with mock.patch.object(eskalations_pruefung, "resolve_schwellwert_regel", side_effect=_zaehlender_wrapper):
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+
+    assert len(aufrufe) == 2
+    assert aufrufe.count((klasse.id, "fehlzeiten")) == 1
+    assert aufrufe.count((klasse.id, "klassenbuch")) == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_selects_existing_zaehlerstand_only_once(db_session):
+    """get_or_create_zaehlerstand soll die im Fenster-Guard bereits geladene Zeile wiederverwenden statt
+    sie erneut zu selektieren (Performance-Fix: vorher 2 SELECTs auf schueler_zaehlerstand pro Schueler)."""
+    schueler = await _make_schueler(db_session)
+    regel = await _make_fehlzeiten_regel(db_session, schwellenwert=5)
+    db_session.add(
+        SchuelerZaehlerstand(schueler_id=schueler.id, typ="fehlzeiten", regel_id=regel.id, aktueller_stand=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    with _zaehle_zaehlerstand_selects() as get_count:
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+
+    assert get_count() == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exists(db_session):
+    """Auch wenn noch kein SchuelerZaehlerstand existiert (z.B. neuer Schueler), darf nur EIN SELECT
+    auf schueler_zaehlerstand ausgefuehrt werden, kein redundanter zweiter SELECT in
+    get_or_create_zaehlerstand."""
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=5)
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    with _zaehle_zaehlerstand_selects() as get_count:
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+
+    assert get_count() == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_logs_missing_schuljahr_start_once_not_per_schueler(db_session, caplog):
+    """Fehlender schuljahr_start_cache soll pro Sync-Lauf nur einmal geloggt werden, nicht einmal pro
+    Schueler (Log-Spam-Fix: vorher eine Warnzeile pro Schueler ohne eigenen letzter_reset_am)."""
+    for i in range(3):
+        db_session.add(Schueler(externe_id=f"ext-{i}", vorname="A", nachname="B", aktiv=True))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=None)
+    with caplog.at_level(logging.WARNING, logger="app.services.eskalations_pruefung"):
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+
+    fenster_warnungen = [r for r in caplog.records if "schuljahr_start_cache" in r.getMessage()]
+    assert len(fenster_warnungen) == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_ausnahme_kategorie_is_independent_across_typen(db_session):
+    """Eine aktive Ausnahme fuer Kategorie 'klassenbuch' darf die 'fehlzeiten'-Verarbeitung desselben
+    Schuelers nicht unterdruecken (regressionstestet die klassenbuch->fehlzeiten Richtung; die
+    umgekehrte Richtung folgt aus derselben Kategorie-Filterlogik in _hat_aktive_ausnahme)."""
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    db_session.add(Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Testgrund", aktiv=True))
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(
+            SchuelerZaehlerstand.schueler_id == schueler.id, SchuelerZaehlerstand.typ == "fehlzeiten"
+        )
+    )
+    zaehlerstand = result.scalar_one()
+    assert zaehlerstand.erreichte_stufe_nr == 1
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_duplicate(db_session):
+    """Ein Bereichsleiter, der zwei Bereiche leitet, die beide auf dieselbe Klasse gemappt sind, darf nur
+    EINMAL als Empfaenger auftauchen (Regression fuer fehlendes .distinct(), bereichsleiter-Fall — bisher
+    nur fuer klassenlehrkraft abgedeckt)."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    bereich_a = Bereich(name="Kaufmaennischer Bereich")
+    bereich_b = Bereich(name="Technischer Bereich")
+    db_session.add_all([klasse, bereich_a, bereich_b])
+    await db_session.flush()
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich_a.id, klasse_id=klasse.id))
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich_b.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    bereichsleiter = Nutzer(wp_user_id="u2", email="b@b.de", name="Leiter", rolle="bereichsleiter")
+    db_session.add_all([schueler, bereichsleiter])
+    await db_session.flush()
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=bereichsleiter.id, bereich_id=bereich_a.id))
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=bereichsleiter.id, bereich_id=bereich_b.id))
+
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id,
+            stufe_nr=1,
+            einheit="fehltage",
+            schwellenwert=1,
+            fehlzeiten_filter="alle",
+            empfaenger_rollen=["bereichsleiter"],
+        )
+    )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    bereichsleiter_id = bereichsleiter.id
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await db_session.commit()
+    db_session.expunge_all()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
+    benachrichtigung = result.scalar_one()
+    assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter_id}]
