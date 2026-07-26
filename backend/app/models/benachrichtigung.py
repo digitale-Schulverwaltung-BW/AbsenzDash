@@ -12,8 +12,10 @@ class Benachrichtigung(Base, TimestampMixin):
     __tablename__ = "benachrichtigung"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    schueler_id: Mapped[int] = mapped_column(ForeignKey("schueler.id", ondelete="CASCADE"))
-    regel_id: Mapped[int | None] = mapped_column(ForeignKey("schwellwert_regel.id", ondelete="SET NULL"), nullable=True)
+    schueler_id: Mapped[int] = mapped_column(ForeignKey("schueler.id", ondelete="CASCADE"), index=True)
+    regel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("schwellwert_regel.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     stufe_nr: Mapped[int] = mapped_column(Integer)
     gesendet_am: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     empfaenger: Mapped[list[dict]] = mapped_column(JSON)
