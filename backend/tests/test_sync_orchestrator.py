@@ -25,6 +25,7 @@ class _FakeWebUntisClient:
 @pytest.fixture(autouse=True)
 def _patch_phases(monkeypatch):
     monkeypatch.setattr(sync_orchestrator, "WebUntisClient", _FakeWebUntisClient)
+    monkeypatch.setattr(sync_orchestrator, "sync_abteilungen", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_klassen", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_kategorien", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "import_schueler", AsyncMock())
@@ -46,6 +47,7 @@ async def test_run_full_sync_sets_letzter_sync_am_and_initial_import_flag(db_ses
 @pytest.mark.asyncio
 async def test_run_full_sync_calls_phases_in_order(db_session):
     calls = []
+    sync_orchestrator.sync_abteilungen.side_effect = lambda *a: calls.append("abteilungen")
     sync_orchestrator.sync_klassen.side_effect = lambda *a: calls.append("klassen")
     sync_orchestrator.sync_kategorien.side_effect = lambda *a: calls.append("kategorien")
     sync_orchestrator.import_schueler.side_effect = lambda *a: calls.append("schueler")
@@ -54,7 +56,7 @@ async def test_run_full_sync_calls_phases_in_order(db_session):
 
     await sync_orchestrator.run_full_sync(async_session_factory)
 
-    assert calls == ["klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch"]
+    assert calls == ["abteilungen", "klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch"]
 
 
 @pytest.mark.asyncio

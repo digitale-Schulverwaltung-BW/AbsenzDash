@@ -1,3 +1,4 @@
+from app.models.abteilung import Abteilung
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bereich import Bereich, bereich_klasse
@@ -13,6 +14,7 @@ from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 
 __all__ = [
+    "Abteilung",
     "AuditLog",
     "Base",
     "Bereich",

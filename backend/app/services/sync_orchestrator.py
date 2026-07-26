@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.einstellung import Einstellung
 from app.services.asv_csv_import import import_schueler
+from app.services.webuntis_abteilung_sync import sync_abteilungen
 from app.services.webuntis_fehlzeit_sync import sync_fehlzeiten
 from app.services.webuntis_kategorie_sync import sync_kategorien
 from app.services.webuntis_klassen_sync import sync_klassen
@@ -40,6 +41,7 @@ def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date) -> tuple[date, d
 
 async def _run_once(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
+        await sync_abteilungen(client, db)
         await sync_klassen(client, db)
         await sync_kategorien(client, db)
         await import_schueler(db)

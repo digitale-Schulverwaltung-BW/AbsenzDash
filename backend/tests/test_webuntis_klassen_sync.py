@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 
+from app.models.abteilung import Abteilung
 from app.models.klasse import Klasse
 from app.models.nutzer import Nutzer
 from app.models.nutzer_klasse import NutzerKlasse
@@ -58,3 +59,31 @@ async def test_sync_klassen_triggers_nutzer_klasse_seeding(db_session):
     rows = result.scalars().all()
     assert len(rows) == 1
     assert rows[0].quelle == "webuntis_seed"
+
+
+@pytest.mark.asyncio
+async def test_sync_klassen_resolves_abteilung_id_from_did(db_session):
+    abteilung = Abteilung(webuntis_id=64, name="A-2BFE")
+    db_session.add(abteilung)
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = [{"id": 3499, "name": "10a", "did": 64, "teacher1": 63, "teacher2": None}]
+
+    await sync_klassen(client, db_session)
+
+    result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 3499))
+    klasse = result.scalar_one()
+    assert klasse.abteilung_id == abteilung.id
+
+
+@pytest.mark.asyncio
+async def test_sync_klassen_leaves_abteilung_id_none_when_did_unresolvable(db_session):
+    client = AsyncMock()
+    client.call.return_value = [{"id": 3499, "name": "10a", "did": 999, "teacher1": 63, "teacher2": None}]
+
+    await sync_klassen(client, db_session)
+
+    result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 3499))
+    klasse = result.scalar_one()
+    assert klasse.abteilung_id is None
