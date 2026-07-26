@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.core.scheduler import create_scheduler, start_scheduler
+from app.core import scheduler as scheduler_module
 
 
 @asynccontextmanager
@@ -19,6 +21,11 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
     yield
     scheduler.shutdown(wait=False)
+    pending = list(scheduler_module._background_sync_tasks)
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 app = FastAPI(title="AbsenzDash Backend", lifespan=lifespan)

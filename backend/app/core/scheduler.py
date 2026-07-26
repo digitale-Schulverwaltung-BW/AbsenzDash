@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 MAIN_SYNC_JOB_ID = "webuntis_main_sync"
 
+# Haelt starke Referenzen auf laufende Sync-Hintergrund-Tasks, damit sie waehrend
+# ihrer (bis zu ~2h dauernden) Laufzeit nicht vom Event-Loop, der selbst nur eine
+# schwache Referenz haelt, vorzeitig eingesammelt werden koennen.
+_background_sync_tasks: set[asyncio.Task[None]] = set()
+
 
 async def _read_sync_interval_cron() -> str:
     async with async_session_factory() as db:
@@ -36,6 +41,8 @@ async def _run_main_sync_job(scheduler: AsyncIOScheduler) -> asyncio.Task[None]:
     neu — unabhaengig davon, wie lange der Sync-Lauf (mit Retries bis zu ~2h)
     noch braucht (TECH-SPEC.md Abschnitt 1.3b)."""
     task = asyncio.create_task(_run_sync_task())
+    _background_sync_tasks.add(task)
+    task.add_done_callback(_background_sync_tasks.discard)
     cron_expr = await _read_sync_interval_cron()
     scheduler.reschedule_job(MAIN_SYNC_JOB_ID, trigger=CronTrigger.from_crontab(cron_expr))
     return task
