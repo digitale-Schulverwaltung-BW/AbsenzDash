@@ -98,12 +98,21 @@ async def test_run_main_sync_job_reschedules_without_waiting_for_sync_to_finish(
 
 
 @pytest.mark.asyncio
-async def test_run_main_sync_job_task_survives_gc_without_external_reference(monkeypatch, db_session):
-    """Regression test for the GC-safety follow-up flagged in the review of commit
-    1ce9bd4: per asyncio's docs, a task returned by asyncio.create_task() must be
-    held by a strong reference somewhere for its lifetime, since the event loop
-    itself only holds a weak one. This proves `_background_sync_tasks` is that
-    strong reference, independent of whatever the caller/test happens to hold."""
+async def test_run_main_sync_job_registers_and_deregisters_task_in_background_set(monkeypatch, db_session):
+    """Regression test for the bookkeeping fix in commit e54c3ff: while a sync
+    is running, its task must be registered in the module-level
+    `_background_sync_tasks` set (the strong reference required per asyncio's
+    docs, since the event loop itself only holds a weak one), and the
+    done-callback must discard it from that set once the task completes.
+
+    Note: this test does NOT demonstrate GC-survival on its own. While the
+    task is suspended on `release_sync.wait()`, the `release_sync`/
+    `sync_started` Event objects held by this test function are themselves
+    GC roots that transitively keep the task alive (Event._waiters ->
+    Future._callbacks -> the task's __wakeup), independent of whether
+    `_background_sync_tasks` exists at all. The `gc.collect()` call below is
+    kept only as harmless defense-in-depth; the real coverage is the
+    set-membership assertions before and after."""
     db_session.add(Einstellung(sync_interval_cron="*/20 * * * *"))
     await db_session.commit()
 
@@ -127,8 +136,7 @@ async def test_run_main_sync_job_task_survives_gc_without_external_reference(mon
 
     gc.collect()
 
-    # Still present and still running: the module's own strong reference kept
-    # it alive despite the GC pass.
+    # Still present and still running.
     assert len(scheduler_module._background_sync_tasks) == 1
     assert all(not t.done() for t in scheduler_module._background_sync_tasks)
 
@@ -138,6 +146,7 @@ async def test_run_main_sync_job_task_survives_gc_without_external_reference(mon
         while scheduler_module._background_sync_tasks:
             await asyncio.sleep(0.01)
 
+    # Proves the done-callback fired and discarded the task from the set.
     await asyncio.wait_for(_wait_until_removed(), timeout=1)
 
     assert scheduler_module._background_sync_tasks == set()
