@@ -13,6 +13,7 @@ Stand: 2026-07-26
 | **Plan 1** — [Backend-Grundgerüst & Datenmodell](docs/superpowers/plans/2026-07-24-backend-grundgeruest.md) | FastAPI-Skelett, komplettes DB-Schema für Stammdaten (`klasse`, `bereich`, `schueler`, `fehlzeit`, `klassenbuch_eintrag`, `excuse_status`, `classreg_category`, `einstellung`, `audit_log`, `nutzer`, `nutzer_klasse`, `nutzer_bereich`), WordPress-Proxy-Authentifizierung, `nutzer_klasse`-Seeding | WebUntis-Anbindung, REST-Endpunkte, Eskalations-Engine |
 | **Plan 2** — [Backend WebUntis-Sync-Job](docs/superpowers/plans/2026-07-24-webuntis-sync.md) | WebUntis-JSON-RPC-Client, Klassen-/Kategorie-Sync, ASV-BW-CSV-Import für Schüler-Stammdaten (ersetzt ursprünglich geplanten WebUntis-Roster-Abgleich, siehe Design-Dok), Fehlzeiten-/Klassenbuch-Sync, Retry-Orchestrator, APScheduler | `/admin/sync-now`-Endpunkt, Eskalations-Engine, Excuse-Status-Admin-Pflege |
 | **Plan 3** — [Eskalations-Engine](docs/superpowers/plans/2026-07-26-eskalations-engine.md) | Schwellwert-Regeln (schulweit/abteilungsweit/klassenweit-Präzedenz), mehrstufige Eskalation, Maßnahmen-Katalog inkl. Default-Set und Zähler-Reset, Ausnahmen, Benachrichtigungs-Log (inkl. Empfänger-Auflösung und initial_import/kein_empfaenger-Sonderfälle) | Admin-UI/API für Regel-/Maßnahmen-Pflege, tatsächlicher E-Mail-Versand |
+| **Plan 3.1** — [Eskalations-Engine Follow-Ups](docs/superpowers/plans/2026-07-26-eskalations-engine-followups.md) | Nicht-blockierende Findings aus dem Plan-3-Abschlussreview: Query-Caching in `pruefe_schwellwerte` (Regel-Auflösung, Zählerstand-Wiederverwendung), fehlender Index auf `benachrichtigung.schueler_id`/`regel_id`, 3 nachgezogene Regressionstests, Log-Spam-Fix | — |
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
@@ -23,6 +24,12 @@ Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung
 3. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Bisher nichts gebaut.
 4. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
 5. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
+
+## Technische Schulden
+
+Bekannte, nicht dringende Verbesserungen — kein eigener Plan nötig, bei Gelegenheit oder wenn die Performance tatsächlich zum Problem wird:
+
+- **`SchwellwertStufe`-Caching in `pruefe_schwellwerte`** (`backend/app/services/eskalations_pruefung.py`): `_ermittle_erreichte_stufe` fragt die Stufen einer Regel pro Schüler neu ab, obwohl sie pro Regel innerhalb eines Sync-Laufs invariant sind — gleiches Cache-Muster wie bereits für `resolve_schwellwert_regel` und die Zählerstand-Wiederverwendung in Plan 3.1 umgesetzt. Bei Schulgröße (~1500 Schüler) ca. 20% weniger verbleibende DB-Round-Trips in dieser Funktion. Identifiziert im Abschlussreview von [Plan 3.1](docs/superpowers/plans/2026-07-26-eskalations-engine-followups.md), bewusst nicht mit umgesetzt.
 
 ## Nicht-Ziele (dauerhaft außerhalb des Scopes, aus SPECS.md §9)
 
