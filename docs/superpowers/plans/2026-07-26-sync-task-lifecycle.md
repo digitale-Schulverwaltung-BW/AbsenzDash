@@ -92,11 +92,18 @@ multi-task plan): implement the fix, write tests, run tests, commit.
       await asyncio.gather(*pending, return_exceptions=True)
   ```
 
-  Order relative to `scheduler.shutdown(wait=False)` doesn't matter much here
-  (shutdown() doesn't touch the background tasks at all, only APScheduler's own
-  job store/executor) — either order is fine, but cancel+gather must happen
-  before the `lifespan` context manager returns, since that's what the ASGI
-  shutdown sequence waits on.
+  Order relative to `scheduler.shutdown(wait=False)` matters:
+  `scheduler.shutdown(wait=False)` must run **before** the cancel+gather
+  cleanup. `AsyncIOExecutor.shutdown()` (APScheduler's executor) synchronously
+  cancels in-flight job futures as part of `BaseScheduler.shutdown()`, which is
+  what stops APScheduler from firing a new cron occurrence — and therefore
+  from creating a fresh, untracked sync task — while we're awaiting
+  `asyncio.gather(...)` on the tasks we already snapshotted. If the order were
+  reversed (cleanup first, `scheduler.shutdown()` last), a cron firing during
+  that await could create a new task after the snapshot was taken, silently
+  escaping cleanup and reintroducing the exact bug this branch fixes.
+  Regardless of order, cancel+gather must happen before the `lifespan` context
+  manager returns, since that's what the ASGI shutdown sequence waits on.
 
   You'll need `import asyncio` at the top of `main.py` if it's not already
   there.
@@ -117,6 +124,21 @@ GC pass (`gc.collect()`) while the sync is still blocked, and confirm the task
 is still not done / still in the set — demonstrating it wasn't collected.
 Release the sync, await completion, then assert the task has been removed from
 `_background_sync_tasks` (the done-callback fired).
+
+> **Superseded by commit `746423f`.** The `gc.collect()`-based "demonstrates it
+> wasn't collected" framing above isn't actually achievable: while the sync is
+> blocked on `asyncio.Event.wait()`, the test's own local `Event` variables are
+> themselves GC roots that transitively keep the task alive
+> (`Event._waiters -> ... -> task`), so `gc.collect()` can't discriminate a
+> fixed-vs-unfixed `_background_sync_tasks` implementation — it would pass
+> either way. The shipped test was renamed to
+> `test_run_main_sync_job_registers_and_deregisters_task_in_background_set`
+> (`backend/tests/test_scheduler.py`) and its docstring corrected to say what
+> it actually verifies: that `_run_main_sync_job` registers the task in
+> `_background_sync_tasks` while running and deregisters it (via the
+> done-callback) once it completes — i.e. task *registration/deregistration*,
+> not literal proof of GC-survival. The `gc.collect()` call is kept only as a
+> best-effort stress signal, not as the load-bearing assertion.
 
 **B. Shutdown cancels a pending sync task cleanly (in `test_main.py` or a new
 module, your call).** Use the same slow-sync `asyncio.Event` pattern. Drive the

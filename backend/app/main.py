@@ -19,13 +19,18 @@ async def lifespan(app: FastAPI):
     scheduler = create_scheduler()
     await start_scheduler(scheduler)
     app.state.scheduler = scheduler
-    yield
-    scheduler.shutdown(wait=False)
-    pending = list(scheduler_module._background_sync_tasks)
-    for t in pending:
-        t.cancel()
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+    try:
+        yield
+    finally:
+        # Reihenfolge wichtig: shutdown() muss zuerst laufen, damit APScheduler
+        # keine neuen Job-Laeufe mehr anstoesst, bevor wir die noch laufenden
+        # Sync-Tasks einsammeln.
+        scheduler.shutdown(wait=False)
+        pending = list(scheduler_module._background_sync_tasks)
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 app = FastAPI(title="AbsenzDash Backend", lifespan=lifespan)
