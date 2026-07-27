@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_scoped_schueler, get_wordpress_proxy_nutzer, resolve_scope
-from app.models.schueler import Schueler
 from app.core.database import get_db
+from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
-from app.schemas.students import MassnahmeOut, StudentDetailOut, StudentListOut, StudentOverviewOut
-from app.services import student_query
+from app.models.schueler import Schueler
+from app.schemas.students import (
+    MassnahmeOut,
+    MeasureCreateIn,
+    StudentDetailOut,
+    StudentListOut,
+    StudentOverviewOut,
+)
+from app.services import massnahme_service, student_query
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -94,4 +102,36 @@ async def get_student_detail(
         massnahmen=massnahmen,
         ausnahmen=detail["ausnahmen"],
         benachrichtigungen=detail["benachrichtigungen"],
+    )
+
+
+@router.post("/{schueler_id}/measures", status_code=status.HTTP_201_CREATED)
+async def create_measure(
+    schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: MeasureCreateIn,
+) -> MassnahmeOut:
+    typ = (
+        await db.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == body.massnahmen_typ_id))
+    ).scalar_one_or_none()
+    if typ is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Measure type not found")
+
+    massnahme = await massnahme_service.record_massnahme(
+        db,
+        schueler_id=schueler.id,
+        massnahmen_typ_id=body.massnahmen_typ_id,
+        datum=body.datum,
+        notiz=body.notiz,
+        erfasst_von_nutzer_id=nutzer.id,
+    )
+    return MassnahmeOut(
+        id=massnahme.id,
+        massnahmen_typ_id=massnahme.massnahmen_typ_id,
+        massnahmen_typ_name=typ.name,
+        datum=massnahme.datum,
+        notiz=massnahme.notiz,
+        erfasst_von_nutzer_id=massnahme.erfasst_von_nutzer_id,
+        erfasst_von_name=nutzer.name,
     )

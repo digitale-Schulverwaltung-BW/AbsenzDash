@@ -102,3 +102,9 @@ class StudentDetailOut(BaseModel):
     massnahmen: list[MassnahmeOut]
     ausnahmen: list[AusnahmeOut]
     benachrichtigungen: list[BenachrichtigungOut]
+
+
+class MeasureCreateIn(BaseModel):
+    massnahmen_typ_id: int
+    datum: date
+    notiz: str | None = None

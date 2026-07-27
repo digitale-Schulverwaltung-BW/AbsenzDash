@@ -2,9 +2,11 @@ import datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.main import app
+from app.models.audit_log import AuditLog
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.klasse import Klasse
@@ -193,4 +195,71 @@ async def test_get_student_detail_404s_for_out_of_scope_student(db_session):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(f"/students/{schueler.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_measure_returns_created_measure_and_writes_audit_log(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True)
+    db_session.add_all([schueler, typ])
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/students/{schueler.id}/measures",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            json={"massnahmen_typ_id": typ.id, "datum": "2026-02-10", "notiz": "Testnotiz"},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["massnahmen_typ_name"] == "Nachsitzen"
+    assert body["notiz"] == "Testnotiz"
+
+    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "massnahme_erfasst"))
+    assert len(audit_result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_measure_404s_for_unknown_measure_type(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/students/{schueler.id}/measures",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            json={"massnahmen_typ_id": 999999, "datum": "2026-02-10"},
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_measure_404s_for_out_of_scope_student(db_session):
+    klasse_a = Klasse(webuntis_id=1, name="10a")
+    klasse_b = Klasse(webuntis_id=2, name="10b")
+    db_session.add_all([klasse_a, klasse_b])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
+    typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True)
+    db_session.add_all([schueler, typ])
+    await _seed_klassenlehrkraft(db_session, [klasse_a.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/students/{schueler.id}/measures",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            json={"massnahmen_typ_id": typ.id, "datum": "2026-02-10"},
+        )
     assert response.status_code == 404
