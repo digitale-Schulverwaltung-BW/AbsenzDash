@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -46,3 +46,59 @@ class StudentListOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class FehlzeitOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    typ: str
+    datum: date
+    start_zeit: int
+    end_zeit: int
+    fach: str | None
+    excuse_status_id: int | None
+    grund_text: str | None
+
+
+class KlassenbuchEintragOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kategorie_id: int
+    datum: date
+    text: str | None
+    lesson_id: int | None
+
+
+class MassnahmeOut(BaseModel):
+    id: int
+    massnahmen_typ_id: int
+    massnahmen_typ_name: str
+    datum: date
+    notiz: str | None
+    erfasst_von_nutzer_id: int
+    erfasst_von_name: str
+
+
+class AusnahmeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kategorie: str
+    grund: str
+    gueltig_bis: date | None
+    aktiv: bool
+
+
+class StudentDetailOut(BaseModel):
+    id: int
+    vorname: str
+    nachname: str
+    klasse: KlasseOut | None
+    zaehlerstand: dict[str, ZaehlerstandOut]
+    fehlzeiten: list[FehlzeitOut]
+    klassenbuch: list[KlassenbuchEintragOut]
+    massnahmen: list[MassnahmeOut]
+    ausnahmen: list[AusnahmeOut]
+    benachrichtigungen: list[BenachrichtigungOut]

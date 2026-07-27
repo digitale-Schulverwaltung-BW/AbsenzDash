@@ -8,6 +8,8 @@ from app.main import app
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.klasse import Klasse
+from app.models.massnahme import Massnahme
+from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
@@ -135,3 +137,60 @@ async def test_get_students_pagination_and_bereich_filter(db_session):
     assert body["offset"] == 0
     assert len(body["items"]) == 1
     assert body["items"][0]["nachname"] == "01"
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_returns_all_sublists(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    typ = MassnahmenTyp(name="Gespräch", setzt_zaehler_zurueck=False)
+    nutzer = Nutzer(wp_user_id="lehrkraft1", email="l@b.de", name="Lehrer A", rolle="klassenlehrkraft")
+    db_session.add_all([typ, nutzer])
+    await db_session.flush()
+    db_session.add(
+        Massnahme(
+            schueler_id=schueler.id,
+            massnahmen_typ_id=typ.id,
+            datum=datetime.date(2026, 2, 5),
+            notiz="Elterngespräch geführt",
+            erfasst_von_nutzer_id=nutzer.id,
+        )
+    )
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}",
+            headers={**HEADERS_KLASSENLEHRKRAFT, "X-WordPress-User": "lehrkraft1", "X-WordPress-Name": "Lehrer A"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["klasse"] == {"id": klasse.id, "name": "10a"}
+    assert len(body["massnahmen"]) == 1
+    assert body["massnahmen"][0]["massnahmen_typ_name"] == "Gespräch"
+    assert body["massnahmen"][0]["erfasst_von_name"] == "Lehrer A"
+    assert body["fehlzeiten"] == []
+    assert body["ausnahmen"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_404s_for_out_of_scope_student(db_session):
+    klasse_a = Klasse(webuntis_id=1, name="10a")
+    klasse_b = Klasse(webuntis_id=2, name="10b")
+    db_session.add_all([klasse_a, klasse_b])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse_a.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students/{schueler.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 404
