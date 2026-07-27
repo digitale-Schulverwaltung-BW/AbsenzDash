@@ -144,6 +144,21 @@ Scope/404 laufen automatisch über `get_scoped_schueler` (identisch zu `GET /stu
 - Sortierung wie in den bestehenden Schemas (`datum.desc()` / `gesendet_am.desc()`).
 - Fehlender/leerer Abschnitt: Tabelle entfällt komplett (kein "keine Einträge"-Platzhaltertext nötig für MVP).
 
+### Seitenumbrüche bei langen Tabellen
+
+Manche Schüler ("Spezialisten") haben Tabellen, die über mehrere Seiten laufen. Löst WeasyPrint rein über CSS, kein zusätzlicher Rendering-Code:
+
+- Jede Abschnitts-Tabelle nutzt echtes `<thead>`/`<tbody>`-Markup — WeasyPrint wiederholt `<thead>` (und `<tfoot>`, falls verwendet) automatisch auf jeder Folgeseite, sobald eine Tabelle über einen Seitenumbruch läuft (Standard-CSS-Tabellenlayout für Paged Media).
+- Fußzeile über `@page`-Margin-Boxen, mit Jinja2-Variablen für Schülername/Druckdatum befüllt (pro Dokument konstant, kein "running element" nötig) und WeasyPrints `counter(page)`/`counter(pages)` für die Seitenzahl:
+  ```css
+  @page {
+    @bottom-left   { content: "{{ schueler.nachname }}, {{ schueler.vorname }}"; }
+    @bottom-center { content: "Gedruckt am {{ erstellt_am }}"; }
+    @bottom-right  { content: "Seite " counter(page) " von " counter(pages); }
+  }
+  ```
+  (Werte werden beim Jinja2-Rendering eingesetzt, nicht zur Laufzeit von WeasyPrint berechnet — nur `counter(page)`/`counter(pages)` sind echtes CSS.)
+
 ## Fehlerbehandlung
 
 Kein zusätzliches `try/except` um `html_to_pdf()` — WeasyPrint-Fehler bei validen, aus der DB stammenden Daten sind nicht erwartbar; ein Rendering-Bug soll als echter `500` sichtbar werden, nicht stillschweigend verschluckt werden.
