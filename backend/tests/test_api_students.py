@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.main import app
 from app.models.audit_log import AuditLog
+from app.models.ausnahme import Ausnahme
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.klasse import Klasse
@@ -261,5 +262,106 @@ async def test_create_measure_404s_for_out_of_scope_student(db_session):
             f"/students/{schueler.id}/measures",
             headers=HEADERS_KLASSENLEHRKRAFT,
             json={"massnahmen_typ_id": typ.id, "datum": "2026-02-10"},
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_exemption_returns_created_exemption_and_writes_audit_log(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/students/{schueler.id}/exemptions",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            json={"kategorie": "fehlzeiten", "grund": "Ärztliches Attest", "gueltig_bis": "2026-12-31"},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["kategorie"] == "fehlzeiten"
+    assert body["aktiv"] is True
+
+    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "ausnahme_erstellt"))
+    assert len(audit_result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_revoke_exemption_sets_inactive_and_writes_audit_log(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Test", aktiv=True)
+    db_session.add(ausnahme)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/students/{schueler.id}/exemptions/{ausnahme.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+    assert response.status_code == 204
+
+    # The revoke happens through a separate DB session (the app's `get_db` dependency), so
+    # db_session's identity map still holds the pre-revoke `ausnahme` instance (expire_on_commit
+    # is False for the app's session factory). Refresh it explicitly to force a fresh read of the
+    # row instead of returning the stale cached object.
+    await db_session.refresh(ausnahme)
+    reloaded = (await db_session.execute(select(Ausnahme).where(Ausnahme.id == ausnahme.id))).scalar_one()
+    assert reloaded.aktiv is False
+
+    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "ausnahme_aufgehoben"))
+    assert len(audit_result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_revoke_exemption_404s_when_already_revoked(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Test", aktiv=False)
+    db_session.add(ausnahme)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/students/{schueler.id}/exemptions/{ausnahme.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_revoke_exemption_404s_for_exemption_belonging_to_different_student(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler_a = Schueler(externe_id="ext-a", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    schueler_b = Schueler(externe_id="ext-b", vorname="Erika", nachname="Beispiel", klasse_id=klasse.id)
+    db_session.add_all([schueler_a, schueler_b])
+    await db_session.flush()
+    ausnahme = Ausnahme(schueler_id=schueler_b.id, kategorie="klassenbuch", grund="Test", aktiv=True)
+    db_session.add(ausnahme)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/students/{schueler_a.id}/exemptions/{ausnahme.id}", headers=HEADERS_KLASSENLEHRKRAFT
         )
     assert response.status_code == 404

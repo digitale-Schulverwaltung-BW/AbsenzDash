@@ -8,17 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_scoped_schueler, get_wordpress_proxy_nutzer, resolve_scope
 from app.core.database import get_db
+from app.models.ausnahme import Ausnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.schemas.students import (
+    AusnahmeOut,
+    ExemptionCreateIn,
     MassnahmeOut,
     MeasureCreateIn,
     StudentDetailOut,
     StudentListOut,
     StudentOverviewOut,
 )
-from app.services import massnahme_service, student_query
+from app.services import ausnahme_service, massnahme_service, student_query
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -135,3 +138,34 @@ async def create_measure(
         erfasst_von_nutzer_id=massnahme.erfasst_von_nutzer_id,
         erfasst_von_name=nutzer.name,
     )
+
+
+@router.post("/{schueler_id}/exemptions", status_code=status.HTTP_201_CREATED)
+async def create_exemption(
+    schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: ExemptionCreateIn,
+) -> AusnahmeOut:
+    ausnahme = await ausnahme_service.create_ausnahme(
+        db,
+        schueler_id=schueler.id,
+        kategorie=body.kategorie,
+        grund=body.grund,
+        gueltig_bis=body.gueltig_bis,
+        nutzer_id=nutzer.id,
+    )
+    return AusnahmeOut.model_validate(ausnahme)
+
+
+@router.delete("/{schueler_id}/exemptions/{exemption_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_exemption(
+    schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    exemption_id: int,
+) -> None:
+    ausnahme = (await db.execute(select(Ausnahme).where(Ausnahme.id == exemption_id))).scalar_one_or_none()
+    if ausnahme is None or ausnahme.schueler_id != schueler.id or not ausnahme.aktiv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exemption not found")
+    await ausnahme_service.revoke_ausnahme(db, ausnahme, nutzer.id)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -108,3 +108,9 @@ class MeasureCreateIn(BaseModel):
     massnahmen_typ_id: int
     datum: date
     notiz: str | None = None
+
+
+class ExemptionCreateIn(BaseModel):
+    kategorie: Literal["fehlzeiten", "klassenbuch"]
+    grund: str
+    gueltig_bis: date | None = None
