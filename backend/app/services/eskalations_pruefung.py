@@ -22,6 +22,8 @@ from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
+from app.core.config import Settings
+from app.services.mailer import TEMPLATES_DIR, render_template, send_email
 
 logger = logging.getLogger(__name__)
 
@@ -169,8 +171,68 @@ async def _resolve_empfaenger(db: AsyncSession, klasse_id: int | None, rollen: l
     return empfaenger
 
 
+_TYP_LABEL = {"fehlzeiten": "Fehlzeiten", "klassenbuch": "Klassenbucheinträge"}
+
+
+def _eindeutige_nutzer_ids(empfaenger: list[dict]) -> list[int]:
+    """Ein Nutzer mit mehreren Rollen (z.B. Klassenlehrkraft UND Bereichsleiter) darf nur eine Mail bekommen."""
+    return list(dict.fromkeys(e["nutzer_id"] for e in empfaenger))
+
+
+async def _versende_email(
+    db: AsyncSession,
+    schueler: Schueler,
+    regel: SchwellwertRegel,
+    stufe: SchwellwertStufe,
+    neuer_stand: int,
+    empfaenger: list[dict],
+    settings: Settings,
+) -> str:
+    nutzer_ids = _eindeutige_nutzer_ids(empfaenger)
+    result = await db.execute(select(Nutzer.email).where(Nutzer.id.in_(nutzer_ids)))
+    to_addresses = list(result.scalars().all())
+
+    klasse_name = "-"
+    if schueler.klasse_id is not None:
+        klasse_result = await db.execute(select(Klasse.name).where(Klasse.id == schueler.klasse_id))
+        gefundener_name = klasse_result.scalar_one_or_none()
+        if gefundener_name is not None:
+            klasse_name = gefundener_name
+
+    einheit_label = stufe.einheit or _TYP_LABEL.get(regel.typ, regel.typ)
+    dashboard_link = f"{settings.dashboard_base_url}/students/{schueler.id}"
+
+    subject, body = render_template(
+        TEMPLATES_DIR,
+        schueler_vorname=schueler.vorname,
+        schueler_nachname=schueler.nachname,
+        klasse=klasse_name,
+        regel_typ=_TYP_LABEL.get(regel.typ, regel.typ),
+        stufe_nr=str(stufe.stufe_nr),
+        zaehlerstand=str(neuer_stand),
+        einheit=einheit_label,
+        dashboard_link=dashboard_link,
+    )
+
+    try:
+        await send_email(settings, to_addresses, subject, body)
+    except Exception:
+        logger.exception(
+            "E-Mail-Versand fehlgeschlagen fuer Schueler %d, Regel %d, Stufe %d",
+            schueler.id, regel.id, stufe.stufe_nr,
+        )
+        return "fehler"
+    return "gesendet"
+
+
 async def _schreibe_benachrichtigung(
-    db: AsyncSession, schueler: Schueler, regel: SchwellwertRegel, stufe_nr: int, einstellung: Einstellung
+    db: AsyncSession,
+    schueler: Schueler,
+    regel: SchwellwertRegel,
+    stufe_nr: int,
+    neuer_stand: int,
+    einstellung: Einstellung,
+    settings: Settings,
 ) -> None:
     stufe = (
         await db.execute(
@@ -183,7 +245,10 @@ async def _schreibe_benachrichtigung(
         empfaenger: list[dict] = []
     else:
         empfaenger = await _resolve_empfaenger(db, schueler.klasse_id, stufe.empfaenger_rollen)
-        status = "gesendet" if empfaenger else "kein_empfaenger"
+        if not empfaenger:
+            status = "kein_empfaenger"
+        else:
+            status = await _versende_email(db, schueler, regel, stufe, neuer_stand, empfaenger, settings)
 
     db.add(
         Benachrichtigung(
@@ -197,7 +262,7 @@ async def _schreibe_benachrichtigung(
     )
 
 
-async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einstellung) -> None:
+async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einstellung, settings: Settings) -> None:
     """Kernschleife: fuer jeden aktiven Schueler und Regel-Typ Zaehlerstand neu berechnen (SPECS.md Abschnitt 5)."""
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
     alle_schueler = schueler_result.scalars().all()
@@ -259,4 +324,4 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
             zaehlerstand.aktueller_stand = neuer_stand
 
             if neue_stufe_nr is not None and (alte_stufe_nr is None or neue_stufe_nr > alte_stufe_nr):
-                await _schreibe_benachrichtigung(db, schueler, regel, neue_stufe_nr, einstellung)
+                await _schreibe_benachrichtigung(db, schueler, regel, neue_stufe_nr, neuer_stand, einstellung, settings)

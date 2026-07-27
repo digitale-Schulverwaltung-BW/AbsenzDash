@@ -59,7 +59,7 @@ async def _run_once(db: AsyncSession) -> None:
         await sync_fehlzeiten(client, db, von, bis)
         await sync_klassenbuch(client, db, von, bis)
 
-        await pruefe_schwellwerte(db, heute, einstellung)
+        await pruefe_schwellwerte(db, heute, einstellung, settings)
 
         einstellung.letzter_sync_am = datetime.now(timezone.utc)
         if not einstellung.initialer_import_abgeschlossen:

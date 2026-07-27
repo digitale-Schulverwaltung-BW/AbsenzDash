@@ -2,10 +2,12 @@ import datetime
 import logging
 from contextlib import contextmanager
 from unittest import mock
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import event, select
 
+from app.core.config import settings
 from app.core.database import engine
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
@@ -25,6 +27,13 @@ from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 from app.services import eskalations_pruefung
 from app.services.eskalations_pruefung import pruefe_schwellwerte
+
+
+@pytest.fixture(autouse=True)
+def mock_send_email(monkeypatch):
+    mock = AsyncMock()
+    monkeypatch.setattr(eskalations_pruefung, "send_email", mock)
+    return mock
 
 
 async def _make_schueler(db_session, aktiv: bool = True) -> Schueler:
@@ -119,7 +128,7 @@ async def test_pruefe_schwellwerte_reaches_stufe_when_threshold_met(db_session):
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -140,7 +149,7 @@ async def test_pruefe_schwellwerte_no_stufe_when_below_threshold(db_session):
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -172,7 +181,7 @@ async def test_pruefe_schwellwerte_respects_fenster_start_from_letzter_reset(db_
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -204,7 +213,7 @@ async def test_pruefe_schwellwerte_counts_klassenbuch_eintraege_for_klassenbuch_
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -225,7 +234,7 @@ async def test_pruefe_schwellwerte_skips_when_no_fenster_start_determinable(db_s
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=None)
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -247,7 +256,7 @@ async def test_pruefe_schwellwerte_multistage_reaches_highest_met_stufe(db_sessi
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -271,7 +280,7 @@ async def test_pruefe_schwellwerte_multistage_reaches_lower_stufe_not_higher(db_
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -292,7 +301,7 @@ async def test_pruefe_schwellwerte_multistage_no_stufe_met_still_counts(db_sessi
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -338,7 +347,7 @@ async def test_pruefe_schwellwerte_nur_unentschuldigt_excludes_entschuldigte_feh
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -360,7 +369,7 @@ async def test_pruefe_schwellwerte_skips_schueler_with_active_ausnahme(db_sessio
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -388,7 +397,7 @@ async def test_pruefe_schwellwerte_ignores_expired_ausnahme(db_session):
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -430,7 +439,7 @@ async def test_pruefe_schwellwerte_fehlstunden_only_counts_stunde_typ(db_session
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -468,7 +477,7 @@ async def test_pruefe_schwellwerte_excludes_invalid_fehlzeiten(db_session):
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -498,7 +507,7 @@ async def test_pruefe_schwellwerte_writes_benachrichtigung_on_newly_reached_stuf
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     nutzer_id = nutzer.id
     schueler_id = schueler.id
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -518,9 +527,9 @@ async def test_pruefe_schwellwerte_no_repeat_benachrichtigung_on_unchanged_stufe
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 21), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 21), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -542,7 +551,7 @@ async def test_pruefe_schwellwerte_kein_empfaenger_when_no_klassenlehrkraft_regi
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -562,7 +571,7 @@ async def test_pruefe_schwellwerte_initial_import_status_before_first_full_sync(
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -601,7 +610,7 @@ async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     bereichsleiter_id = bereichsleiter.id
     schueler_id = schueler.id
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -632,7 +641,7 @@ async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     nutzer_id = nutzer.id
     schueler_id = schueler.id
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
@@ -663,7 +672,7 @@ async def test_pruefe_schwellwerte_resolves_regel_once_per_klasse_not_per_schuel
         return await original(db, klasse_id, typ)
 
     with mock.patch.object(eskalations_pruefung, "resolve_schwellwert_regel", side_effect=_zaehlender_wrapper):
-        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
     assert len(aufrufe) == 2
     assert aufrufe.count((klasse.id, "fehlzeiten")) == 1
@@ -683,7 +692,7 @@ async def test_pruefe_schwellwerte_selects_existing_zaehlerstand_only_once(db_se
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     with _zaehle_zaehlerstand_selects() as get_count:
-        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
     assert get_count() == 1
 
@@ -699,7 +708,7 @@ async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exis
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     with _zaehle_zaehlerstand_selects() as get_count:
-        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
     assert get_count() == 1
 
@@ -715,7 +724,7 @@ async def test_pruefe_schwellwerte_logs_missing_schuljahr_start_once_not_per_sch
 
     einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=None)
     with caplog.at_level(logging.WARNING, logger="app.services.eskalations_pruefung"):
-        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
     fenster_warnungen = [r for r in caplog.records if "schuljahr_start_cache" in r.getMessage()]
     assert len(fenster_warnungen) == 1
@@ -735,7 +744,7 @@ async def test_pruefe_schwellwerte_ausnahme_kategorie_is_independent_across_type
     await db_session.commit()
 
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
 
     result = await db_session.execute(
@@ -787,10 +796,141 @@ async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_du
     einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
     bereichsleiter_id = bereichsleiter.id
     schueler_id = schueler.id
-    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung)
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
     await db_session.commit()
     db_session.expunge_all()
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
     benachrichtigung = result.scalar_one()
     assert benachrichtigung.empfaenger == [{"rolle": "bereichsleiter", "nutzer_id": bereichsleiter_id}]
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_status_fehler_when_send_email_raises(db_session, mock_send_email):
+    mock_send_email.side_effect = OSError("Connection refused")
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+    db_session.expunge_all()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
+    assert result.scalar_one().status == "fehler"
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_dedupes_recipient_addresses_for_send(db_session, mock_send_email):
+    """Ein Nutzer, der fuer dieselbe Klasse sowohl Klassenlehrkraft als auch Bereichsleiter ist,
+    darf beim tatsaechlichen Versand nur EINMAL im To-Feld auftauchen (Log-Eintrag behaelt beide Rollen)."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    bereich = Bereich(name="Kaufmaennischer Bereich")
+    db_session.add_all([klasse, bereich])
+    await db_session.flush()
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=nutzer.id, bereich_id=bereich.id))
+
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add(regel)
+    await db_session.flush()
+    db_session.add(
+        SchwellwertStufe(
+            regel_id=regel.id, stufe_nr=1, einheit="fehltage", schwellenwert=1, fehlzeiten_filter="alle",
+            empfaenger_rollen=["klassenlehrkraft", "bereichsleiter"],
+        )
+    )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    mock_send_email.assert_awaited_once()
+    call_args = mock_send_email.await_args
+    assert call_args.args[1] == ["a@b.de"]
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, mock_send_email):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    mock_send_email.assert_awaited_once()
+    call_args = mock_send_email.await_args
+    subject, body = call_args.args[2], call_args.args[3]
+    assert "Max Muster" in subject
+    assert "10a" in body
+    assert f"{settings.dashboard_base_url}/students/{schueler_id}" in body
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_kein_empfaenger_does_not_call_send_email(db_session, mock_send_email):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    mock_send_email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_initial_import_does_not_call_send_email(db_session, mock_send_email):
+    schueler = await _make_schueler(db_session)
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=False, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    mock_send_email.assert_not_awaited()
