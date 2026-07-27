@@ -7,7 +7,7 @@
 
 ## Setup
 
-1. `cp backend/.env.example backend/.env` und `WORDPRESS_PROXY_SECRET`, `WEBUNTIS_SERVER`/`_SCHOOL`/`_USERNAME`/`_PASSWORD`, `ASV_CSV_PATH` auf echte Werte setzen.
+1. `cp backend/.env.example backend/.env` und `WORDPRESS_PROXY_SECRET`, `WEBUNTIS_SERVER`/`_SCHOOL`/`_USERNAME`/`_PASSWORD`, `ASV_CSV_PATH`, `SMTP_HOST`, `SMTP_FROM_ADDRESS`, `DASHBOARD_BASE_URL` auf echte Werte setzen (die SMTP-Platzhalter im Beispiel starten den Backend zwar, lassen aber jede Benachrichtigung mit `status="fehler"` fehlschlagen).
 2. `docker compose -f backend/docker-compose.yml up -d --build`
 3. `docker compose -f backend/docker-compose.yml run --rm backend alembic upgrade head`
 
@@ -26,6 +26,7 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 - **Ablauf:** Klassen/Kategorien-Sync → ASV-BW-CSV-Import (Schüler-Stammdaten/Klassenzuordnung) → Fehlzeiten-/Klassenbuch-Sync, orchestriert in `app/services/sync_orchestrator.py`. Läuft automatisch nach `einstellung.sync_interval_cron` (APScheduler, `app/core/scheduler.py`), Änderungen an diesem Cron-Wert wirken ab dem nächsten Lauf ohne Neustart.
 - **ASV-BW-CSV:** `ASV_CSV_PATH` muss auf ein live-gemountetes Verzeichnis zeigen, in das ein externes System die aktuelle Export-Datei unter festem Dateinamen ablegt (TECH-SPEC.md Abschnitt 1.3). Spaltennamen sind über `ASV_CSV_COLUMN_*`-Env-Vars konfigurierbar, falls sie von der Referenzschule abweichen. Der Import überspringt unveränderte Dateien (mtime-Vergleich) — bei einer neuen Datei mit identischem Namen und späterer mtime wird beim nächsten Sync-Lauf automatisch neu importiert.
 - **Retry:** Schlägt ein Sync-Lauf fehl (WebUntis nicht erreichbar, CSV nicht lesbar), wird er bis zu `WEBUNTIS_SYNC_RETRY_MAX_ATTEMPTS`-mal (Default 4) im Abstand von `WEBUNTIS_SYNC_RETRY_DELAY_MINUTES` (Default 30) erneut versucht, bevor er endgültig abgebrochen und geloggt wird.
+- **Noch nicht abgedeckt:** manueller "Sync jetzt"-Endpunkt (späterer Plan).
 
 ## E-Mail-Benachrichtigungen (ab Plan 4)
 
@@ -33,8 +34,6 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 - **Mailinhalt anpassen:** `backend/app/templates/email_benachrichtigung.txt.default` ist die versionierte Default-Vorlage. Für schulspezifische Anpassungen `backend/app/templates/email_benachrichtigung.txt` anlegen (nicht versioniert, siehe `.gitignore`) — existiert diese Datei, wird sie statt der Default-Vorlage verwendet, ohne Neustart des Backends. Format: erste Zeile = Betreff, danach eine Leerzeile, danach der Mailtext. Verfügbare Platzhalter: `$schueler_vorname`, `$schueler_nachname`, `$klasse`, `$regel_typ`, `$stufe_nr`, `$zaehlerstand`, `$einheit`, `$dashboard_link`.
 - **Bekannte Einschränkung:** Schlägt der SMTP-Versand fehl (z.B. Mailserver kurz nicht erreichbar), wird das im Benachrichtigungs-Log als `status="fehler"` vermerkt, aber **nicht automatisch erneut versucht** — durch die "Neuberechnung statt Inkrement"-Architektur des Sync-Jobs (siehe TECH-SPEC.md) würde ein unveränderter Zählerstand im nächsten Lauf ohnehin nicht erneut als "neu erreicht" erkannt. Betroffene Fälle sind im Benachrichtigungs-Log sichtbar und müssen bei Bedarf manuell nachverfolgt werden.
 
-- **Noch nicht abgedeckt:** manueller "Sync jetzt"-Endpunkt (späterer Plan).
-
 ## Aktueller Stand
 
-Plan 1 (`docs/superpowers/plans/2026-07-24-backend-grundgeruest.md`) deckt das Datenschema und die WordPress-Proxy-Authentifizierung ab. Plan 2 (dieser Plan, `docs/superpowers/plans/2026-07-24-webuntis-sync.md`) ergänzt den vollständigen WebUntis-Sync inkl. ASV-BW-CSV-Import. Noch **keine** fachlichen REST-Endpunkte (`/students`, `/admin/...`) und keine Eskalations-Engine (Schwellwerte, Benachrichtigungen, Maßnahmen) — beides folgt in separaten Plänen.
+Plan 1-4 sind abgeschlossen: Backend-Grundgerüst & Datenmodell (Plan 1), WebUntis-Sync inkl. ASV-BW-CSV-Import (Plan 2), Eskalations-Engine mit Schwellwerten/Benachrichtigungen/Maßnahmen (Plan 3) und echter E-Mail-Versand (Plan 4). Noch offen: fachliche REST-Endpunkte fürs WP-Plugin (`/students`, `/admin/...`), das Frontend und das WordPress-Plugin selbst (siehe ROADMAP.md, Abschnitt "Geplant").

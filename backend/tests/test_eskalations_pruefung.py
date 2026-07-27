@@ -2,7 +2,6 @@ import datetime
 import logging
 from contextlib import contextmanager
 from unittest import mock
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import event, select
@@ -27,13 +26,6 @@ from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 from app.services import eskalations_pruefung
 from app.services.eskalations_pruefung import pruefe_schwellwerte
-
-
-@pytest.fixture(autouse=True)
-def mock_send_email(monkeypatch):
-    mock = AsyncMock()
-    monkeypatch.setattr(eskalations_pruefung, "send_email", mock)
-    return mock
 
 
 async def _make_schueler(db_session, aktiv: bool = True) -> Schueler:
@@ -833,6 +825,41 @@ async def test_pruefe_schwellwerte_status_fehler_when_send_email_raises(db_sessi
 
 
 @pytest.mark.asyncio
+async def test_pruefe_schwellwerte_status_fehler_when_template_malformed(db_session, mock_send_email, monkeypatch, tmp_path):
+    """Ein fehlerhaftes Admin-Template-Override (hier: Tippfehler im Platzhalternamen, fuehrt zu
+    KeyError in render_template) darf den Sync-Lauf nicht abbrechen - analog zum send_email-Fehlerfall
+    landet das auf status='fehler', und pruefe_schwellwerte wirft keine Exception."""
+    (tmp_path / "email_benachrichtigung.txt.default").write_text(
+        "Betreff $nicht_existierender_platzhalter\n\nBody-Text.", encoding="utf-8"
+    )
+    monkeypatch.setattr(eskalations_pruefung, "TEMPLATES_DIR", tmp_path)
+
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="Lehrer", rolle="klassenlehrkraft", webuntis_teacher_id=1)
+    db_session.add_all([schueler, nutzer])
+    await db_session.flush()
+    db_session.add(NutzerKlasse(nutzer_id=nutzer.id, klasse_id=klasse.id, quelle="webuntis_seed"))
+    await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2026, 1, 10), start_zeit=0, end_zeit=0)
+    )
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    schueler_id = schueler.id
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+    db_session.expunge_all()
+
+    result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id))
+    assert result.scalar_one().status == "fehler"
+    mock_send_email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_pruefe_schwellwerte_dedupes_recipient_addresses_for_send(db_session, mock_send_email):
     """Ein Nutzer, der fuer dieselbe Klasse sowohl Klassenlehrkraft als auch Bereichsleiter ist,
     darf beim tatsaechlichen Versand nur EINMAL im To-Feld auftauchen (Log-Eintrag behaelt beide Rollen)."""
@@ -871,8 +898,26 @@ async def test_pruefe_schwellwerte_dedupes_recipient_addresses_for_send(db_sessi
     assert call_args.args[1] == ["a@b.de"]
 
 
+_DEFAULT_TEMPLATE_CONTENT = """AbsenzDash: Stufe $stufe_nr erreicht – $schueler_vorname $schueler_nachname
+
+Schüler/in: $schueler_vorname $schueler_nachname ($klasse)
+Regel: $regel_typ
+Erreichte Stufe: $stufe_nr
+Aktueller Zählerstand: $zaehlerstand $einheit
+
+Details im Dashboard: $dashboard_link
+
+Diese E-Mail wurde automatisch von AbsenzDash versendet."""
+
+
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, mock_send_email):
+async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, mock_send_email, monkeypatch, tmp_path):
+    """Hermetisch: schreibt eine eigene .default-Datei nach tmp_path statt gegen das echte
+    TEMPLATES_DIR zu testen, damit ein lokal angelegtes, nicht versioniertes Admin-Override in
+    backend/app/templates/email_benachrichtigung.txt die Assertions nicht unbemerkt beeinflusst."""
+    (tmp_path / "email_benachrichtigung.txt.default").write_text(_DEFAULT_TEMPLATE_CONTENT, encoding="utf-8")
+    monkeypatch.setattr(eskalations_pruefung, "TEMPLATES_DIR", tmp_path)
+
     klasse = Klasse(webuntis_id=1, name="10a")
     db_session.add(klasse)
     await db_session.flush()

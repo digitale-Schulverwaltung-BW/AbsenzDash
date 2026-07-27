@@ -192,27 +192,34 @@ async def _versende_email(
     result = await db.execute(select(Nutzer.email).where(Nutzer.id.in_(nutzer_ids)))
     to_addresses = list(result.scalars().all())
 
-    klasse_name = "-"
+    klasse_name = "–"
     if schueler.klasse_id is not None:
         klasse_result = await db.execute(select(Klasse.name).where(Klasse.id == schueler.klasse_id))
         gefundener_name = klasse_result.scalar_one_or_none()
         if gefundener_name is not None:
             klasse_name = gefundener_name
 
-    einheit_label = stufe.einheit or _TYP_LABEL.get(regel.typ, regel.typ)
+    einheit_label = (stufe.einheit or _TYP_LABEL.get(regel.typ, regel.typ)).capitalize()
     dashboard_link = f"{settings.dashboard_base_url}/students/{schueler.id}"
 
-    subject, body = render_template(
-        TEMPLATES_DIR,
-        schueler_vorname=schueler.vorname,
-        schueler_nachname=schueler.nachname,
-        klasse=klasse_name,
-        regel_typ=_TYP_LABEL.get(regel.typ, regel.typ),
-        stufe_nr=str(stufe.stufe_nr),
-        zaehlerstand=str(neuer_stand),
-        einheit=einheit_label,
-        dashboard_link=dashboard_link,
-    )
+    try:
+        subject, body = render_template(
+            TEMPLATES_DIR,
+            schueler_vorname=schueler.vorname,
+            schueler_nachname=schueler.nachname,
+            klasse=klasse_name,
+            regel_typ=_TYP_LABEL.get(regel.typ, regel.typ),
+            stufe_nr=str(stufe.stufe_nr),
+            zaehlerstand=str(neuer_stand),
+            einheit=einheit_label,
+            dashboard_link=dashboard_link,
+        )
+    except (ValueError, KeyError, OSError):
+        logger.exception(
+            "Mail-Template fehlerhaft (Admin-Override oder Default) fuer Schueler %d, Regel %d, Stufe %d",
+            schueler.id, regel.id, stufe.stufe_nr,
+        )
+        return "fehler"
 
     try:
         await send_email(settings, to_addresses, subject, body)

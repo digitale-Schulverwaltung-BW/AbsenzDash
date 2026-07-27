@@ -19,4 +19,4 @@ class Benachrichtigung(Base, TimestampMixin):
     stufe_nr: Mapped[int] = mapped_column(Integer)
     gesendet_am: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     empfaenger: Mapped[list[dict]] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String(20))  # "gesendet" | "kein_empfaenger" | "initial_import"
+    status: Mapped[str] = mapped_column(String(20))  # "gesendet" | "kein_empfaenger" | "initial_import" | "fehler"

@@ -84,6 +84,8 @@ Diese E-Mail wurde automatisch von AbsenzDash versendet.
    - Erfolg → `status = "gesendet"`.
    - Exception → mit vollem Kontext geloggt (`logger.exception`, Schüler-/Regel-/Stufe-ID), `status = "fehler"` (**neuer** Statuswert).
 
+`render_template` selbst ist ebenfalls gegen Fehler abgesichert: ein fehlerhaftes Admin-Template-Override (fehlende Leerzeile, unbekannter `$platzhalter`, nicht lesbare Datei) wird dort separat abgefangen (`ValueError`/`KeyError`/`OSError`) und führt ebenfalls nur zu `status = "fehler"` statt den gesamten Sync-Lauf abzubrechen.
+
 **Kein automatischer Retry für `status = "fehler"`.** Durch die "Neuberechnung statt Inkrement"-Architektur (Zählerstand wird bei jedem Lauf aus den Rohdaten neu berechnet) würde ein späterer, an sich erfolgreicher Sync-Lauf `neue_stufe_nr > alte_stufe_nr` nicht erneut feststellen, wenn die Stufe unverändert bleibt — ein einmal fehlgeschlagener Versand wird also nicht von selbst nachgeholt. Das ist eine bewusst in Kauf genommene Einschränkung (siehe Diskussion), um den Scope klein zu halten; sichtbar für den Admin über `status = "fehler"` im Benachrichtigungs-Log. Als potenzieller Folge-Punkt dokumentieren (analog `docs/superpowers/plans/*-followups.md`-Pattern aus Plan 3), falls sich das im Betrieb als Problem erweist.
 
 ## 6. Tests
