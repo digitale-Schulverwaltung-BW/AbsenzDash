@@ -37,3 +37,19 @@ class ThresholdRuleOut(BaseModel):
     abteilung_id: int | None
     klasse_id: int | None
     stufen: list[SchwellwertStufeOut]
+
+
+class MeasureTypeIn(BaseModel):
+    id: int | None = None
+    name: str
+    setzt_zaehler_zurueck: bool
+    aktiv: bool = True
+    betroffene_regel_ids: list[int] = []
+
+
+class MeasureTypeOut(BaseModel):
+    id: int
+    name: str
+    setzt_zaehler_zurueck: bool
+    aktiv: bool
+    betroffene_regel_ids: list[int]

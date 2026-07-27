@@ -19,3 +19,4 @@ class MassnahmenTyp(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     setzt_zaehler_zurueck: Mapped[bool] = mapped_column(Boolean, default=False)
+    aktiv: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -34,6 +34,16 @@ async def test_massnahme_roundtrip(db_session):
 
 
 @pytest.mark.asyncio
+async def test_massnahmen_typ_defaults_to_aktiv(db_session):
+    typ = MassnahmenTyp(name="Testtyp", setzt_zaehler_zurueck=False)
+    db_session.add(typ)
+    await db_session.commit()
+
+    result = await db_session.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == typ.id))
+    assert result.scalar_one().aktiv is True
+
+
+@pytest.mark.asyncio
 async def test_massnahmen_typ_regel_association(db_session):
     typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True)
     regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
