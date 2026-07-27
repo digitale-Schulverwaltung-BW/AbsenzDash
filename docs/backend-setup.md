@@ -21,12 +21,19 @@ Das Backend läuft danach unter `http://localhost:8000`, Health-Check unter `GET
 
 Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --rm backend alembic revision --autogenerate -m "<beschreibung>"`, danach `... alembic upgrade head`.
 
+## Admin-Endpunkte (ab Plan 6)
+
+- **Migration:** Plan 6 bringt eine neue Alembic-Migration mit (`massnahmen_typ.aktiv`) — sie ist im oben beschriebenen `alembic upgrade head` enthalten und muss beim Deploy mitlaufen.
+- **`POST /admin/sync-now`** läuft synchron im Request und kann so lange dauern wie ein vollständiger WebUntis-Sync (mehrere Minuten) — Timeouts eines vorgelagerten Reverse-Proxys in der Produktion entsprechend großzügig setzen.
+- **`PUT /admin/sync-settings`** plant den APScheduler-Job sofort neu, aber nur im Worker-Prozess, der den Request bearbeitet hat. Beim aktuellen Single-Process-Deployment ist das unkritisch; bei mehreren Backend-Worker-Prozessen würden die übrigen erst nach einem Neustart mit dem neuen Cron-Wert laufen.
+- **`aktiv`-Flag** bei Maßnahmen-Typen und Entschuldigungsstatus: reines Anzeige-/Auswahlkriterium für das künftige Frontend, das Backend erzwingt es nicht (siehe TECH-SPEC.md Abschnitt 2).
+
 ## WebUntis-Sync (ab Plan 2)
 
 - **Ablauf:** Klassen/Kategorien-Sync → ASV-BW-CSV-Import (Schüler-Stammdaten/Klassenzuordnung) → Fehlzeiten-/Klassenbuch-Sync, orchestriert in `app/services/sync_orchestrator.py`. Läuft automatisch nach `einstellung.sync_interval_cron` (APScheduler, `app/core/scheduler.py`), Änderungen an diesem Cron-Wert wirken ab dem nächsten Lauf ohne Neustart.
 - **ASV-BW-CSV:** `ASV_CSV_PATH` muss auf ein live-gemountetes Verzeichnis zeigen, in das ein externes System die aktuelle Export-Datei unter festem Dateinamen ablegt (TECH-SPEC.md Abschnitt 1.3). Spaltennamen sind über `ASV_CSV_COLUMN_*`-Env-Vars konfigurierbar, falls sie von der Referenzschule abweichen. Der Import überspringt unveränderte Dateien (mtime-Vergleich) — bei einer neuen Datei mit identischem Namen und späterer mtime wird beim nächsten Sync-Lauf automatisch neu importiert.
 - **Retry:** Schlägt ein Sync-Lauf fehl (WebUntis nicht erreichbar, CSV nicht lesbar), wird er bis zu `WEBUNTIS_SYNC_RETRY_MAX_ATTEMPTS`-mal (Default 4) im Abstand von `WEBUNTIS_SYNC_RETRY_DELAY_MINUTES` (Default 30) erneut versucht, bevor er endgültig abgebrochen und geloggt wird.
-- **Noch nicht abgedeckt:** manueller "Sync jetzt"-Endpunkt (späterer Plan).
+- **Manueller Anstoß:** `POST /admin/sync-now` (ab Plan 6, nur `schulleitung`) startet einen einzelnen Sync-Versuch sofort — ohne den oben beschriebenen Retry-Loop.
 
 ## E-Mail-Benachrichtigungen (ab Plan 4)
 
@@ -36,4 +43,4 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 
 ## Aktueller Stand
 
-Plan 1-4 sind abgeschlossen: Backend-Grundgerüst & Datenmodell (Plan 1), WebUntis-Sync inkl. ASV-BW-CSV-Import (Plan 2), Eskalations-Engine mit Schwellwerten/Benachrichtigungen/Maßnahmen (Plan 3) und echter E-Mail-Versand (Plan 4). Noch offen: fachliche REST-Endpunkte fürs WP-Plugin (`/students`, `/admin/...`), das Frontend und das WordPress-Plugin selbst (siehe ROADMAP.md, Abschnitt "Geplant").
+Plan 1-6 sind abgeschlossen: Backend-Grundgerüst & Datenmodell (Plan 1), WebUntis-Sync inkl. ASV-BW-CSV-Import (Plan 2), Eskalations-Engine mit Schwellwerten/Benachrichtigungen/Maßnahmen (Plan 3), echter E-Mail-Versand (Plan 4), REST-Kern-Endpunkte fürs WP-Plugin (`/students`, Plan 5) und die Admin-Konfigurationsendpunkte (`/admin/...`, Plan 6). Noch offen: PDF-Export, das Frontend und das WordPress-Plugin selbst (siehe ROADMAP.md, Abschnitt "Geplant").
