@@ -1,0 +1,10 @@
+AbsenzDash: Stufe $stufe_nr erreicht – $schueler_vorname $schueler_nachname
+
+Schüler/in: $schueler_vorname $schueler_nachname ($klasse)
+Regel: $regel_typ
+Erreichte Stufe: $stufe_nr
+Aktueller Zählerstand: $zaehlerstand $einheit
+
+Details im Dashboard: $dashboard_link
+
+Diese E-Mail wurde automatisch von AbsenzDash versendet.

@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     asv_csv_column_austrittsdatum: str = "Austrittsdatum"
     webuntis_sync_retry_delay_minutes: int = 30
     webuntis_sync_retry_max_attempts: int = 4
+    smtp_host: str
+    smtp_from_address: str
+    dashboard_base_url: str
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_use_starttls: bool = True
 
 
 settings = Settings()
