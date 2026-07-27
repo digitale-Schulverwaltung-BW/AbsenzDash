@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.audit_log import AuditLog
+from app.models.bereich import bereich_klasse
 from app.models.nutzer import ROLLEN, Nutzer
+from app.models.nutzer_bereich import nutzer_bereich
+from app.models.nutzer_klasse import NutzerKlasse
+from app.models.schueler import Schueler
 
 
 def _decode_header_value(value: str) -> str:
@@ -83,3 +87,41 @@ async def get_wordpress_proxy_nutzer(
     await db.commit()
     await db.refresh(nutzer)
     return nutzer
+
+
+async def resolve_scope(db: AsyncSession, nutzer: Nutzer) -> set[int] | None:
+    """Ermittelt die fuer den Nutzer sichtbaren klasse_id's.
+
+    None bedeutet "alle Klassen" (schulleitung), inklusive Schueler ohne
+    Klassenzuordnung (klasse_id IS NULL fuer frisch importierte Schueler,
+    siehe SPECS.md Abschnitt 4).
+    """
+    if nutzer.rolle == "schulleitung":
+        return None
+    if nutzer.rolle == "bereichsleiter":
+        result = await db.execute(
+            select(bereich_klasse.c.klasse_id)
+            .join(nutzer_bereich, nutzer_bereich.c.bereich_id == bereich_klasse.c.bereich_id)
+            .where(nutzer_bereich.c.nutzer_id == nutzer.id)
+        )
+        return set(result.scalars().all())
+    result = await db.execute(select(NutzerKlasse.klasse_id).where(NutzerKlasse.nutzer_id == nutzer.id))
+    return set(result.scalars().all())
+
+
+async def get_scoped_schueler(
+    schueler_id: int,
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Schueler:
+    """Laedt einen Schueler und prueft, dass er im Scope des Nutzers liegt.
+
+    Ausserhalb des Scopes oder nicht existent: 404 in beiden Faellen (nicht
+    403), damit ein Aufrufer nicht unterscheiden kann, ob eine ID nicht
+    existiert oder ihm nur nicht zugaenglich ist.
+    """
+    schueler = (await db.execute(select(Schueler).where(Schueler.id == schueler_id))).scalar_one_or_none()
+    scope = await resolve_scope(db, nutzer)
+    if schueler is None or (scope is not None and schueler.klasse_id not in scope):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    return schueler
