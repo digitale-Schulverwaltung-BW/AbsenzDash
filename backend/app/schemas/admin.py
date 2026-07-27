@@ -53,3 +53,19 @@ class MeasureTypeOut(BaseModel):
     setzt_zaehler_zurueck: bool
     aktiv: bool
     betroffene_regel_ids: list[int]
+
+
+class ExcuseStatusIn(BaseModel):
+    id: int | None = None
+    name: str
+    long_name: str | None = None
+    zaehlt_als_entschuldigt: bool
+    aktiv: bool = True
+
+
+class ExcuseStatusOut(BaseModel):
+    id: int
+    name: str
+    long_name: str | None
+    zaehlt_als_entschuldigt: bool
+    aktiv: bool
