@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .obsidian/
 backend/app/templates/email_benachrichtigung.txt
+.worktrees/
