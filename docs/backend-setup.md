@@ -26,7 +26,14 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 - **Ablauf:** Klassen/Kategorien-Sync → ASV-BW-CSV-Import (Schüler-Stammdaten/Klassenzuordnung) → Fehlzeiten-/Klassenbuch-Sync, orchestriert in `app/services/sync_orchestrator.py`. Läuft automatisch nach `einstellung.sync_interval_cron` (APScheduler, `app/core/scheduler.py`), Änderungen an diesem Cron-Wert wirken ab dem nächsten Lauf ohne Neustart.
 - **ASV-BW-CSV:** `ASV_CSV_PATH` muss auf ein live-gemountetes Verzeichnis zeigen, in das ein externes System die aktuelle Export-Datei unter festem Dateinamen ablegt (TECH-SPEC.md Abschnitt 1.3). Spaltennamen sind über `ASV_CSV_COLUMN_*`-Env-Vars konfigurierbar, falls sie von der Referenzschule abweichen. Der Import überspringt unveränderte Dateien (mtime-Vergleich) — bei einer neuen Datei mit identischem Namen und späterer mtime wird beim nächsten Sync-Lauf automatisch neu importiert.
 - **Retry:** Schlägt ein Sync-Lauf fehl (WebUntis nicht erreichbar, CSV nicht lesbar), wird er bis zu `WEBUNTIS_SYNC_RETRY_MAX_ATTEMPTS`-mal (Default 4) im Abstand von `WEBUNTIS_SYNC_RETRY_DELAY_MINUTES` (Default 30) erneut versucht, bevor er endgültig abgebrochen und geloggt wird.
-- **Noch nicht abgedeckt:** manueller "Sync jetzt"-Endpunkt, Eskalations-Engine/Benachrichtigungen (beides spätere Pläne).
+
+## E-Mail-Benachrichtigungen (ab Plan 4)
+
+- **Config:** `SMTP_HOST`, `SMTP_FROM_ADDRESS`, `DASHBOARD_BASE_URL` sind Pflichtangaben (kein Start ohne sie, siehe `.env.example`). `SMTP_PORT` (Default 587), `SMTP_USER`/`SMTP_PASSWORD` (nur genutzt wenn `SMTP_USER` gesetzt ist) und `SMTP_USE_STARTTLS` (Default `true`) sind optional — für ein internes, unauthentifiziertes Relay `SMTP_USE_STARTTLS=false` und `SMTP_USER` leer lassen.
+- **Mailinhalt anpassen:** `backend/app/templates/email_benachrichtigung.txt.default` ist die versionierte Default-Vorlage. Für schulspezifische Anpassungen `backend/app/templates/email_benachrichtigung.txt` anlegen (nicht versioniert, siehe `.gitignore`) — existiert diese Datei, wird sie statt der Default-Vorlage verwendet, ohne Neustart des Backends. Format: erste Zeile = Betreff, danach eine Leerzeile, danach der Mailtext. Verfügbare Platzhalter: `$schueler_vorname`, `$schueler_nachname`, `$klasse`, `$regel_typ`, `$stufe_nr`, `$zaehlerstand`, `$einheit`, `$dashboard_link`.
+- **Bekannte Einschränkung:** Schlägt der SMTP-Versand fehl (z.B. Mailserver kurz nicht erreichbar), wird das im Benachrichtigungs-Log als `status="fehler"` vermerkt, aber **nicht automatisch erneut versucht** — durch die "Neuberechnung statt Inkrement"-Architektur des Sync-Jobs (siehe TECH-SPEC.md) würde ein unveränderter Zählerstand im nächsten Lauf ohnehin nicht erneut als "neu erreicht" erkannt. Betroffene Fälle sind im Benachrichtigungs-Log sichtbar und müssen bei Bedarf manuell nachverfolgt werden.
+
+- **Noch nicht abgedeckt:** manueller "Sync jetzt"-Endpunkt (späterer Plan).
 
 ## Aktueller Stand
 

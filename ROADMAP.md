@@ -14,16 +14,16 @@ Stand: 2026-07-26
 | **Plan 2** — [Backend WebUntis-Sync-Job](docs/superpowers/plans/2026-07-24-webuntis-sync.md) | WebUntis-JSON-RPC-Client, Klassen-/Kategorie-Sync, ASV-BW-CSV-Import für Schüler-Stammdaten (ersetzt ursprünglich geplanten WebUntis-Roster-Abgleich, siehe Design-Dok), Fehlzeiten-/Klassenbuch-Sync, Retry-Orchestrator, APScheduler | `/admin/sync-now`-Endpunkt, Eskalations-Engine, Excuse-Status-Admin-Pflege |
 | **Plan 3** — [Eskalations-Engine](docs/superpowers/plans/2026-07-26-eskalations-engine.md) | Schwellwert-Regeln (schulweit/abteilungsweit/klassenweit-Präzedenz), mehrstufige Eskalation, Maßnahmen-Katalog inkl. Default-Set und Zähler-Reset, Ausnahmen, Benachrichtigungs-Log (inkl. Empfänger-Auflösung und initial_import/kein_empfaenger-Sonderfälle) | Admin-UI/API für Regel-/Maßnahmen-Pflege, tatsächlicher E-Mail-Versand |
 | **Plan 3.1** — [Eskalations-Engine Follow-Ups](docs/superpowers/plans/2026-07-26-eskalations-engine-followups.md) | Nicht-blockierende Findings aus dem Plan-3-Abschlussreview: Query-Caching in `pruefe_schwellwerte` (Regel-Auflösung, Zählerstand-Wiederverwendung), fehlender Index auf `benachrichtigung.schueler_id`/`regel_id`, 3 nachgezogene Regressionstests, Log-Spam-Fix | — |
+| **Plan 4** — [E-Mail-Benachrichtigungen](docs/superpowers/plans/2026-07-26-email-benachrichtigungen.md) | SMTP-Versand bei neu erreichter Eskalationsstufe (`app/services/mailer.py`), admin-anpassbares Text-Template (gitignorete Override-Datei), neuer `benachrichtigung.status`-Wert `"fehler"` bei Versandfehlern | Automatischer Retry bei fehlgeschlagenem Versand (bewusst, siehe Design-Dokument) |
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
 Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf:
 
-1. **Backend: E-Mail-Benachrichtigungen** — Versand bei neu erreichter Eskalationsstufe, `benachrichtigung`-Log, Sonderfall initialer Import ohne Versand (SPECS.md §5.1/§6). Baut auf Plan 3 auf.
-2. **Backend: REST-API fürs WP-Plugin** — `/students`, `/students/{id}`, Maßnahmen-/Ausnahmen-Endpunkte, `/admin/*`-Konfigurationsendpunkte inkl. `/admin/sync-now` (TECH-SPEC.md §3). Setzt die bereits vorhandene WP-Proxy-Auth-Dependency (Plan 1) tatsächlich in Routen ein.
-3. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Bisher nichts gebaut.
-4. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
-5. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
+1. **Backend: REST-API fürs WP-Plugin** — `/students`, `/students/{id}`, Maßnahmen-/Ausnahmen-Endpunkte, `/admin/*`-Konfigurationsendpunkte inkl. `/admin/sync-now` (TECH-SPEC.md §3). Setzt die bereits vorhandene WP-Proxy-Auth-Dependency (Plan 1) tatsächlich in Routen ein.
+2. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Bisher nichts gebaut.
+3. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
+4. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
 
 ## Technische Schulden
 
