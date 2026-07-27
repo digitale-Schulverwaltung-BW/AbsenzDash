@@ -65,34 +65,36 @@ async def replace_measure_types(
     payload_ids = {t.id for t in payload if t.id is not None}
     removed_ids = [tid for tid in existing_by_id if tid not in payload_ids]
     removed_names = [existing_by_id[tid].name for tid in removed_ids]
-    for typ_id in removed_ids:
-        await db.delete(existing_by_id[typ_id])
-
-    for typ_in in payload:
-        if typ_in.id is not None:
-            typ = existing_by_id[typ_in.id]
-            typ.name = typ_in.name
-            typ.setzt_zaehler_zurueck = typ_in.setzt_zaehler_zurueck
-            typ.aktiv = typ_in.aktiv
-        else:
-            typ = MassnahmenTyp(name=typ_in.name, setzt_zaehler_zurueck=typ_in.setzt_zaehler_zurueck, aktiv=typ_in.aktiv)
-            db.add(typ)
-            await db.flush()
-
-        await db.execute(massnahmen_typ_regel.delete().where(massnahmen_typ_regel.c.massnahmen_typ_id == typ.id))
-        for regel_id in typ_in.betroffene_regel_ids:
-            await db.execute(massnahmen_typ_regel.insert().values(massnahmen_typ_id=typ.id, regel_id=regel_id))
-
-    db.add(
-        AuditLog(
-            user_id=nutzer_id,
-            aktion="admin_measure_types_updated",
-            resource_typ="massnahmen_typ",
-            details={"anzahl_typen": len(payload)},
-        )
-    )
 
     try:
+        for typ_id in removed_ids:
+            await db.delete(existing_by_id[typ_id])
+
+        for typ_in in payload:
+            if typ_in.id is not None:
+                typ = existing_by_id[typ_in.id]
+                typ.name = typ_in.name
+                typ.setzt_zaehler_zurueck = typ_in.setzt_zaehler_zurueck
+                typ.aktiv = typ_in.aktiv
+            else:
+                typ = MassnahmenTyp(
+                    name=typ_in.name, setzt_zaehler_zurueck=typ_in.setzt_zaehler_zurueck, aktiv=typ_in.aktiv
+                )
+                db.add(typ)
+                await db.flush()
+
+            await db.execute(massnahmen_typ_regel.delete().where(massnahmen_typ_regel.c.massnahmen_typ_id == typ.id))
+            for regel_id in typ_in.betroffene_regel_ids:
+                await db.execute(massnahmen_typ_regel.insert().values(massnahmen_typ_id=typ.id, regel_id=regel_id))
+
+        db.add(
+            AuditLog(
+                user_id=nutzer_id,
+                aktion="admin_measure_types_updated",
+                resource_typ="massnahmen_typ",
+                details={"anzahl_typen": len(payload)},
+            )
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()

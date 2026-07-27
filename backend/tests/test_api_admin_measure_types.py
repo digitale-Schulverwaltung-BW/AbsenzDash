@@ -104,6 +104,43 @@ async def test_put_measure_types_returns_409_when_deleting_used_type(db_session)
 
 
 @pytest.mark.asyncio
+async def test_put_measure_types_returns_409_when_deleting_used_type_alongside_new_type(db_session):
+    """Regression test: the in-use type is deleted implicitly (omitted from payload) while a
+    brand-new type is created in the same request. Creating a new type calls `await db.flush()`
+    (to obtain its id for the massnahmen_typ_regel association) before the final `db.commit()`.
+    That explicit flush also flushes the pending delete of the in-use type, so the FK violation
+    surfaces there. If that flush isn't inside the try/except around IntegrityError, it propagates
+    as an unhandled 500 instead of the documented 409 (see brief's own test, which only sends an
+    empty payload and never reaches this flush call)."""
+    used_typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster")
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
+    db_session.add_all([used_typ, schueler, nutzer])
+    await db_session.flush()
+    db_session.add(
+        Massnahme(
+            schueler_id=schueler.id,
+            massnahmen_typ_id=used_typ.id,
+            datum=datetime.date(2026, 1, 20),
+            erfasst_von_nutzer_id=nutzer.id,
+        )
+    )
+    await db_session.commit()
+
+    payload = [
+        {"name": "Neuer Typ", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+
+    assert response.status_code == 409
+
+    remaining = await db_session.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == used_typ.id))
+    assert remaining.scalar_one() is not None
+
+
+@pytest.mark.asyncio
 async def test_put_measure_types_deletes_unused_type(db_session):
     typ = MassnahmenTyp(name="Tippfehler", setzt_zaehler_zurueck=False, aktiv=True)
     db_session.add(typ)
@@ -123,6 +160,37 @@ async def test_put_measure_types_rejects_duplicate_name(db_session):
     payload = [
         {"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True, "betroffene_regel_ids": []},
         {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_put_measure_types_rejects_empty_name(db_session):
+    payload = [{"name": "   ", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_put_measure_types_rejects_unknown_regel_id(db_session):
+    payload = [
+        {"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True, "betroffene_regel_ids": [999999]}
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_put_measure_types_rejects_unknown_id(db_session):
+    payload = [
+        {"id": 999999, "name": "X", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}
     ]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
