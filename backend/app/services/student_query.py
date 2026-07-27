@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.bereich import bereich_klasse
+from app.models.classreg_category import ClassregCategory
+from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
@@ -89,6 +91,24 @@ async def load_regel_typ_map(db: AsyncSession, regel_ids: list[int]) -> dict[int
         select(SchwellwertRegel.id, SchwellwertRegel.typ).where(SchwellwertRegel.id.in_(regel_ids))
     )
     return dict(result.all())
+
+
+async def load_excuse_status_map(db: AsyncSession, excuse_status_ids: list[int]) -> dict[int, ExcuseStatus]:
+    """Pro excuse_status_id die zugehoerige Stammdaten-Zeile, fuer die Klartext-Anzeige
+    im PDF-Export (Fehlzeit.excuse_status_id ist sonst nirgends aufgeloest)."""
+    if not excuse_status_ids:
+        return {}
+    result = await db.execute(select(ExcuseStatus).where(ExcuseStatus.id.in_(excuse_status_ids)))
+    return {status.id: status for status in result.scalars().all()}
+
+
+async def load_classreg_category_map(db: AsyncSession, kategorie_ids: list[int]) -> dict[int, ClassregCategory]:
+    """Pro kategorie_id die zugehoerige Stammdaten-Zeile, fuer die Klartext-Anzeige
+    im PDF-Export (KlassenbuchEintrag.kategorie_id ist sonst nirgends aufgeloest)."""
+    if not kategorie_ids:
+        return {}
+    result = await db.execute(select(ClassregCategory).where(ClassregCategory.id.in_(kategorie_ids)))
+    return {kategorie.id: kategorie for kategorie in result.scalars().all()}
 
 
 async def load_zaehlerstand_map(db: AsyncSession, schueler_ids: list[int]) -> dict[int, dict[str, dict[str, Any]]]:

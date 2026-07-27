@@ -5,6 +5,8 @@ from sqlalchemy import select
 
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
+from app.models.classreg_category import ClassregCategory
+from app.models.excuse_status import ExcuseStatus
 from app.models.klasse import Klasse
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
@@ -253,3 +255,37 @@ async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session):
     items, total = await student_query.list_students(db_session, scope={klasse_a.id}, klasse_id=klasse_b.id)
     assert total == 0
     assert items == []
+
+
+@pytest.mark.asyncio
+async def test_load_excuse_status_map_returns_rows_by_id(db_session):
+    status_a = ExcuseStatus(name="E", long_name="Entschuldigt", zaehlt_als_entschuldigt=True)
+    status_b = ExcuseStatus(name="U", long_name="Unentschuldigt", zaehlt_als_entschuldigt=False)
+    db_session.add_all([status_a, status_b])
+    await db_session.commit()
+
+    result = await student_query.load_excuse_status_map(db_session, [status_a.id])
+    assert set(result.keys()) == {status_a.id}
+    assert result[status_a.id].long_name == "Entschuldigt"
+
+
+@pytest.mark.asyncio
+async def test_load_excuse_status_map_returns_empty_dict_for_empty_input(db_session):
+    result = await student_query.load_excuse_status_map(db_session, [])
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_load_classreg_category_map_returns_rows_by_id(db_session):
+    kategorie = ClassregCategory(name="verspaetet", long_name="Verspätung", group_name="fehlzeiten")
+    db_session.add(kategorie)
+    await db_session.commit()
+
+    result = await student_query.load_classreg_category_map(db_session, [kategorie.id])
+    assert result[kategorie.id].long_name == "Verspätung"
+
+
+@pytest.mark.asyncio
+async def test_load_classreg_category_map_returns_empty_dict_for_empty_input(db_session):
+    result = await student_query.load_classreg_category_map(db_session, [])
+    assert result == {}
