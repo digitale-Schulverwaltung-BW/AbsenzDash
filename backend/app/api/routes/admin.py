@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_schulleitung
@@ -13,10 +13,17 @@ from app.schemas.admin import (
     ExcuseStatusOut,
     MeasureTypeIn,
     MeasureTypeOut,
+    SyncSettingsIn,
+    SyncSettingsOut,
     ThresholdRuleIn,
     ThresholdRuleOut,
 )
-from app.services import excuse_status_service, measure_type_service, threshold_rule_service
+from app.services import (
+    excuse_status_service,
+    measure_type_service,
+    sync_settings_service,
+    threshold_rule_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_schulleitung)])
 
@@ -61,3 +68,19 @@ async def put_excuse_statuses(
     payload: list[ExcuseStatusIn],
 ) -> list[ExcuseStatusOut]:
     return await excuse_status_service.replace_excuse_statuses(db, payload, nutzer.id)
+
+
+@router.get("/sync-settings")
+async def get_sync_settings(db: Annotated[AsyncSession, Depends(get_db)]) -> SyncSettingsOut:
+    return await sync_settings_service.get_sync_settings(db)
+
+
+@router.put("/sync-settings")
+async def put_sync_settings(
+    request: Request,
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    payload: SyncSettingsIn,
+) -> SyncSettingsOut:
+    scheduler = request.app.state.scheduler
+    return await sync_settings_service.update_sync_settings(db, scheduler, payload.sync_interval_cron, nutzer.id)

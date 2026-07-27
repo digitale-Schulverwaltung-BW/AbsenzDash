@@ -21,7 +21,7 @@ from app.services.webuntis_klassenbuch_sync import sync_klassenbuch
 logger = logging.getLogger(__name__)
 
 
-async def _get_or_create_einstellung(db: AsyncSession) -> Einstellung:
+async def get_or_create_einstellung(db: AsyncSession) -> Einstellung:
     einstellung = (await db.execute(select(Einstellung))).scalars().first()
     if einstellung is None:
         einstellung = Einstellung()
@@ -47,7 +47,7 @@ async def _run_once(db: AsyncSession) -> None:
         await sync_kategorien(client, db)
         await import_schueler(db)
 
-        einstellung = await _get_or_create_einstellung(db)
+        einstellung = await get_or_create_einstellung(db)
 
         schuljahr = await client.call("getCurrentSchoolyear", {})
         schuljahr_start = datetime.strptime(str(schuljahr["startDate"]), "%Y%m%d").date()

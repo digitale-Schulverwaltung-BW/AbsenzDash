@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from pydantic import BaseModel
 
 
@@ -69,3 +71,13 @@ class ExcuseStatusOut(BaseModel):
     long_name: str | None
     zaehlt_als_entschuldigt: bool
     aktiv: bool
+
+
+class SyncSettingsOut(BaseModel):
+    sync_interval_cron: str
+    schuljahr_start_cache: date | None
+    letzter_sync_am: datetime | None
+
+
+class SyncSettingsIn(BaseModel):
+    sync_interval_cron: str
