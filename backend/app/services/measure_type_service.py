@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
+from app.core.database import ist_unique_violation
 from app.models.audit_log import AuditLog
 from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
 from app.models.schwellwert_regel import SchwellwertRegel
@@ -30,6 +31,14 @@ async def list_measure_types(db: AsyncSession) -> list[MeasureTypeOut]:
 
 
 def _validate_payload(payload: list[MeasureTypeIn]) -> None:
+    seen_ids: set[int] = set()
+    for typ in payload:
+        if typ.id is None:
+            continue
+        if typ.id in seen_ids:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Duplicate id in payload: {typ.id}")
+        seen_ids.add(typ.id)
+
     seen_names: set[str] = set()
     for typ in payload:
         if not typ.name.strip():
@@ -96,8 +105,13 @@ async def replace_measure_types(
             )
         )
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
+        if ist_unique_violation(exc):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Name bereits vergeben — bitte einen eindeutigen Namen für den Maßnahmen-Typ wählen.",
+            )
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"Kann folgende(n) Maßnahmen-Typ(en) nicht löschen, da bereits verwendet: "

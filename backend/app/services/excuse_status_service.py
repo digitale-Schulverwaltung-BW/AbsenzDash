@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
+from app.core.database import ist_unique_violation
 from app.models.audit_log import AuditLog
 from app.models.excuse_status import ExcuseStatus
 from app.schemas.admin import ExcuseStatusIn, ExcuseStatusOut
@@ -26,6 +27,14 @@ async def list_excuse_statuses(db: AsyncSession) -> list[ExcuseStatusOut]:
 
 
 def _validate_payload(payload: list[ExcuseStatusIn]) -> None:
+    seen_ids: set[int] = set()
+    for status_in in payload:
+        if status_in.id is None:
+            continue
+        if status_in.id in seen_ids:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Duplicate id in payload: {status_in.id}")
+        seen_ids.add(status_in.id)
+
     seen_names: set[str] = set()
     for status_in in payload:
         if not status_in.name.strip():
@@ -82,8 +91,13 @@ async def replace_excuse_statuses(
         )
 
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
+        if ist_unique_violation(exc):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Name bereits vergeben — bitte einen eindeutigen Namen für den Entschuldigungsstatus wählen.",
+            )
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"Kann folgende(n) Entschuldigungsstatus nicht löschen, da bereits verwendet: "

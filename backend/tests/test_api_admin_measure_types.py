@@ -141,6 +141,61 @@ async def test_put_measure_types_returns_409_when_deleting_used_type_alongside_n
 
 
 @pytest.mark.asyncio
+async def test_put_measure_types_returns_409_with_name_conflict_message(db_session):
+    """Regression: die IntegrityError-Ursache ist hier eine UNIQUE-Verletzung auf `name` (der neue
+    Typ wird eingefügt, bevor die Umbenennung des bestehenden Typs den Namen freigibt) — kein
+    FK-in-Verwendung-Konflikt. Die alte Sammelmeldung war faktisch falsch und rendert mit leerer
+    `removed_names`-Liste sogar als '... bereits verwendet: .'."""
+    bestehend = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
+    db_session.add(bestehend)
+    await db_session.commit()
+
+    payload = [
+        {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
+        {
+            "id": bestehend.id, "name": "Bußgeld", "setzt_zaehler_zurueck": True,
+            "aktiv": True, "betroffene_regel_ids": [],
+        },
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "Name bereits vergeben" in detail
+    assert "bereits verwendet" not in detail
+
+    await db_session.rollback()
+    remaining = await db_session.execute(select(MassnahmenTyp))
+    rows = remaining.scalars().all()
+    assert [r.name for r in rows] == ["Nachsitzen"]
+
+
+@pytest.mark.asyncio
+async def test_put_measure_types_rejects_duplicate_id_in_payload(db_session):
+    typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
+    db_session.add(typ)
+    await db_session.commit()
+
+    payload = [
+        {"id": typ.id, "name": "A", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
+        {"id": typ.id, "name": "B", "setzt_zaehler_zurueck": True, "aktiv": False, "betroffene_regel_ids": []},
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
+
+    assert response.status_code == 422
+    assert "Duplicate id in payload" in response.json()["detail"]
+
+    await db_session.rollback()
+    remaining = await db_session.execute(select(MassnahmenTyp))
+    rows = remaining.scalars().all()
+    assert [(r.name, r.setzt_zaehler_zurueck) for r in rows] == [("Nachsitzen", True)]
+
+
+@pytest.mark.asyncio
 async def test_put_measure_types_deletes_unused_type(db_session):
     typ = MassnahmenTyp(name="Tippfehler", setzt_zaehler_zurueck=False, aktiv=True)
     db_session.add(typ)
