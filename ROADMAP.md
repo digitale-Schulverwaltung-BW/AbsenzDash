@@ -1,6 +1,6 @@
 # AbsenzDash — Roadmap
 
-Stand: 2026-07-26
+Stand: 2026-07-27
 
 Übergeordneter Fortschritts-Tracker über [SPECS.md](SPECS.md)/[TECH-SPEC.md](TECH-SPEC.md) hinweg. Die fachlichen/technischen Details stehen dort und in den einzelnen Umsetzungsplänen unter `docs/superpowers/plans/` — dieses Dokument bildet nur ab, welcher Teil des Gesamtsystems (SPECS.md) bereits durch welchen Plan abgedeckt ist und was noch offen ist.
 
@@ -15,12 +15,13 @@ Stand: 2026-07-26
 | **Plan 3** — [Eskalations-Engine](docs/superpowers/plans/2026-07-26-eskalations-engine.md) | Schwellwert-Regeln (schulweit/abteilungsweit/klassenweit-Präzedenz), mehrstufige Eskalation, Maßnahmen-Katalog inkl. Default-Set und Zähler-Reset, Ausnahmen, Benachrichtigungs-Log (inkl. Empfänger-Auflösung und initial_import/kein_empfaenger-Sonderfälle) | Admin-UI/API für Regel-/Maßnahmen-Pflege, tatsächlicher E-Mail-Versand |
 | **Plan 3.1** — [Eskalations-Engine Follow-Ups](docs/superpowers/plans/2026-07-26-eskalations-engine-followups.md) | Nicht-blockierende Findings aus dem Plan-3-Abschlussreview: Query-Caching in `pruefe_schwellwerte` (Regel-Auflösung, Zählerstand-Wiederverwendung), fehlender Index auf `benachrichtigung.schueler_id`/`regel_id`, 3 nachgezogene Regressionstests, Log-Spam-Fix | — |
 | **Plan 4** — [E-Mail-Benachrichtigungen](docs/superpowers/plans/2026-07-26-email-benachrichtigungen.md) | SMTP-Versand bei neu erreichter Eskalationsstufe (`app/services/mailer.py`), admin-anpassbares Text-Template (gitignorete Override-Datei), neuer `benachrichtigung.status`-Wert `"fehler"` bei Versandfehlern | Automatischer Retry bei fehlgeschlagenem Versand (bewusst, siehe Design-Dokument) |
+| **Plan 5** — [Backend REST-API fürs WP-Plugin — Kern-Endpunkte](docs/superpowers/plans/2026-07-27-rest-api-wordpress-kern.md) | Scope-Check (`nutzer_klasse`/`nutzer_bereich`), `GET /students` (paginiert, gefiltert), `GET /students/{id}`, `POST /students/{id}/measures`, `POST/DELETE /students/{id}/exemptions`, Audit-Log für Maßnahmen/Ausnahmen (TECH-SPEC.md §3, SPECS.md §3/4/7) | Admin-Konfigurationsendpunkte (`/admin/*`), PDF-Export |
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
 Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf:
 
-1. **Backend: REST-API fürs WP-Plugin** — `/students`, `/students/{id}`, Maßnahmen-/Ausnahmen-Endpunkte, `/admin/*`-Konfigurationsendpunkte inkl. `/admin/sync-now` (TECH-SPEC.md §3). Setzt die bereits vorhandene WP-Proxy-Auth-Dependency (Plan 1) tatsächlich in Routen ein.
+1. **Backend: REST-API fürs WP-Plugin — Admin-Konfiguration & PDF-Export** — `/admin/*`-Konfigurationsendpunkte inkl. `/admin/sync-now`, `GET /students/{id}/export.pdf` (TECH-SPEC.md §3). Kern-Endpunkte (Übersicht/Detail/Maßnahmen/Ausnahmen) sind mit Plan 5 fertig.
 2. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Bisher nichts gebaut.
 3. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
 4. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
