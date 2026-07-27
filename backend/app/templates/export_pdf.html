@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: A4;
+    margin: 2cm 1.5cm 2.2cm 1.5cm;
+    @bottom-left { content: "{{ schueler.nachname }}, {{ schueler.vorname }}"; font-size: 9px; }
+    @bottom-center { content: "Gedruckt am {{ erstellt_am }}"; font-size: 9px; }
+    @bottom-right { content: "Seite " counter(page) " von " counter(pages); font-size: 9px; }
+  }
+  body { font-family: sans-serif; font-size: 11px; color: #111; }
+  h1 { font-size: 16px; margin-bottom: 0; }
+  h2 { font-size: 13px; margin-top: 1.5em; margin-bottom: 0.3em; }
+  .meta { color: #444; margin-bottom: 1em; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+</style>
+</head>
+<body>
+  <h1>Fehlzeiten- und Maßnahmenübersicht</h1>
+  <div class="meta">
+    {{ schueler.nachname }}, {{ schueler.vorname }}{% if klasse %} &middot; Klasse {{ klasse.name }}{% endif %}
+  </div>
+
+  {% if "fehlzeiten" in sections %}
+  <h2>Fehlzeiten</h2>
+  <table>
+    <thead>
+      <tr><th>Datum</th><th>Typ</th><th>Fach</th><th>Entschuldigungsstatus</th><th>Grund</th></tr>
+    </thead>
+    <tbody>
+      {% for f in fehlzeiten %}
+      <tr>
+        <td>{{ f.datum }}</td>
+        <td>{{ f.typ }}</td>
+        <td>{{ f.fach or "" }}</td>
+        <td>{{ f.excuse_status_name or "" }}</td>
+        <td>{{ f.grund_text or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if "klassenbuch" in sections %}
+  <h2>Klassenbucheinträge</h2>
+  <table>
+    <thead>
+      <tr><th>Datum</th><th>Kategorie</th><th>Text</th></tr>
+    </thead>
+    <tbody>
+      {% for k in klassenbuch %}
+      <tr>
+        <td>{{ k.datum }}</td>
+        <td>{{ k.kategorie_name or "" }}</td>
+        <td>{{ k.text or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if "massnahmen" in sections %}
+  <h2>Maßnahmen</h2>
+  <table>
+    <thead>
+      <tr><th>Datum</th><th>Typ</th><th>Notiz</th><th>Erfasst von</th></tr>
+    </thead>
+    <tbody>
+      {% for m in massnahmen %}
+      <tr>
+        <td>{{ m.datum }}</td>
+        <td>{{ m.massnahmen_typ_name }}</td>
+        <td>{{ m.notiz or "" }}</td>
+        <td>{{ m.erfasst_von_name }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if "ausnahmen" in sections %}
+  <h2>Aktive Ausnahmen</h2>
+  <table>
+    <thead>
+      <tr><th>Kategorie</th><th>Grund</th><th>Gültig bis</th></tr>
+    </thead>
+    <tbody>
+      {% for a in ausnahmen %}
+      <tr>
+        <td>{{ a.kategorie }}</td>
+        <td>{{ a.grund }}</td>
+        <td>{{ a.gueltig_bis or "unbefristet" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if "benachrichtigungen" in sections %}
+  <h2>Benachrichtigungen</h2>
+  <table>
+    <thead>
+      <tr><th>Zeitpunkt</th><th>Regel-Typ</th><th>Stufe</th><th>Empfänger</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for b in benachrichtigungen %}
+      <tr>
+        <td>{{ b.gesendet_am }}</td>
+        <td>{{ b.typ or "" }}</td>
+        <td>{{ b.stufe_nr }}</td>
+        <td>{{ b.empfaenger_text }}</td>
+        <td>{{ b.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</body>
+</html>

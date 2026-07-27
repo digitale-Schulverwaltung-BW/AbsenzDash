@@ -1,3 +1,17 @@
+import datetime
+
+import pytest
+
+from app.models.ausnahme import Ausnahme
+from app.models.classreg_category import ClassregCategory
+from app.models.excuse_status import ExcuseStatus
+from app.models.fehlzeit import Fehlzeit
+from app.models.klasse import Klasse
+from app.models.klassenbuch_eintrag import KlassenbuchEintrag
+from app.models.massnahme import Massnahme
+from app.models.massnahmen_typ import MassnahmenTyp
+from app.models.nutzer import Nutzer
+from app.models.schueler import Schueler
 from app.services import export_service
 
 
@@ -19,3 +33,107 @@ def test_build_export_filename_replaces_remaining_special_characters_with_dash()
 
 def test_build_export_filename_replaces_spaces_with_dash():
     assert export_service.build_export_filename("von Bergmann", "Karl Heinz") == "von-Bergmann_Karl-Heinz_export.pdf"
+
+
+async def _seed_full_student(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
+    status = ExcuseStatus(name="U", long_name="Unentschuldigt", zaehlt_als_entschuldigt=False)
+    kategorie = ClassregCategory(name="verspaetet", long_name="Verspätung")
+    typ = MassnahmenTyp(name="Elterngespräch", setzt_zaehler_zurueck=False)
+    nutzer = Nutzer(wp_user_id="lehrer1", email="l@b.de", name="Lehrer Eins", rolle="klassenlehrkraft")
+    db_session.add_all([schueler, status, kategorie, typ, nutzer])
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id,
+            typ="tag",
+            datum=datetime.date(2026, 2, 1),
+            start_zeit=1,
+            end_zeit=6,
+            excuse_status_id=status.id,
+        )
+    )
+    db_session.add(
+        KlassenbuchEintrag(
+            webuntis_id=1,
+            schueler_id=schueler.id,
+            kategorie_id=kategorie.id,
+            datum=datetime.date(2026, 2, 2),
+            text="Zu spät gekommen",
+        )
+    )
+    db_session.add(
+        Massnahme(
+            schueler_id=schueler.id,
+            massnahmen_typ_id=typ.id,
+            datum=datetime.date(2026, 2, 3),
+            notiz="Gespräch geführt",
+            erfasst_von_nutzer_id=nutzer.id,
+        )
+    )
+    db_session.add(Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="Attest", aktiv=True))
+    await db_session.commit()
+    return schueler, klasse
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_includes_all_sections_by_default(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse,
+        sections={"fehlzeiten", "klassenbuch", "massnahmen", "ausnahmen", "benachrichtigungen"},
+    )
+
+    assert "Muster" in html
+    assert "10a" in html
+    assert "Unentschuldigt" in html
+    assert "Verspätung" in html
+    assert "Elterngespräch" in html
+    assert "Attest" in html
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_omits_sections_not_requested(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"}
+    )
+
+    assert "Unentschuldigt" in html
+    assert "Verspätung" not in html  # Klassenbuch-Abschnitt
+    assert "Elterngespräch" not in html  # Massnahmen-Abschnitt
+    assert "Attest" not in html  # Ausnahmen-Abschnitt
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_repeats_table_headers_via_thead(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"}
+    )
+
+    assert "<thead>" in html
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_footer_contains_name_and_page_counter(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"}
+    )
+
+    assert "Muster, Max" in html
+    assert "counter(page)" in html
+    assert "counter(pages)" in html
+
+
+def test_html_to_pdf_returns_pdf_bytes():
+    pdf_bytes = export_service.html_to_pdf("<html><body><h1>Test</h1></body></html>")
+    assert pdf_bytes.startswith(b"%PDF")
