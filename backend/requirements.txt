@@ -8,5 +8,7 @@ pydantic-settings>=2.4,<3.0
 python-dotenv>=1.0,<2.0
 apscheduler>=3.10,<4.0
 weasyprint>=62,<63
+# pydyf 0.12.x breaks WeasyPrint 62.3's HTML(...).write_pdf() at runtime (AttributeError:
+# 'super' object has no attribute 'transform'); WeasyPrint itself doesn't constrain this.
 pydyf==0.11.0
 jinja2>=3.1,<4.0

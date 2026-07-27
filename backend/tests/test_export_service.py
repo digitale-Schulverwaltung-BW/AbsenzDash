@@ -3,6 +3,7 @@ import datetime
 import pytest
 
 from app.models.ausnahme import Ausnahme
+from app.models.benachrichtigung import Benachrichtigung
 from app.models.classreg_category import ClassregCategory
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
@@ -137,3 +138,26 @@ async def test_render_student_export_html_footer_contains_name_and_page_counter(
 def test_html_to_pdf_returns_pdf_bytes():
     pdf_bytes = export_service.html_to_pdf("<html><body><h1>Test</h1></body></html>")
     assert pdf_bytes.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_converts_gesendet_am_to_berlin_local_time(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+    db_session.add(
+        Benachrichtigung(
+            schueler_id=schueler.id,
+            regel_id=None,
+            stufe_nr=1,
+            gesendet_am=datetime.datetime(2026, 2, 1, 8, 0, tzinfo=datetime.timezone.utc),
+            empfaenger=[{"rolle": "klassenlehrkraft"}],
+            status="gesendet",
+        )
+    )
+    await db_session.commit()
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"benachrichtigungen"}
+    )
+
+    # 08:00 UTC in Februar (Winterzeit, UTC+1) -> 09:00 Berlin-Lokalzeit
+    assert "01.02.2026 09:00" in html

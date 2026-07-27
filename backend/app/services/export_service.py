@@ -5,6 +5,7 @@ import re
 import unicodedata
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ _UMLAUT_MAP = str.maketrans(
 )
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 _jinja_env = Environment(loader=FileSystemLoader(_TEMPLATE_DIR), autoescape=True)
+_BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 def build_export_filename(nachname: str, vorname: str) -> str:
@@ -101,7 +103,7 @@ async def render_student_export_html(
         for b in detail["benachrichtigungen"]:
             benachrichtigungen.append(
                 {
-                    "gesendet_am": b.gesendet_am.strftime("%d.%m.%Y %H:%M"),
+                    "gesendet_am": b.gesendet_am.astimezone(_BERLIN_TZ).strftime("%d.%m.%Y %H:%M"),
                     "typ": regel_typ_map.get(b.regel_id) if b.regel_id is not None else None,
                     "stufe_nr": b.stufe_nr,
                     "empfaenger_text": ", ".join(e.get("rolle", "?") for e in b.empfaenger) or "-",
@@ -114,7 +116,7 @@ async def render_student_export_html(
         schueler=schueler,
         klasse=klasse,
         sections=sections,
-        erstellt_am=datetime.datetime.now().strftime("%d.%m.%Y %H:%M"),
+        erstellt_am=datetime.datetime.now(_BERLIN_TZ).strftime("%d.%m.%Y %H:%M"),
         fehlzeiten=fehlzeiten,
         klassenbuch=klassenbuch,
         massnahmen=massnahmen,

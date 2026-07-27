@@ -206,7 +206,7 @@ async def revoke_exemption(
 _EXPORT_SECTIONS = {"fehlzeiten", "klassenbuch", "massnahmen", "ausnahmen", "benachrichtigungen"}
 
 
-@router.get("/{schueler_id}/export.pdf")
+@router.get("/{schueler_id}/export.pdf", responses={200: {"content": {"application/pdf": {}}}})
 async def export_student_pdf(
     schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
     nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
