@@ -25,7 +25,7 @@ Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung
 3. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
 4. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
 
-## Technische Schulden
+## Technical debt
 
 Bekannte, nicht dringende Verbesserungen — kein eigener Plan nötig, bei Gelegenheit oder wenn die Performance tatsächlich zum Problem wird:
 
