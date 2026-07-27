@@ -9,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_scoped_schueler, get_wordpress_proxy_nutzer, resolve_scope
 from app.core.database import get_db
 from app.models.ausnahme import Ausnahme
+from app.models.benachrichtigung import Benachrichtigung
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.schemas.students import (
     AusnahmeOut,
+    BenachrichtigungOut,
     ExemptionCreateIn,
     MassnahmeOut,
     MeasureCreateIn,
@@ -26,6 +28,22 @@ from app.services import ausnahme_service, massnahme_service, student_query
 router = APIRouter(prefix="/students", tags=["students"])
 
 
+def _benachrichtigung_out(
+    benachrichtigung: Benachrichtigung | None, regel_typ_map: dict[int, str]
+) -> BenachrichtigungOut | None:
+    if benachrichtigung is None:
+        return None
+    return BenachrichtigungOut(
+        id=benachrichtigung.id,
+        regel_id=benachrichtigung.regel_id,
+        typ=regel_typ_map.get(benachrichtigung.regel_id) if benachrichtigung.regel_id is not None else None,
+        stufe_nr=benachrichtigung.stufe_nr,
+        gesendet_am=benachrichtigung.gesendet_am,
+        empfaenger=benachrichtigung.empfaenger,
+        status=benachrichtigung.status,
+    )
+
+
 @router.get("")
 async def get_students(
     nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
@@ -35,6 +53,7 @@ async def get_students(
     typ: Literal["fehlzeiten", "klassenbuch"] | None = None,
     min_stufe: int | None = None,
     nur_auffaellige: bool = False,
+    nur_aktive: bool = True,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StudentListOut:
@@ -47,6 +66,7 @@ async def get_students(
         typ=typ,
         min_stufe=min_stufe,
         nur_auffaellige=nur_auffaellige,
+        nur_aktive=nur_aktive,
         limit=limit,
         offset=offset,
     )
@@ -54,6 +74,13 @@ async def get_students(
     extras = await student_query.load_overview_extras(db, schueler_ids)
     klasse_ids = [schueler.klasse_id for schueler in schueler_list if schueler.klasse_id is not None]
     klasse_map = await student_query.load_klasse_map(db, klasse_ids)
+    regel_ids = [
+        extras[schueler.id]["letzte_benachrichtigung"].regel_id
+        for schueler in schueler_list
+        if extras[schueler.id]["letzte_benachrichtigung"] is not None
+        and extras[schueler.id]["letzte_benachrichtigung"].regel_id is not None
+    ]
+    regel_typ_map = await student_query.load_regel_typ_map(db, regel_ids)
 
     items = [
         StudentOverviewOut(
@@ -62,7 +89,7 @@ async def get_students(
             nachname=schueler.nachname,
             klasse=klasse_map.get(schueler.klasse_id) if schueler.klasse_id is not None else None,
             zaehlerstand=extras[schueler.id]["zaehlerstand"],
-            letzte_benachrichtigung=extras[schueler.id]["letzte_benachrichtigung"],
+            letzte_benachrichtigung=_benachrichtigung_out(extras[schueler.id]["letzte_benachrichtigung"], regel_typ_map),
             ohne_massnahme_seit_benachrichtigung=extras[schueler.id]["ohne_massnahme_seit_benachrichtigung"],
         )
         for schueler in schueler_list
@@ -80,6 +107,10 @@ async def get_student_detail(
     if schueler.klasse_id is not None:
         klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])
         klasse = klasse_map.get(schueler.klasse_id)
+
+    benachrichtigung_regel_ids = [b.regel_id for b in detail["benachrichtigungen"] if b.regel_id is not None]
+    regel_typ_map = await student_query.load_regel_typ_map(db, benachrichtigung_regel_ids)
+    benachrichtigungen = [_benachrichtigung_out(b, regel_typ_map) for b in detail["benachrichtigungen"]]
 
     massnahmen = [
         MassnahmeOut(
@@ -104,7 +135,7 @@ async def get_student_detail(
         klassenbuch=detail["klassenbuch"],
         massnahmen=massnahmen,
         ausnahmen=detail["ausnahmen"],
-        benachrichtigungen=detail["benachrichtigungen"],
+        benachrichtigungen=benachrichtigungen,
     )
 
 

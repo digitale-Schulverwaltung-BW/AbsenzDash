@@ -20,8 +20,8 @@ async def test_list_students_scopes_by_klasse_ids(db_session):
     klasse_b = Klasse(webuntis_id=2, name="10b")
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
-    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id)
-    schueler_b = Schueler(externe_id="ext-b", vorname="B", nachname="B", klasse_id=klasse_b.id)
+    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id, aktiv=True)
+    schueler_b = Schueler(externe_id="ext-b", vorname="B", nachname="B", klasse_id=klasse_b.id, aktiv=True)
     db_session.add_all([schueler_a, schueler_b])
     await db_session.commit()
 
@@ -32,7 +32,7 @@ async def test_list_students_scopes_by_klasse_ids(db_session):
 
 @pytest.mark.asyncio
 async def test_list_students_returns_empty_for_empty_scope(db_session):
-    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)
     await db_session.commit()
 
@@ -51,8 +51,8 @@ async def test_list_students_filters_by_bereich_id(db_session):
     db_session.add(bereich)
     await db_session.flush()
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse_a.id))
-    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id)
-    schueler_b = Schueler(externe_id="ext-b", vorname="B", nachname="B", klasse_id=klasse_b.id)
+    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id, aktiv=True)
+    schueler_b = Schueler(externe_id="ext-b", vorname="B", nachname="B", klasse_id=klasse_b.id, aktiv=True)
     db_session.add_all([schueler_a, schueler_b])
     await db_session.commit()
 
@@ -63,8 +63,8 @@ async def test_list_students_filters_by_bereich_id(db_session):
 
 @pytest.mark.asyncio
 async def test_list_students_filters_by_min_stufe_and_typ(db_session):
-    schueler_hoch = Schueler(externe_id="ext-1", vorname="A", nachname="A")
-    schueler_niedrig = Schueler(externe_id="ext-2", vorname="B", nachname="B")
+    schueler_hoch = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    schueler_niedrig = Schueler(externe_id="ext-2", vorname="B", nachname="B", aktiv=True)
     db_session.add_all([schueler_hoch, schueler_niedrig])
     await db_session.flush()
     db_session.add_all(
@@ -82,8 +82,8 @@ async def test_list_students_filters_by_min_stufe_and_typ(db_session):
 
 @pytest.mark.asyncio
 async def test_list_students_nur_auffaellige_excludes_students_without_reached_stufe(db_session):
-    schueler_auffaellig = Schueler(externe_id="ext-1", vorname="A", nachname="A")
-    schueler_unauffaellig = Schueler(externe_id="ext-2", vorname="B", nachname="B")
+    schueler_auffaellig = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    schueler_unauffaellig = Schueler(externe_id="ext-2", vorname="B", nachname="B", aktiv=True)
     db_session.add_all([schueler_auffaellig, schueler_unauffaellig])
     await db_session.flush()
     db_session.add_all(
@@ -102,7 +102,7 @@ async def test_list_students_nur_auffaellige_excludes_students_without_reached_s
 @pytest.mark.asyncio
 async def test_list_students_pagination(db_session):
     schueler_list = [
-        Schueler(externe_id=f"ext-{i}", vorname="A", nachname=f"{i:02d}") for i in range(5)
+        Schueler(externe_id=f"ext-{i}", vorname="A", nachname=f"{i:02d}", aktiv=True) for i in range(5)
     ]
     db_session.add_all(schueler_list)
     await db_session.commit()
@@ -115,7 +115,7 @@ async def test_list_students_pagination(db_session):
 
 @pytest.mark.asyncio
 async def test_load_zaehlerstand_map_synthesizes_default_for_missing_typ(db_session):
-    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)
     await db_session.flush()
     db_session.add(SchuelerZaehlerstand(schueler_id=schueler.id, typ="fehlzeiten", aktueller_stand=3, erreichte_stufe_nr=1))
@@ -128,7 +128,7 @@ async def test_load_zaehlerstand_map_synthesizes_default_for_missing_typ(db_sess
 
 @pytest.mark.asyncio
 async def test_load_letzte_benachrichtigung_map_returns_latest_per_schueler(db_session):
-    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)
     await db_session.flush()
     aelter = Benachrichtigung(
@@ -154,8 +154,8 @@ async def test_load_letzte_benachrichtigung_map_returns_latest_per_schueler(db_s
 
 @pytest.mark.asyncio
 async def test_load_ohne_massnahme_map_flags_missing_followup(db_session):
-    schueler_ohne = Schueler(externe_id="ext-1", vorname="A", nachname="A")
-    schueler_mit = Schueler(externe_id="ext-2", vorname="B", nachname="B")
+    schueler_ohne = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    schueler_mit = Schueler(externe_id="ext-2", vorname="B", nachname="B", aktiv=True)
     db_session.add_all([schueler_ohne, schueler_mit])
     await db_session.flush()
     typ = MassnahmenTyp(name="Gespräch", setzt_zaehler_zurueck=False)
@@ -191,7 +191,7 @@ async def test_load_ohne_massnahme_map_flags_missing_followup(db_session):
 
 @pytest.mark.asyncio
 async def test_load_student_detail_aggregates_all_sublists(db_session):
-    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A")
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)
     await db_session.flush()
     typ = MassnahmenTyp(name="Gespräch", setzt_zaehler_zurueck=False)
@@ -218,3 +218,38 @@ async def test_load_student_detail_aggregates_all_sublists(db_session):
     assert typ_name == "Gespräch"
     assert nutzer_name == "Lehrer A"
     assert detail["zaehlerstand"]["fehlzeiten"] == {"aktueller_stand": 0, "erreichte_stufe_nr": None}
+
+
+@pytest.mark.asyncio
+async def test_list_students_excludes_inactive_students_by_default(db_session):
+    aktiv = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    inaktiv = Schueler(externe_id="ext-2", vorname="B", nachname="B", aktiv=False)
+    db_session.add_all([aktiv, inaktiv])
+    await db_session.commit()
+
+    items, total = await student_query.list_students(db_session, scope=None)
+    assert total == 1
+    assert [s.id for s in items] == [aktiv.id]
+
+    items, total = await student_query.list_students(db_session, scope=None, nur_aktive=False)
+    assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session):
+    klasse_a = Klasse(webuntis_id=1, name="10a")
+    klasse_b = Klasse(webuntis_id=2, name="10b")
+    db_session.add_all([klasse_a, klasse_b])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id, aktiv=True),
+            Schueler(externe_id="ext-b", vorname="B", nachname="B", klasse_id=klasse_b.id, aktiv=True),
+        ]
+    )
+    await db_session.commit()
+
+    # scope is klasse_a only; caller asks for klasse_b anyway - must get nothing, not klasse_b's student
+    items, total = await student_query.list_students(db_session, scope={klasse_a.id}, klasse_id=klasse_b.id)
+    assert total == 0
+    assert items == []

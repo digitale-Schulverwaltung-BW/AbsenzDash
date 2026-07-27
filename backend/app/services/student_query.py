@@ -17,6 +17,7 @@ from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.schwellwert_regel import SchwellwertRegel
 
 ZAEHLERSTAND_TYPEN = ("fehlzeiten", "klassenbuch")
 
@@ -29,6 +30,7 @@ async def list_students(
     typ: str | None = None,
     min_stufe: int | None = None,
     nur_auffaellige: bool = False,
+    nur_aktive: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[Schueler], int]:
@@ -38,6 +40,8 @@ async def list_students(
         return [], 0
 
     conditions = []
+    if nur_aktive:
+        conditions.append(Schueler.aktiv.is_(True))
     if scope is not None:
         conditions.append(Schueler.klasse_id.in_(scope))
     if klasse_id is not None:
@@ -63,7 +67,9 @@ async def list_students(
         query = query.where(condition)
 
     total = (await db.execute(count_query)).scalar_one()
-    result = await db.execute(query.order_by(Schueler.nachname, Schueler.vorname).offset(offset).limit(limit))
+    result = await db.execute(
+        query.order_by(Schueler.nachname, Schueler.vorname, Schueler.id).offset(offset).limit(limit)
+    )
     return list(result.scalars().all()), total
 
 
@@ -72,6 +78,17 @@ async def load_klasse_map(db: AsyncSession, klasse_ids: list[int]) -> dict[int, 
         return {}
     result = await db.execute(select(Klasse).where(Klasse.id.in_(klasse_ids)))
     return {klasse.id: klasse for klasse in result.scalars().all()}
+
+
+async def load_regel_typ_map(db: AsyncSession, regel_ids: list[int]) -> dict[int, str]:
+    """Pro regel_id der zugehoerige typ ('fehlzeiten'/'klassenbuch'), fuer die Anzeige
+    im 'Benachrichtigt'-Badge (SPECS.md Abschnitt 7)."""
+    if not regel_ids:
+        return {}
+    result = await db.execute(
+        select(SchwellwertRegel.id, SchwellwertRegel.typ).where(SchwellwertRegel.id.in_(regel_ids))
+    )
+    return dict(result.all())
 
 
 async def load_zaehlerstand_map(db: AsyncSession, schueler_ids: list[int]) -> dict[int, dict[str, dict[str, Any]]]:

@@ -18,6 +18,7 @@ from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.schwellwert_regel import SchwellwertRegel
 
 HEADERS_KLASSENLEHRKRAFT = {
     "X-WordPress-Secret": "test-secret",
@@ -57,8 +58,8 @@ async def test_get_students_returns_only_students_in_callers_scope(db_session):
     klasse_b = Klasse(webuntis_id=2, name="10b")
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
-    schueler_a = Schueler(externe_id="ext-a", vorname="Max", nachname="Muster", klasse_id=klasse_a.id)
-    schueler_b = Schueler(externe_id="ext-b", vorname="Erika", nachname="Beispiel", klasse_id=klasse_b.id)
+    schueler_a = Schueler(externe_id="ext-a", vorname="Max", nachname="Muster", klasse_id=klasse_a.id, aktiv=True)
+    schueler_b = Schueler(externe_id="ext-b", vorname="Erika", nachname="Beispiel", klasse_id=klasse_b.id, aktiv=True)
     db_session.add_all([schueler_a, schueler_b])
     await _seed_klassenlehrkraft(db_session, [klasse_a.id])
 
@@ -78,13 +79,15 @@ async def test_get_students_response_includes_zaehlerstand_and_letzte_benachrich
     klasse = Klasse(webuntis_id=1, name="10a")
     db_session.add(klasse)
     await db_session.flush()
-    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
-    db_session.add(schueler)
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
+    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
+    db_session.add_all([schueler, regel])
     await db_session.flush()
     db_session.add(SchuelerZaehlerstand(schueler_id=schueler.id, typ="fehlzeiten", aktueller_stand=4, erreichte_stufe_nr=1))
     db_session.add(
         Benachrichtigung(
             schueler_id=schueler.id,
+            regel_id=regel.id,
             stufe_nr=1,
             gesendet_am=datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
             empfaenger=[{"rolle": "klassenlehrkraft", "nutzer_id": 1}],
@@ -102,6 +105,7 @@ async def test_get_students_response_includes_zaehlerstand_and_letzte_benachrich
     assert item["zaehlerstand"]["fehlzeiten"] == {"aktueller_stand": 4, "erreichte_stufe_nr": 1}
     assert item["zaehlerstand"]["klassenbuch"] == {"aktueller_stand": 0, "erreichte_stufe_nr": None}
     assert item["letzte_benachrichtigung"]["stufe_nr"] == 1
+    assert item["letzte_benachrichtigung"]["typ"] == "fehlzeiten"
     assert item["ohne_massnahme_seit_benachrichtigung"] is True
 
 
@@ -118,8 +122,8 @@ async def test_get_students_pagination_and_bereich_filter(db_session):
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse_b.id))
     db_session.add_all(
         [
-            Schueler(externe_id="ext-1", vorname="A", nachname="01", klasse_id=klasse_a.id),
-            Schueler(externe_id="ext-2", vorname="B", nachname="02", klasse_id=klasse_b.id),
+            Schueler(externe_id="ext-1", vorname="A", nachname="01", klasse_id=klasse_a.id, aktiv=True),
+            Schueler(externe_id="ext-2", vorname="B", nachname="02", klasse_id=klasse_b.id, aktiv=True),
         ]
     )
     nutzer = Nutzer(wp_user_id="bereichsleiter1", email="a@b.de", name="A", rolle="bereichsleiter")

@@ -23,6 +23,7 @@ class BenachrichtigungOut(BaseModel):
 
     id: int
     regel_id: int | None
+    typ: str | None
     stufe_nr: int
     gesendet_am: datetime
     empfaenger: list[dict[str, Any]]
