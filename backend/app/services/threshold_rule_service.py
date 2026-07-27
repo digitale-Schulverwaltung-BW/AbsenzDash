@@ -127,6 +127,12 @@ async def replace_rules(db: AsyncSession, payload: list[ThresholdRuleIn], nutzer
     existing_stufen_by_regel: dict[int, dict[int, SchwellwertStufe]] = {}
     for regel_in in payload:
         if regel_in.id is None:
+            for stufe_in in regel_in.stufen:
+                if stufe_in.id is not None:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        f"Unknown stufe id {stufe_in.id}: rule is new and has no existing stufen",
+                    )
             continue
         if regel_in.id not in existing_by_id:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown threshold rule id: {regel_in.id}")

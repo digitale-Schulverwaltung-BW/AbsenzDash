@@ -145,6 +145,18 @@ async def test_put_threshold_rules_rejects_rule_without_stufen(db_session):
 
 
 @pytest.mark.asyncio
+async def test_put_threshold_rules_rejects_new_rule_with_stray_stufe_id(db_session):
+    payload = [_regel_payload(stufen=[_stufe_payload(id=999999)])]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/admin/threshold-rules", headers=HEADERS_SCHULLEITUNG, json=payload)
+    assert response.status_code == 422
+
+    remaining = await db_session.execute(select(SchwellwertRegel))
+    assert remaining.scalars().all() == []
+
+
+@pytest.mark.asyncio
 async def test_put_threshold_rules_accepts_klasse_specific_rule(db_session):
     klasse = Klasse(webuntis_id=1, name="10a")
     db_session.add(klasse)
