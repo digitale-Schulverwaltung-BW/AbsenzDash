@@ -28,6 +28,12 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 - **`PUT /admin/sync-settings`** plant den APScheduler-Job sofort neu, aber nur im Worker-Prozess, der den Request bearbeitet hat. Beim aktuellen Single-Process-Deployment ist das unkritisch; bei mehreren Backend-Worker-Prozessen würden die übrigen erst nach einem Neustart mit dem neuen Cron-Wert laufen.
 - **`aktiv`-Flag** bei Maßnahmen-Typen und Entschuldigungsstatus: reines Anzeige-/Auswahlkriterium für das künftige Frontend, das Backend erzwingt es nicht (siehe TECH-SPEC.md Abschnitt 2).
 
+## PDF-Export (ab Plan 7)
+
+- **`GET /students/{id}/export.pdf`**: liefert ein PDF mit Fehlzeiten-/Klassenbuch-/Maßnahmen-/Ausnahmen-/Benachrichtigungs-Historie eines Schülers. Optionaler `sections`-Query-Parameter (kommasepariert, z.B. `?sections=fehlzeiten,massnahmen`) wählt die enthaltenen Abschnitte aus; ohne Parameter sind alle fünf enthalten. Rollenoffen, aber scope-geprüft wie `GET /students/{id}`.
+- **Abhängigkeit:** WeasyPrint benötigt System-Bibliotheken (Pango/Cairo/GDK-Pixbuf), die im mitgelieferten `Dockerfile` bereits installiert werden — bei einem Rebuild des Images (`docker compose -f backend/docker-compose.yml build backend`) ist nichts weiter zu tun.
+- **Audit-Log:** jeder Export erzeugt einen `audit_log`-Eintrag (`aktion="export_pdf"`) mit den angeforderten `sections`, da der Export für offizielle Meldungen (§90/Bußgeldverfahren) gedacht ist.
+
 ## WebUntis-Sync (ab Plan 2)
 
 - **Ablauf:** Klassen/Kategorien-Sync → ASV-BW-CSV-Import (Schüler-Stammdaten/Klassenzuordnung) → Fehlzeiten-/Klassenbuch-Sync, orchestriert in `app/services/sync_orchestrator.py`. Läuft automatisch nach `einstellung.sync_interval_cron` (APScheduler, `app/core/scheduler.py`), Änderungen an diesem Cron-Wert wirken ab dem nächsten Lauf ohne Neustart.
@@ -43,4 +49,4 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 
 ## Aktueller Stand
 
-Plan 1-6 sind abgeschlossen: Backend-Grundgerüst & Datenmodell (Plan 1), WebUntis-Sync inkl. ASV-BW-CSV-Import (Plan 2), Eskalations-Engine mit Schwellwerten/Benachrichtigungen/Maßnahmen (Plan 3), echter E-Mail-Versand (Plan 4), REST-Kern-Endpunkte fürs WP-Plugin (`/students`, Plan 5) und die Admin-Konfigurationsendpunkte (`/admin/...`, Plan 6). Noch offen: PDF-Export, das Frontend und das WordPress-Plugin selbst (siehe ROADMAP.md, Abschnitt "Geplant").
+Plan 1-7 sind abgeschlossen: Backend-Grundgerüst & Datenmodell (Plan 1), WebUntis-Sync inkl. ASV-BW-CSV-Import (Plan 2), Eskalations-Engine mit Schwellwerten/Benachrichtigungen/Maßnahmen (Plan 3), echter E-Mail-Versand (Plan 4), REST-Kern-Endpunkte fürs WP-Plugin (`/students`, Plan 5), die Admin-Konfigurationsendpunkte (`/admin/...`, Plan 6) und der PDF-Export (`/students/{id}/export.pdf`, Plan 7). Noch offen: das Frontend und das WordPress-Plugin selbst (siehe ROADMAP.md, Abschnitt "Geplant").
