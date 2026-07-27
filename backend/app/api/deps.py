@@ -125,3 +125,12 @@ async def get_scoped_schueler(
     if schueler is None or (scope is not None and schueler.klasse_id not in scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
     return schueler
+
+
+async def require_schulleitung(
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+) -> Nutzer:
+    """Admin-Endpunkte (TECH-SPEC.md Abschnitt 3, Gruppe 2) sind ausschliesslich fuer schulleitung."""
+    if nutzer.rolle != "schulleitung":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Schulleitung required")
+    return nutzer
