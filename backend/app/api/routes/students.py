@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_scoped_schueler, get_wordpress_proxy_nutzer, resolve_scope
 from app.core.database import get_db
+from app.models.audit_log import AuditLog
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.massnahmen_typ import MassnahmenTyp
@@ -23,7 +24,7 @@ from app.schemas.students import (
     StudentListOut,
     StudentOverviewOut,
 )
-from app.services import ausnahme_service, massnahme_service, student_query
+from app.services import ausnahme_service, export_service, massnahme_service, student_query
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -200,3 +201,51 @@ async def revoke_exemption(
     if ausnahme is None or ausnahme.schueler_id != schueler.id or not ausnahme.aktiv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exemption not found")
     await ausnahme_service.revoke_ausnahme(db, ausnahme, nutzer.id)
+
+
+_EXPORT_SECTIONS = {"fehlzeiten", "klassenbuch", "massnahmen", "ausnahmen", "benachrichtigungen"}
+
+
+@router.get("/{schueler_id}/export.pdf")
+async def export_student_pdf(
+    schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    sections: str | None = None,
+) -> Response:
+    if sections:
+        requested = {s.strip().lower() for s in sections.split(",") if s.strip()}
+        unknown = requested - _EXPORT_SECTIONS
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown sections: {sorted(unknown)}",
+            )
+    else:
+        requested = set(_EXPORT_SECTIONS)
+
+    klasse = None
+    if schueler.klasse_id is not None:
+        klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])
+        klasse = klasse_map.get(schueler.klasse_id)
+
+    html = await export_service.render_student_export_html(db, schueler, klasse, requested)
+    pdf_bytes = export_service.html_to_pdf(html)
+
+    db.add(
+        AuditLog(
+            user_id=nutzer.id,
+            aktion="export_pdf",
+            resource_typ="schueler",
+            resource_id=str(schueler.id),
+            details={"sections": sorted(requested)},
+        )
+    )
+    await db.commit()
+
+    filename = export_service.build_export_filename(schueler.nachname, schueler.vorname)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

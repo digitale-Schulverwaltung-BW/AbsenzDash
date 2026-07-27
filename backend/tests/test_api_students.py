@@ -369,3 +369,82 @@ async def test_revoke_exemption_404s_for_exemption_belonging_to_different_studen
             f"/students/{schueler_a.id}/exemptions/{ausnahme.id}", headers=HEADERS_KLASSENLEHRKRAFT
         )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_returns_pdf_with_all_sections_by_default(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students/{schueler.id}/export.pdf", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    assert "Muster_Max_export.pdf" in response.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_writes_audit_log_with_requested_sections(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}/export.pdf",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            params={"sections": "fehlzeiten,massnahmen"},
+        )
+
+    assert response.status_code == 200
+    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "export_pdf"))
+    entries = audit_result.scalars().all()
+    assert len(entries) == 1
+    assert entries[0].details == {"sections": ["fehlzeiten", "massnahmen"]}
+    assert entries[0].resource_id == str(schueler.id)
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_rejects_unknown_section(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}/export.pdf",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            params={"sections": "unbekannt"},
+        )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_404s_for_out_of_scope_student(db_session):
+    klasse_a = Klasse(webuntis_id=1, name="10a")
+    klasse_b = Klasse(webuntis_id=2, name="10b")
+    db_session.add_all([klasse_a, klasse_b])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
+    db_session.add(schueler)
+    await _seed_klassenlehrkraft(db_session, [klasse_a.id])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students/{schueler.id}/export.pdf", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 404
