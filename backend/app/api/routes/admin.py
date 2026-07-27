@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_schulleitung
 from app.core.database import get_db
+from app.integrations.webuntis_client import WebUntisError
+from app.models.audit_log import AuditLog
 from app.models.nutzer import Nutzer
 from app.schemas.admin import (
     ExcuseStatusIn,
     ExcuseStatusOut,
     MeasureTypeIn,
     MeasureTypeOut,
+    SyncNowOut,
     SyncSettingsIn,
     SyncSettingsOut,
     ThresholdRuleIn,
@@ -24,6 +28,7 @@ from app.services import (
     sync_settings_service,
     threshold_rule_service,
 )
+from app.services.sync_orchestrator import run_sync_once
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_schulleitung)])
 
@@ -84,3 +89,43 @@ async def put_sync_settings(
 ) -> SyncSettingsOut:
     scheduler = request.app.state.scheduler
     return await sync_settings_service.update_sync_settings(db, scheduler, payload.sync_interval_cron, nutzer.id)
+
+
+@router.post("/sync-now")
+async def post_sync_now(
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SyncNowOut:
+    # nutzer.id wird vor dem try-Block gelesen: db.rollback() im Fehlerpfad
+    # expired alle an der Session haengenden Objekte (auch `nutzer`, da dieselbe
+    # Request-Session ueber die require_schulleitung-Dependency geladen wurde).
+    # Ein spaeterer Zugriff auf ein expired Attribut ausserhalb eines await
+    # loest unter AsyncSession einen MissingGreenlet-Fehler aus, statt einen
+    # sauberen Re-Query anzustossen.
+    nutzer_id = nutzer.id
+    try:
+        await run_sync_once(db)
+    except (WebUntisError, OSError) as exc:
+        await db.rollback()
+        db.add(
+            AuditLog(
+                user_id=nutzer_id,
+                aktion="admin_sync_now_triggered",
+                resource_typ="einstellung",
+                details={"status": "fehler"},
+            )
+        )
+        await db.commit()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Sync fehlgeschlagen: {exc}")
+
+    abgeschlossen_am = datetime.now(timezone.utc)
+    db.add(
+        AuditLog(
+            user_id=nutzer_id,
+            aktion="admin_sync_now_triggered",
+            resource_typ="einstellung",
+            details={"status": "ok"},
+        )
+    )
+    await db.commit()
+    return SyncNowOut(status="ok", abgeschlossen_am=abgeschlossen_am)

@@ -81,3 +81,8 @@ class SyncSettingsOut(BaseModel):
 
 class SyncSettingsIn(BaseModel):
     sync_interval_cron: str
+
+
+class SyncNowOut(BaseModel):
+    status: str
+    abgeschlossen_am: datetime

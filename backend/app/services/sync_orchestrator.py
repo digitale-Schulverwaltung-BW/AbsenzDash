@@ -40,7 +40,7 @@ def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date) -> tuple[date, d
     return von, heute
 
 
-async def _run_once(db: AsyncSession) -> None:
+async def run_sync_once(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
         await sync_abteilungen(client, db)
         await sync_klassen(client, db)
@@ -79,7 +79,7 @@ async def run_full_sync(session_factory: async_sessionmaker[AsyncSession]) -> No
     for attempt in range(1, max_attempts + 1):
         try:
             async with session_factory() as db:
-                await _run_once(db)
+                await run_sync_once(db)
             return
         except (WebUntisError, OSError) as exc:
             logger.warning("Sync-Lauf fehlgeschlagen (Versuch %d/%d): %s", attempt, max_attempts, exc)
