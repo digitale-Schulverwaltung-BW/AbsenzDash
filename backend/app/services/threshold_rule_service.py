@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.abteilung import Abteilung
@@ -10,7 +11,7 @@ from app.models.klasse import Klasse
 from app.models.nutzer import ROLLEN
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
-from app.schemas.admin import SchwellwertStufeOut, ThresholdRuleIn, ThresholdRuleOut
+from app.schemas.admin import SchwellwertStufeIn, SchwellwertStufeOut, ThresholdRuleIn, ThresholdRuleOut
 
 TYPEN = ("fehlzeiten", "klassenbuch")
 GELTUNGSBEREICHE = ("schulweit", "abteilung", "klasse")
@@ -48,7 +49,25 @@ async def list_rules(db: AsyncSession) -> list[ThresholdRuleOut]:
     return [await _regel_out(db, r) for r in result.scalars().all()]
 
 
+def _validate_no_duplicate_ids(payload: list[ThresholdRuleIn]) -> None:
+    """Zwei Payload-Einträge mit derselben id würden sich sonst still gegenseitig überschreiben."""
+    seen_regel_ids: set[int] = set()
+    seen_stufe_ids: set[int] = set()
+    for regel in payload:
+        if regel.id is not None:
+            if regel.id in seen_regel_ids:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Duplicate id in payload: {regel.id}")
+            seen_regel_ids.add(regel.id)
+        for stufe in regel.stufen:
+            if stufe.id is None:
+                continue
+            if stufe.id in seen_stufe_ids:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Duplicate stufe id in payload: {stufe.id}")
+            seen_stufe_ids.add(stufe.id)
+
+
 def _validate_payload_shape(payload: list[ThresholdRuleIn]) -> None:
+    _validate_no_duplicate_ids(payload)
     seen_schulweit: set[str] = set()
     seen_abteilung: set[tuple[str, int]] = set()
     seen_klasse: set[tuple[str, int]] = set()
@@ -144,61 +163,94 @@ async def replace_rules(db: AsyncSession, payload: list[ThresholdRuleIn], nutzer
         existing_stufen_by_regel[regel_in.id] = stufen_by_id
 
     payload_ids = {r.id for r in payload if r.id is not None}
-    for regel_id, regel in list(existing_by_id.items()):
-        if regel_id not in payload_ids:
-            await db.delete(regel)
 
-    for regel_in in payload:
-        if regel_in.id is not None:
-            regel = existing_by_id[regel_in.id]
-            regel.typ = regel_in.typ
-            regel.geltungsbereich = regel_in.geltungsbereich
-            regel.abteilung_id = regel_in.abteilung_id
-            regel.klasse_id = regel_in.klasse_id
-            existing_stufen_by_id = existing_stufen_by_regel[regel_in.id]
-        else:
-            regel = SchwellwertRegel(
-                typ=regel_in.typ,
-                geltungsbereich=regel_in.geltungsbereich,
-                abteilung_id=regel_in.abteilung_id,
-                klasse_id=regel_in.klasse_id,
-            )
-            db.add(regel)
-            await db.flush()
-            existing_stufen_by_id = {}
+    try:
+        # Phase 0: Löschungen zuerst und sofort flushen. SQLAlchemys Unit of Work schreibt
+        # INSERTs/UPDATEs innerhalb eines Flushes vor DELETEs — ohne dieses vorgezogene Flush
+        # kollidiert eine neu angelegte Regel mit der im selben Request entfernten alten Regel
+        # (partielle Unique-Indizes uq_schwellwert_regel_schulweit/_abteilung/_klasse).
+        for regel_id, regel in list(existing_by_id.items()):
+            if regel_id not in payload_ids:
+                await db.delete(regel)
+        await db.flush()
 
-        stufen_payload_ids = {s.id for s in regel_in.stufen if s.id is not None}
-        for stufe_id, stufe in existing_stufen_by_id.items():
-            if stufe_id not in stufen_payload_ids:
-                await db.delete(stufe)
+        # stufe_nr nimmt an uq_schwellwert_stufe_regel_stufe_nr teil: ein direktes Umnummerieren
+        # bestehender Stufen (z.B. Vertauschen von 1 und 2) erzeugt zwischenzeitlich ein doppeltes
+        # (regel_id, stufe_nr)-Paar. Deshalb zweiphasig: erst ein kollisionsfreier Sentinel
+        # (-stufe.id, immer negativ und eindeutig), dann der echte Wert. Die Stufen-id bleibt dabei
+        # stabil (kein Löschen/Neuanlegen).
+        pending_stufe_finalize: list[tuple[SchwellwertStufe, int]] = []
+        pending_stufe_create: list[tuple[SchwellwertRegel, SchwellwertStufeIn]] = []
 
-        for stufe_in in regel_in.stufen:
-            if stufe_in.id is not None:
-                stufe = existing_stufen_by_id[stufe_in.id]
-                stufe.stufe_nr = stufe_in.stufe_nr
-                stufe.einheit = stufe_in.einheit
-                stufe.schwellenwert = stufe_in.schwellenwert
-                stufe.fehlzeiten_filter = stufe_in.fehlzeiten_filter
-                stufe.empfaenger_rollen = stufe_in.empfaenger_rollen
+        for regel_in in payload:
+            if regel_in.id is not None:
+                regel = existing_by_id[regel_in.id]
+                regel.typ = regel_in.typ
+                regel.geltungsbereich = regel_in.geltungsbereich
+                regel.abteilung_id = regel_in.abteilung_id
+                regel.klasse_id = regel_in.klasse_id
+                existing_stufen_by_id = existing_stufen_by_regel[regel_in.id]
             else:
-                db.add(
-                    SchwellwertStufe(
-                        regel_id=regel.id,
-                        stufe_nr=stufe_in.stufe_nr,
-                        einheit=stufe_in.einheit,
-                        schwellenwert=stufe_in.schwellenwert,
-                        fehlzeiten_filter=stufe_in.fehlzeiten_filter,
-                        empfaenger_rollen=stufe_in.empfaenger_rollen,
-                    )
+                regel = SchwellwertRegel(
+                    typ=regel_in.typ,
+                    geltungsbereich=regel_in.geltungsbereich,
+                    abteilung_id=regel_in.abteilung_id,
+                    klasse_id=regel_in.klasse_id,
                 )
+                db.add(regel)
+                await db.flush()
+                existing_stufen_by_id = {}
 
-    db.add(
-        AuditLog(
-            user_id=nutzer_id,
-            aktion="admin_threshold_rules_updated",
-            resource_typ="schwellwert_regel",
-            details={"anzahl_regeln": len(payload)},
+            stufen_payload_ids = {s.id for s in regel_in.stufen if s.id is not None}
+            for stufe_id, stufe in existing_stufen_by_id.items():
+                if stufe_id not in stufen_payload_ids:
+                    await db.delete(stufe)
+
+            for stufe_in in regel_in.stufen:
+                if stufe_in.id is not None:
+                    stufe = existing_stufen_by_id[stufe_in.id]
+                    stufe.stufe_nr = -stufe.id  # Phase 1: temporärer, kollisionsfreier Platzhalter
+                    stufe.einheit = stufe_in.einheit
+                    stufe.schwellenwert = stufe_in.schwellenwert
+                    stufe.fehlzeiten_filter = stufe_in.fehlzeiten_filter
+                    stufe.empfaenger_rollen = stufe_in.empfaenger_rollen
+                    pending_stufe_finalize.append((stufe, stufe_in.stufe_nr))
+                else:
+                    pending_stufe_create.append((regel, stufe_in))
+
+        await db.flush()
+
+        # Phase 2: echte stufe_nr setzen; erst danach neue Stufen anlegen (SQLAlchemy schreibt
+        # UPDATEs vor INSERTs, die freigewordenen Nummern sind damit sicher belegbar).
+        for stufe, finaler_stufe_nr in pending_stufe_finalize:
+            stufe.stufe_nr = finaler_stufe_nr
+        for regel, stufe_in in pending_stufe_create:
+            db.add(
+                SchwellwertStufe(
+                    regel_id=regel.id,
+                    stufe_nr=stufe_in.stufe_nr,
+                    einheit=stufe_in.einheit,
+                    schwellenwert=stufe_in.schwellenwert,
+                    fehlzeiten_filter=stufe_in.fehlzeiten_filter,
+                    empfaenger_rollen=stufe_in.empfaenger_rollen,
+                )
+            )
+
+        db.add(
+            AuditLog(
+                user_id=nutzer_id,
+                aktion="admin_threshold_rules_updated",
+                resource_typ="schwellwert_regel",
+                details={"anzahl_regeln": len(payload)},
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Konflikt beim Speichern der Schwellwert-Regeln — vermutlich eine widersprüchliche "
+            "Zuordnung (z.B. zwei aktive Regeln mit demselben Geltungsbereich). Bitte Eingabe prüfen.",
+        )
+
     return await list_rules(db)
