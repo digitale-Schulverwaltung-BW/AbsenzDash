@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.audit_log import AuditLog
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
 from app.models.schueler import Schueler
@@ -32,6 +33,17 @@ async def record_massnahme(
         erfasst_von_nutzer_id=erfasst_von_nutzer_id,
     )
     db.add(massnahme)
+    await db.flush()
+
+    db.add(
+        AuditLog(
+            user_id=erfasst_von_nutzer_id,
+            aktion="massnahme_erfasst",
+            resource_typ="massnahme",
+            resource_id=str(massnahme.id),
+            details={"schueler_id": schueler_id, "massnahmen_typ_id": massnahmen_typ_id},
+        )
+    )
 
     typ_row = (await db.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == massnahmen_typ_id))).scalar_one()
     if typ_row.setzt_zaehler_zurueck:

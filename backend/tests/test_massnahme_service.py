@@ -3,6 +3,7 @@ import datetime
 import pytest
 from sqlalchemy import select
 
+from app.models.audit_log import AuditLog
 from app.models.klasse import Klasse
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
@@ -182,3 +183,28 @@ async def test_record_massnahme_does_not_reset_when_linked_regel_does_not_apply_
     assert len(rows) == 1  # kein neuer Zaehlerstand fuer den unbeteiligten Schueler angelegt
     assert rows[0].aktueller_stand == 5  # nicht zurueckgesetzt
     assert rows[0].regel_id == schulweite_regel.id  # unveraendert
+
+
+@pytest.mark.asyncio
+async def test_record_massnahme_writes_audit_log_entry(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    typ = MassnahmenTyp(name="Gespräch", setzt_zaehler_zurueck=False)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
+    db_session.add_all([schueler, typ, nutzer])
+    await db_session.flush()
+
+    massnahme = await record_massnahme(
+        db_session,
+        schueler_id=schueler.id,
+        massnahmen_typ_id=typ.id,
+        datum=datetime.date(2026, 1, 20),
+        notiz=None,
+        erfasst_von_nutzer_id=nutzer.id,
+    )
+
+    result = await db_session.execute(select(AuditLog).where(AuditLog.resource_typ == "massnahme"))
+    entries = result.scalars().all()
+    assert len(entries) == 1
+    assert entries[0].aktion == "massnahme_erfasst"
+    assert entries[0].resource_id == str(massnahme.id)
+    assert entries[0].user_id == nutzer.id
