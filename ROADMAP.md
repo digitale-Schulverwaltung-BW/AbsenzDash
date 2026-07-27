@@ -16,12 +16,13 @@ Stand: 2026-07-27
 | **Plan 3.1** — [Eskalations-Engine Follow-Ups](docs/superpowers/plans/2026-07-26-eskalations-engine-followups.md) | Nicht-blockierende Findings aus dem Plan-3-Abschlussreview: Query-Caching in `pruefe_schwellwerte` (Regel-Auflösung, Zählerstand-Wiederverwendung), fehlender Index auf `benachrichtigung.schueler_id`/`regel_id`, 3 nachgezogene Regressionstests, Log-Spam-Fix | — |
 | **Plan 4** — [E-Mail-Benachrichtigungen](docs/superpowers/plans/2026-07-26-email-benachrichtigungen.md) | SMTP-Versand bei neu erreichter Eskalationsstufe (`app/services/mailer.py`), admin-anpassbares Text-Template (gitignorete Override-Datei), neuer `benachrichtigung.status`-Wert `"fehler"` bei Versandfehlern | Automatischer Retry bei fehlgeschlagenem Versand (bewusst, siehe Design-Dokument) |
 | **Plan 5** — [Backend REST-API fürs WP-Plugin — Kern-Endpunkte](docs/superpowers/plans/2026-07-27-rest-api-wordpress-kern.md) | Scope-Check (`nutzer_klasse`/`nutzer_bereich`), `GET /students` (paginiert, gefiltert), `GET /students/{id}`, `POST /students/{id}/measures`, `POST/DELETE /students/{id}/exemptions`, Audit-Log für Maßnahmen/Ausnahmen (TECH-SPEC.md §3, SPECS.md §3/4/7) | Admin-Konfigurationsendpunkte (`/admin/*`), PDF-Export |
+| **Plan 6** — [Backend REST-API fürs WP-Plugin — Admin-Konfiguration](docs/superpowers/plans/2026-07-27-admin-konfiguration.md) | `GET/PUT /admin/threshold-rules`, `GET/PUT /admin/measure-types` (inkl. neuem `aktiv`-Flag), `GET/PUT /admin/excuse-statuses`, `GET/PUT /admin/sync-settings` (inkl. sofortigem Scheduler-Reschedule), `POST /admin/sync-now` (synchroner Einzel-Sync-Versuch ohne Retry-Loop) — alle nur `schulleitung` (TECH-SPEC.md §3) | PDF-Export |
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
 Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf:
 
-1. **Backend: REST-API fürs WP-Plugin — Admin-Konfiguration & PDF-Export** — `/admin/*`-Konfigurationsendpunkte inkl. `/admin/sync-now`, `GET /students/{id}/export.pdf` (TECH-SPEC.md §3). Kern-Endpunkte (Übersicht/Detail/Maßnahmen/Ausnahmen) sind mit Plan 5 fertig.
+1. **Backend: REST-API fürs WP-Plugin — PDF-Export** — `GET /students/{id}/export.pdf` (TECH-SPEC.md §3). Admin-Konfiguration ist mit Plan 6 fertig.
 2. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Bisher nichts gebaut.
 3. **WordPress-Plugin** — Shortcode-Einbindung der SPA, Options-API für Backend-URL/Secret, Rollen-/WebUntis-Code-Zuordnung per User-Meta, Bereichsdefinition-Admin-Seite (SPECS.md §2, TECH-SPEC.md §4). Bisher nichts gebaut.
 4. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
