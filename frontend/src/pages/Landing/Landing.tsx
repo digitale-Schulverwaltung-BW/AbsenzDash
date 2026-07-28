@@ -19,17 +19,31 @@ export function Landing() {
     return <p>Fehler beim Laden der Kennzahlen.</p>;
   }
 
+  const scopeLabel = data.context.klasse_name ?? data.context.bereich_name ?? "Schulweit";
+
   return (
     <div>
-      <StatCard label="Ø Fehltage" value={data.own.avg_fehltage.toFixed(1)} />
-      <StatCard label="Ø Fehlstunden" value={data.own.avg_fehlstunden.toFixed(1)} />
-      <StatCard
-        label="Klassenbuch-Einträge"
-        value={data.own.avg_klassenbuch.toFixed(1)}
-        secondaryValue={`${data.own.anzahl_klassenbuch} gesamt`}
-      />
-      <StatCard label="Maßnahmen" value={String(data.own.anzahl_massnahmen)} />
-      <ComparisonChart data={data.vergleich} metric="avg_fehltage" />
+      <h2>{scopeLabel}</h2>
+      <section>
+        <StatCard label="Ø Fehltage" value={data.own.avg_fehltage.toFixed(1)} />
+        <ComparisonChart data={data.vergleich} metric="avg_fehltage" />
+      </section>
+      <section>
+        <StatCard label="Ø Fehlstunden" value={data.own.avg_fehlstunden.toFixed(1)} />
+        <ComparisonChart data={data.vergleich} metric="avg_fehlstunden" />
+      </section>
+      <section>
+        <StatCard
+          label="Klassenbuch-Einträge"
+          value={data.own.avg_klassenbuch.toFixed(1)}
+          secondaryValue={`${data.own.anzahl_klassenbuch} gesamt`}
+        />
+        <ComparisonChart data={data.vergleich} metric="avg_klassenbuch" />
+      </section>
+      <section>
+        <StatCard label="Maßnahmen" value={String(data.own.anzahl_massnahmen)} />
+        <ComparisonChart data={data.vergleich} metric="anzahl_massnahmen" />
+      </section>
     </div>
   );
 }

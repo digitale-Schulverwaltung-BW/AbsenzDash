@@ -39,6 +39,36 @@ describe("Landing", () => {
     expect(screen.getByText("2.5")).toBeInTheDocument();
     expect(screen.getByText("Maßnahmen")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("Schulweit")).toBeInTheDocument();
+  });
+
+  it("shows the Klasse name as the scope label when the response is scoped to a Klasse", () => {
+    mockUseStats.mockReturnValue({
+      data: {
+        level: "klasse",
+        context: { bereich_id: null, bereich_name: null, klasse_id: 7, klasse_name: "5a" },
+        own: {
+          anzahl_schueler: 25,
+          avg_fehltage: 2.5,
+          avg_fehlstunden: 1.2,
+          avg_klassenbuch: 0.4,
+          anzahl_klassenbuch: 10,
+          anzahl_massnahmen: 3,
+        },
+        vergleich: [],
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("5a")).toBeInTheDocument();
   });
 
   it("shows an error message when the stats request fails", () => {
