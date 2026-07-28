@@ -9,41 +9,72 @@ class Absenzdash_Shortcode {
 	public function __construct() {
 		add_shortcode( 'absenzdash', array( $this, 'render' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_filter( 'script_loader_tag', array( $this, 'add_module_type' ), 10, 3 );
+	}
+
+	private function get_manifest_entry(): ?array {
+		$manifest_path = ABSENZDASH_PLUGIN_DIR . 'assets/spa/.vite/manifest.json';
+		if ( ! file_exists( $manifest_path ) ) {
+			return null;
+		}
+		$manifest = json_decode( file_get_contents( $manifest_path ), true );
+		return $manifest['src/main.tsx'] ?? null;
 	}
 
 	public function enqueue_assets(): void {
-		wp_enqueue_script(
-			'absenzdash-smoke-test',
-			ABSENZDASH_PLUGIN_URL . 'assets/smoke-test.js',
-			array(),
-			ABSENZDASH_VERSION,
-			true
-		);
+		if ( defined( 'ABSENZDASH_VITE_DEV_SERVER' ) && ABSENZDASH_VITE_DEV_SERVER ) {
+			$dev_server = rtrim( ABSENZDASH_VITE_DEV_SERVER, '/' );
+			wp_enqueue_script( 'absenzdash-vite-client', $dev_server . '/@vite/client', array(), null, true );
+			wp_enqueue_script(
+				'absenzdash-spa',
+				$dev_server . '/src/main.tsx',
+				array( 'absenzdash-vite-client' ),
+				null,
+				true
+			);
+		} else {
+			$entry = $this->get_manifest_entry();
+			if ( null === $entry ) {
+				return;
+			}
+			foreach ( $entry['css'] ?? array() as $index => $css_file ) {
+				wp_enqueue_style(
+					'absenzdash-spa-' . $index,
+					ABSENZDASH_PLUGIN_URL . 'assets/spa/' . $css_file,
+					array(),
+					ABSENZDASH_VERSION
+				);
+			}
+			wp_enqueue_script(
+				'absenzdash-spa',
+				ABSENZDASH_PLUGIN_URL . 'assets/spa/' . $entry['file'],
+				array(),
+				ABSENZDASH_VERSION,
+				true
+			);
+		}
+
 		wp_localize_script(
-			'absenzdash-smoke-test',
+			'absenzdash-spa',
 			'absenzdashConfig',
 			array(
-				'restUrl' => esc_url_raw( rest_url( 'absenzdash/v1/api/students' ) ),
+				'restUrl' => esc_url_raw( rest_url( 'absenzdash/v1/api' ) ),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 			)
 		);
+	}
+
+	public function add_module_type( string $tag, string $handle, string $src ): string {
+		if ( in_array( $handle, array( 'absenzdash-vite-client', 'absenzdash-spa' ), true ) ) {
+			return str_replace( ' src=', ' type="module" src=', $tag );
+		}
+		return $tag;
 	}
 
 	public function render(): string {
 		if ( ! is_user_logged_in() ) {
 			return '<p>AbsenzDash: Bitte einloggen.</p>';
 		}
-		$user  = wp_get_current_user();
-		$rolle = get_user_meta( $user->ID, 'absenzdash_role', true );
-		ob_start();
-		?>
-		<div id="absenzdash-smoke-test">
-			<p>Eingeloggt als <strong><?php echo esc_html( $user->display_name ); ?></strong>,
-				Rolle: <strong><?php echo esc_html( $rolle ?: '(keine)' ); ?></strong></p>
-			<button type="button" id="absenzdash-smoke-test-button">GET /students laden</button>
-			<pre id="absenzdash-smoke-test-output"></pre>
-		</div>
-		<?php
-		return ob_get_clean();
+		return '<div id="absenzdash-root"></div>';
 	}
 }
