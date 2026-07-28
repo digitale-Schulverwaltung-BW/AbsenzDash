@@ -68,7 +68,16 @@ def _merge_tag_gruppe(
     else:
         merged_excuse_status_id = None
 
-    return merged_excuse_status_id, ("; ".join(gruende) if gruende else None)
+    merged_grund_text = "; ".join(gruende) if gruende else None
+    # Sicherheitsnetz: Fehlzeit.grund_text ist String(500); bei vielen Perioden mit
+    # unterschiedlichen Freitexten kann der zusammengefuegte String die Spaltenlaenge
+    # ueberschreiten und wuerde auf PostgreSQL StringDataRightTruncation ausloesen
+    # (bricht den gesamten Sync-Commit ab). SQLite prueft die Laenge nicht, daher hier
+    # explizit kappen statt sich auf die DB zu verlassen.
+    if merged_grund_text is not None:
+        merged_grund_text = merged_grund_text[:500]
+
+    return merged_excuse_status_id, merged_grund_text
 
 
 async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, bis: date) -> None:

@@ -250,6 +250,31 @@ async def test_sync_fehlzeiten_merge_concatenates_distinct_grund_text(db_session
 
 
 @pytest.mark.asyncio
+async def test_sync_fehlzeiten_merge_truncates_grund_text_to_column_limit(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    # 11 distinct, long absenceReason texts -> naive "; "-join would be well over 500 chars.
+    periods = [
+        {
+            "date": 20260624, "startTime": 730 + i * 45, "endTime": 815 + i * 45, "studentId": "ext-1",
+            "subjectId": "", "absenceReason": f"Grund Nummer {i} mit sehr langem Freitext " * 3, "invalid": False,
+        }
+        for i in range(11)
+    ]
+    client = AsyncMock()
+    client.call.return_value = {"periodsWithAbsences": periods}
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    fehlzeit = result.scalar_one()
+    assert fehlzeit.grund_text is not None
+    assert len(fehlzeit.grund_text) <= 500
+
+
+@pytest.mark.asyncio
 async def test_sync_fehlzeiten_merge_keeps_stunde_rows_separate(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     db_session.add(schueler)
