@@ -30,8 +30,11 @@ Danach in WP-Admin:
    ist ein Übergangsmechanismus für Tests — die richtige Rollen-/Bereichs-Admin-Oberfläche folgt in
    einem späteren Plan. Diese Felder sind nur für Benutzer mit der Fähigkeit `edit_users` (also
    WordPress-Administratoren) sichtbar/editierbar.
-5. Eine Seite mit dem Shortcode `[absenzdash]` anlegen, um die Proxy-Kette per Smoke-Test-Ansicht
-   zu prüfen (Button "GET /students laden").
+5. Voraussetzung: `npm run build` in `frontend/` mindestens einmal ausgeführt haben — das Build-Ergebnis
+   (`wordpress-plugin/absenzdash/assets/spa/`) ist gitignored und existiert bei einem frischen Checkout
+   nicht. Danach eine Seite mit dem Shortcode `[absenzdash]` anlegen und aufrufen: das Landing-Dashboard
+   mit den Kennzahlen sollte erscheinen — das bestätigt die gesamte Proxy-Kette (WP-Auth → Backend →
+   SPA-Rendering).
 
 ## Frontend (React/TS-SPA)
 
