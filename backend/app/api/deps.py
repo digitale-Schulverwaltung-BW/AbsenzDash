@@ -109,6 +109,22 @@ async def resolve_scope(db: AsyncSession, nutzer: Nutzer) -> set[int] | None:
     return set(result.scalars().all())
 
 
+async def resolve_bereich_scope(db: AsyncSession, nutzer: Nutzer) -> set[int] | None:
+    """Ermittelt die fuer den Nutzer sichtbaren bereich_id's (analog resolve_scope fuer Klassen).
+
+    None bedeutet "alle Bereiche" (schulleitung). Klassenlehrkraft hat keinen Bereichs-Bezug,
+    liefert also immer eine leere Menge.
+    """
+    if nutzer.rolle == "schulleitung":
+        return None
+    if nutzer.rolle == "bereichsleiter":
+        result = await db.execute(
+            select(nutzer_bereich.c.bereich_id).where(nutzer_bereich.c.nutzer_id == nutzer.id)
+        )
+        return set(result.scalars().all())
+    return set()
+
+
 async def get_scoped_schueler(
     schueler_id: int,
     nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],

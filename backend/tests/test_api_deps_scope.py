@@ -2,7 +2,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_scoped_schueler, resolve_scope
+from app.api.deps import get_scoped_schueler, resolve_bereich_scope, resolve_scope
 from app.core.config import settings
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.klasse import Klasse
@@ -139,3 +139,37 @@ async def test_get_scoped_schueler_404s_for_unknown_id(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/scoped/999999", headers=HEADERS_BASE)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_resolve_bereich_scope_returns_none_for_schulleitung(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    assert await resolve_bereich_scope(db_session, nutzer) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_bereich_scope_returns_assigned_bereiche_for_bereichsleiter(db_session):
+    bereich_a = Bereich(name="Ausbildung")
+    bereich_b = Bereich(name="Berufsschule")
+    db_session.add_all([bereich_a, bereich_b])
+    await db_session.flush()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="bereichsleiter")
+    db_session.add(nutzer)
+    await db_session.flush()
+    await db_session.execute(nutzer_bereich.insert().values(nutzer_id=nutzer.id, bereich_id=bereich_a.id))
+    await db_session.commit()
+
+    scope = await resolve_bereich_scope(db_session, nutzer)
+    assert scope == {bereich_a.id}
+
+
+@pytest.mark.asyncio
+async def test_resolve_bereich_scope_returns_empty_set_for_klassenlehrkraft(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    assert await resolve_bereich_scope(db_session, nutzer) == set()
