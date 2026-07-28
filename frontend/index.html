@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AbsenzDash SPA (Dev)</title>
+  </head>
+  <body>
+    <div id="absenzdash-root"></div>
+    <script>
+      window.absenzdashConfig = {
+        restUrl: "/wp-json/absenzdash/v1/api",
+        nonce: "dev-standalone-nonce",
+      };
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

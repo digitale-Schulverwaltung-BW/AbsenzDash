@@ -5,3 +5,4 @@ __pycache__/
 .obsidian/
 backend/app/templates/email_benachrichtigung.txt
 .worktrees/
+wordpress-plugin/absenzdash/assets/spa/
