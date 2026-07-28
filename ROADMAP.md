@@ -1,6 +1,6 @@
 # AbsenzDash — Roadmap
 
-Stand: 2026-07-27
+Stand: 2026-07-28
 
 Übergeordneter Fortschritts-Tracker über [SPECS.md](SPECS.md)/[TECH-SPEC.md](TECH-SPEC.md) hinweg. Die fachlichen/technischen Details stehen dort und in den einzelnen Umsetzungsplänen unter `docs/superpowers/plans/` — dieses Dokument bildet nur ab, welcher Teil des Gesamtsystems (SPECS.md) bereits durch welchen Plan abgedeckt ist und was noch offen ist.
 
@@ -19,14 +19,14 @@ Stand: 2026-07-27
 | **Plan 6** — [Backend REST-API fürs WP-Plugin — Admin-Konfiguration](docs/superpowers/plans/2026-07-27-admin-konfiguration.md) | `GET/PUT /admin/threshold-rules`, `GET/PUT /admin/measure-types` (inkl. neuem `aktiv`-Flag), `GET/PUT /admin/excuse-statuses`, `GET/PUT /admin/sync-settings` (inkl. sofortigem Scheduler-Reschedule), `POST /admin/sync-now` (synchroner Einzel-Sync-Versuch ohne Retry-Loop) — alle nur `schulleitung` (TECH-SPEC.md §3) | PDF-Export |
 | **Plan 7** — [Backend REST-API fürs WP-Plugin — PDF-Export](docs/superpowers/plans/2026-07-27-pdf-export.md) | `GET /students/{id}/export.pdf` mit konfigurierbaren Abschnitten (`sections`-Query-Parameter: `fehlzeiten`/`klassenbuch`/`massnahmen`/`ausnahmen`/`benachrichtigungen`, Default = alle), Klartext-Auflösung von Entschuldigungsstatus/Klassenbuch-Kategorie, Audit-Log-Eintrag pro Export, WeasyPrint-Rendering mit seitenübergreifend wiederholtem Tabellenkopf und Fußzeile (Schülername/Druckdatum/Seitenzahl) (TECH-SPEC.md §3, SPECS.md §7) | Zeitraum-Filter, zusätzliche Schüler-Stammdaten (Geburtsdatum/Adresse) |
 | **Plan 8** — [WordPress-Plugin — Mini-Proxy & Shortcode](docs/superpowers/plans/2026-07-27-wordpress-plugin-proxy.md) | Reverse-Proxy-REST-Route (generischer Passthrough mit Trusted-Headern), Backend-URL/Secret-Konfiguration, minimale Rollen-Profilfelder (Test-Übergangslösung), `[absenzdash]`-Shortcode mit sichtbarer Smoke-Test-Debug-Ansicht, Backend-Beitritt zum `absenzflow-shared`-Docker-Netzwerk (TECH-SPEC.md §3/§6). Bewusste Reihenfolge-Umkehr gegenüber der ursprünglichen Roadmap-Planung: Plugin-Proxy vor SPA, um Dev-Auth-Blindleistung zu vermeiden, siehe [Design-Dok](docs/superpowers/specs/2026-07-27-wordpress-plugin-proxy-design.md) | Bereichsdefinition-Admin-Seite, vollwertige Rollen-Zuweisungs-Oberfläche, die eigentliche React-SPA (folgt als nächster Plan) |
+| **Plan 9** — [Frontend-Grundgerüst (Navigation & Landing-Dashboard)](docs/superpowers/plans/2026-07-28-frontend-grundgeruest.md) | Vite/React/TS-SPA-Grundgerüst, WP-Nonce-Auth, Routing-Grundgerüst, rollenabhängige hierarchische Bereich-/Klasse-Navigation, neue Backend-Kennzahlen-Endpunkte (`GET /dashboard/nav-options`, `GET /dashboard/stats`), Landing-Page-Dashboard (Ø Fehltage/-stunden, Klassenbuch-Einträge, Maßnahmen-Anzahl, je mit Vergleichsbalken) (SPECS.md §2/§7). Bewusste Aufteilung von Roadmap-Punkt 1: Schülerliste/-Detail, Admin-Bereich und PDF-Export-Anbindung folgen als eigene Pläne, siehe [Design-Dok](docs/superpowers/specs/2026-07-28-frontend-grundgeruest-design.md) | Schülerliste/-Detail, Admin-Bereich, PDF-Export-Anbindung, automatischer Nonce-Refresh |
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
 Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf:
 
-1. **Frontend: React/TS-SPA** — Übersicht, Schüler-Detail, Admin-Bereich, PDF-Export (SPECS.md §2/§7). Wird gegen das fertige WordPress-Plugin aus Plan 8 entwickelt (statt gegen einen Dev-Stub). Bisher nichts gebaut.
-2. **WordPress-Plugin (Verbleibende Teile)** — Bereichsdefinition-Admin-Seite, vollwertige Rollen-Zuweisungs-Oberfläche. Der Proxy-/Shortcode-Grundstock und die Test-Übergangslösung für Rollen-/WebUntis-Code-Zuordnung sind in Plan 8 abgedeckt.
-3. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
+1. **WordPress-Plugin (Verbleibende Teile)** — Bereichsdefinition-Admin-Seite, vollwertige Rollen-Zuweisungs-Oberfläche. Der Proxy-/Shortcode-Grundstock und die Test-Übergangslösung für Rollen-/WebUntis-Code-Zuordnung sind in Plan 8 abgedeckt.
+2. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
 
 ## Technical debt
 
