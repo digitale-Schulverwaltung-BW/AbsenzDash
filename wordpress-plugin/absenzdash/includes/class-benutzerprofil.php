@@ -16,6 +16,9 @@ class Absenzdash_Benutzerprofil {
 	}
 
 	public function render_felder( WP_User $user ): void {
+		if ( ! current_user_can( 'edit_users' ) ) {
+			return;
+		}
 		$rolle         = get_user_meta( $user->ID, 'absenzdash_role', true );
 		$webuntis_code = get_user_meta( $user->ID, 'absenzdash_webuntis_code', true );
 		?>
@@ -37,7 +40,7 @@ class Absenzdash_Benutzerprofil {
 			<tr>
 				<th><label for="absenzdash_webuntis_code">WebUntis-Code</label></th>
 				<td>
-					<input type="text" name="absenzdash_webuntis_code" id="absenzdash_webuntis_code"
+					<input type="number" name="absenzdash_webuntis_code" id="absenzdash_webuntis_code"
 						value="<?php echo esc_attr( $webuntis_code ); ?>" class="regular-text" />
 				</td>
 			</tr>
@@ -46,7 +49,7 @@ class Absenzdash_Benutzerprofil {
 	}
 
 	public function speichere_felder( int $user_id ): void {
-		if ( ! current_user_can( 'edit_user', $user_id ) ) {
+		if ( ! current_user_can( 'edit_users' ) ) {
 			return;
 		}
 		$rolle = isset( $_POST['absenzdash_role'] ) ? sanitize_text_field( wp_unslash( $_POST['absenzdash_role'] ) ) : '';
@@ -57,7 +60,7 @@ class Absenzdash_Benutzerprofil {
 		}
 
 		$webuntis_code = isset( $_POST['absenzdash_webuntis_code'] ) ? sanitize_text_field( wp_unslash( $_POST['absenzdash_webuntis_code'] ) ) : '';
-		if ( '' !== $webuntis_code ) {
+		if ( '' !== $webuntis_code && ctype_digit( $webuntis_code ) ) {
 			update_user_meta( $user_id, 'absenzdash_webuntis_code', $webuntis_code );
 		} else {
 			delete_user_meta( $user_id, 'absenzdash_webuntis_code' );

@@ -26,9 +26,10 @@ Danach in WP-Admin:
    erreichbar über das gemeinsame `absenzflow-shared`-Docker-Netzwerk) und das Shared Secret
    eintragen — das Secret muss exakt `WORDPRESS_PROXY_SECRET` aus `backend/.env` entsprechen.
 4. Für jeden Testnutzer unter **Benutzer → Profil** die Rolle (`klassenlehrkraft` /
-   `bereichsleiter` / `schulleitung`) und optional den WebUntis-Code setzen. Das ist ein
-   Übergangsmechanismus für Tests — die richtige Rollen-/Bereichs-Admin-Oberfläche folgt in einem
-   späteren Plan.
+   `bereichsleiter` / `schulleitung`) und optional die numerische WebUntis-Lehrkraft-ID setzen. Das
+   ist ein Übergangsmechanismus für Tests — die richtige Rollen-/Bereichs-Admin-Oberfläche folgt in
+   einem späteren Plan. Diese Felder sind nur für Benutzer mit der Fähigkeit `edit_users` (also
+   WordPress-Administratoren) sichtbar/editierbar.
 5. Eine Seite mit dem Shortcode `[absenzdash]` anlegen, um die Proxy-Kette per Smoke-Test-Ansicht
    zu prüfen (Button "GET /students laden").
 
