@@ -46,6 +46,14 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
             query = query.where(Klasse.id.in_(klasse_scope))
         klassen = (await db.execute(query)).scalars().all()
 
+    # Deliberate simplification: NavKlasseOut.bereich_id is a single value, but bereich_klasse is m:n
+    # (a Klasse can in principle belong to more than one Bereich). We pick the lowest bereich_id via
+    # func.min() and assume in practice each Klasse belongs to exactly one Bereich at this school (see
+    # TECH-SPEC.md). If a Klasse ever legitimately belongs to >1 Bereich, this dropdown mapping will
+    # only show it under the lowest-numbered Bereich, while _stats_for_bereich's aggregation below
+    # correctly includes it in the totals of every Bereich it belongs to — i.e. the nav dropdown and
+    # the numbers can disagree for that edge case. See ROADMAP.md "Technical debt" for the accepted
+    # limitation; do not "fix" this by widening bereich_id to a list without reading that entry first.
     klasse_bereich_map = dict(
         (
             await db.execute(
