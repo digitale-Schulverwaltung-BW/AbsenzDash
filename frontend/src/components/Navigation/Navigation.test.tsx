@@ -82,6 +82,7 @@ describe("Navigation", () => {
         ],
         klassen: [
           { id: 10, name: "AME56", bereich_id: 1 },
+          { id: 12, name: "AME57", bereich_id: 1 },
           { id: 11, name: "BME12", bereich_id: 2 },
         ],
       },
@@ -99,6 +100,35 @@ describe("Navigation", () => {
 
     expect(screen.getByLabelText("Klasse")).toBeInTheDocument();
     expect(screen.getByText("AME56")).toBeInTheDocument();
+    expect(screen.getByText("AME57")).toBeInTheDocument();
     expect(screen.queryByText("BME12")).not.toBeInTheDocument();
+  });
+
+  it("clears the klasse URL param when the Bereich selection changes", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: {
+        bereiche: [
+          { id: 1, name: "Ausbildung" },
+          { id: 2, name: "Berufsschule" },
+        ],
+        klassen: [
+          { id: 10, name: "AME56", bereich_id: 1 },
+          { id: 12, name: "AME57", bereich_id: 1 },
+          { id: 11, name: "BME12", bereich_id: 2 },
+          { id: 13, name: "BME13", bereich_id: 2 },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderNavigation(["/?bereich=1&klasse=10"]);
+
+    expect(screen.getByLabelText("Klasse")).toHaveValue("10");
+
+    fireEvent.change(screen.getByLabelText("Bereich"), { target: { value: "2" } });
+
+    expect(screen.getByLabelText("Klasse")).toHaveValue("");
   });
 });

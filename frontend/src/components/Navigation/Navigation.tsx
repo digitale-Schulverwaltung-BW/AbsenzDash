@@ -25,9 +25,7 @@ export function Navigation() {
         : selectedBereichId === null
           ? []
           : data.klassen.filter((k) => k.bereich_id === selectedBereichId);
-  const showKlasseDropdown =
-    (data.bereiche.length <= 1 && visibleKlassen.length > 1) ||
-    (data.bereiche.length > 1 && selectedBereichId !== null && visibleKlassen.length >= 1);
+  const showKlasseDropdown = visibleKlassen.length > 1;
 
   function handleBereichChange(value: string) {
     const next = new URLSearchParams(searchParams);
