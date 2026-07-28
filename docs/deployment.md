@@ -4,6 +4,30 @@
 
 Siehe [backend-setup.md](backend-setup.md).
 
+### Fehlzeit-Daten manuell zurücksetzen
+
+Gelegentlich ist es nötig, den Inhalt der `fehlzeit`-Tabelle manuell zu leeren — z.B. um nach der
+Behebung eines Datenkorrektheits-Bugs im Sync (wie der Ganztages-Merge-Fix vom 2026-07-28,
+siehe `docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md`) fehlerhaft synchronisierte
+Altdaten zu entfernen, bevor der nächste Sync sie korrekt neu einliest.
+
+**Wichtig:** Dabei dürfen nicht nur die `fehlzeit`-Zeilen gelöscht werden — `einstellung.letzter_sync_am`
+muss im selben Zug auf `NULL` zurückgesetzt werden. Der Grund: `sync_orchestrator._fehlzeiten_zeitraum`
+wählt den Start des Sync-Zeitraums als `letzter_sync_am - 1 Tag`, sofern `letzter_sync_am` gesetzt ist,
+und fällt nur bei `NULL` auf `einstellung.schuljahr_start_cache` zurück. Wird also nur die Tabelle
+geleert, aber `letzter_sync_am` nicht zurückgesetzt, holt der nächste Sync nur die letzten ein bis zwei
+Tage aus WebUntis nach — der Rest des Schuljahres fehlt danach stillschweigend, ohne Fehlermeldung.
+
+Beide Schritte gemeinsam ausführen:
+
+```bash
+docker exec absenzdash-db psql -U absenzdash -d absenzdash -c "TRUNCATE fehlzeit;"
+docker exec absenzdash-db psql -U absenzdash -d absenzdash -c "UPDATE einstellung SET letzter_sync_am = NULL;"
+```
+
+Danach holt der nächste geplante oder manuell ausgelöste Sync (`POST /admin/sync-now`) den vollständigen
+Zeitraum ab `einstellung.schuljahr_start_cache` erneut ab.
+
 ## WordPress-Plugin (Mini-Proxy & Shortcode)
 
 Voraussetzung: eine laufende WordPress-Instanz mit einer `docker-compose.yml`, die Plugin-Verzeichnisse
