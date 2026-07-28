@@ -1510,6 +1510,29 @@ describe("FehlzeitenTable", () => {
     expect(screen.getByText("Mathe")).toBeInTheDocument();
   });
 
+  it("shows 'ganztägig' for typ='tag' instead of the start_zeit/end_zeit range", () => {
+    render(
+      <FehlzeitenTable
+        fehlzeiten={[
+          {
+            id: 1,
+            typ: "tag",
+            datum: "2026-02-01",
+            start_zeit: 0,
+            end_zeit: 2359,
+            fach: null,
+            excuse_status_id: null,
+            grund_text: null,
+          },
+        ]}
+        excuseStatuses={[]}
+      />,
+    );
+
+    expect(screen.getByText("ganztägig")).toBeInTheDocument();
+    expect(screen.queryByText("0–2359")).not.toBeInTheDocument();
+  });
+
   it("shows a dash when excuse_status_id is null", () => {
     render(
       <FehlzeitenTable
@@ -1636,7 +1659,7 @@ export function FehlzeitenTable({ fehlzeiten, excuseStatuses }: FehlzeitenTableP
             <td>{fehlzeit.datum}</td>
             <td>{fehlzeit.typ}</td>
             <td>
-              {fehlzeit.start_zeit}–{fehlzeit.end_zeit}
+              {fehlzeit.typ === "tag" ? "ganztägig" : `${fehlzeit.start_zeit}–${fehlzeit.end_zeit}`}
             </td>
             <td>{fehlzeit.fach ?? "—"}</td>
             <td>{fehlzeit.excuse_status_id !== null ? statusMap.get(fehlzeit.excuse_status_id) ?? "—" : "—"}</td>
