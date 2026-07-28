@@ -1,0 +1,24 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  min-width: 10rem;
+}
+
+.label {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.value {
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.secondary {
+  font-size: 0.85rem;
+  color: #777;
+}
