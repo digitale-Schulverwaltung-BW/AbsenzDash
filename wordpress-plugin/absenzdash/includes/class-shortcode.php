@@ -18,7 +18,7 @@ class Absenzdash_Shortcode {
 			return null;
 		}
 		$manifest = json_decode( file_get_contents( $manifest_path ), true );
-		return $manifest['src/main.tsx'] ?? null;
+		return $manifest['index.html'] ?? null;
 	}
 
 	public function enqueue_assets(): void {
