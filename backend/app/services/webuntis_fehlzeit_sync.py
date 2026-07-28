@@ -22,11 +22,67 @@ def _from_webuntis_date(value: int) -> date:
     return datetime.strptime(str(value), "%Y%m%d").date()
 
 
+def _zaehlt_als_entschuldigt(excuse_status_id: int | None, zaehlt_als_entschuldigt_by_id: dict[int, bool]) -> bool:
+    if excuse_status_id is None:
+        return False
+    return zaehlt_als_entschuldigt_by_id.get(excuse_status_id, False)
+
+
+def _merge_tag_gruppe(
+    rows: list[dict],
+    excuse_status_id_by_name: dict[str, int],
+    zaehlt_als_entschuldigt_by_id: dict[int, bool],
+) -> tuple[int | None, str | None]:
+    """Fasst mehrere WebUntis-Perioden-Zeilen desselben Schuelers/Tages zu den Feldern
+    einer einzigen Tages-Zeile zusammen (siehe
+    docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md).
+
+    excuse_status_id: "unentschuldigt gewinnt" - zaehlt mindestens eine Zeile nicht als
+    entschuldigt (aufgeloester Status mit zaehlt_als_entschuldigt=False, oder ein nicht
+    aufloesbarer Status), wird deren excuse_status_id uebernommen (bzw. None, falls diese
+    Zeile selbst keinen aufgeloesten Status hatte). Nur wenn alle Zeilen entschuldigt sind,
+    bleibt ein entschuldigter Status erhalten (die erste in Eintragsreihenfolge).
+
+    grund_text: verschiedene, nicht-leere Freitexte werden mit "; " zusammengefuegt
+    (Dopplungen entfernt, Reihenfolge des ersten Vorkommens).
+    """
+    excused_ids: list[int | None] = []
+    unexcused_ids: list[int | None] = []
+    gruende: list[str] = []
+
+    for row in rows:
+        excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
+        if _zaehlt_als_entschuldigt(excuse_status_id, zaehlt_als_entschuldigt_by_id):
+            excused_ids.append(excuse_status_id)
+        else:
+            unexcused_ids.append(excuse_status_id)
+
+        grund = row.get("absenceReason") or None
+        if grund and grund not in gruende:
+            gruende.append(grund)
+
+    if unexcused_ids:
+        merged_excuse_status_id = unexcused_ids[0]
+    elif excused_ids:
+        merged_excuse_status_id = excused_ids[0]
+    else:
+        merged_excuse_status_id = None
+
+    return merged_excuse_status_id, ("; ".join(gruende) if gruende else None)
+
+
 async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, bis: date) -> None:
     """getTimetableWithAbsences -> fehlzeit (TECH-SPEC.md Abschnitt 1.2, 1.3).
 
-    schueler_id wird über Schueler.externe_id aufgelöst (identisch mit studentId-UUID) -
+    schueler_id wird ueber Schueler.externe_id aufgeloest (identisch mit studentId-UUID) -
     kein Namensabgleich noetig, siehe TECH-SPEC.md Abschnitt 1.3.
+
+    WebUntis liefert fuer ganztaegige Absenzen an dieser Schule mehrere Perioden-Zeilen
+    ohne subjectId statt einer einzigen Ganztages-Zeile (siehe TECH-SPEC.md Abschnitt 1.2) -
+    diese werden pro Schueler/Tag zu einer einzigen typ='tag'-Zeile zusammengefuehrt, bevor
+    sie geschrieben werden (siehe
+    docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md). Zeilen mit subjectId
+    (typ='stunde') bleiben unveraendert, eine Zeile pro Absenz.
     """
     result = await client.call(
         "getTimetableWithAbsences",
@@ -36,9 +92,25 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
 
     schueler_id_by_externe_id = dict((await db.execute(select(Schueler.externe_id, Schueler.id))).all())
     excuse_status_id_by_name = dict((await db.execute(select(ExcuseStatus.name, ExcuseStatus.id))).all())
+    zaehlt_als_entschuldigt_by_id = dict(
+        (await db.execute(select(ExcuseStatus.id, ExcuseStatus.zaehlt_als_entschuldigt))).all()
+    )
 
     existing = (await db.execute(select(Fehlzeit))).scalars().all()
     by_key = {(f.schueler_id, f.datum, f.start_zeit, f.end_zeit, f.typ): f for f in existing}
+
+    def _upsert(schueler_id: int, datum: date, start_zeit: int, end_zeit: int, typ: str) -> Fehlzeit:
+        key = (schueler_id, datum, start_zeit, end_zeit, typ)
+        fehlzeit = by_key.get(key)
+        if fehlzeit is None:
+            fehlzeit = Fehlzeit(
+                schueler_id=schueler_id, datum=datum, start_zeit=start_zeit, end_zeit=end_zeit, typ=typ
+            )
+            db.add(fehlzeit)
+            by_key[key] = fehlzeit
+        return fehlzeit
+
+    tag_gruppen: dict[tuple[int, date], list[dict]] = {}
 
     for row in entries or []:
         if row.get("invalid"):
@@ -49,23 +121,26 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             logger.warning("Fehlzeiten-Sync: unbekannte externe_id=%s, uebersprungen", row["studentId"])
             continue
 
-        typ = "stunde" if row.get("subjectId") else "tag"
-        datum = _from_webuntis_date(row["date"])
-        start_zeit = row["startTime"]
-        end_zeit = row["endTime"]
-
-        key = (schueler_id, datum, start_zeit, end_zeit, typ)
-        fehlzeit = by_key.get(key)
-        if fehlzeit is None:
-            fehlzeit = Fehlzeit(
-                schueler_id=schueler_id, datum=datum, start_zeit=start_zeit, end_zeit=end_zeit, typ=typ
+        if row.get("subjectId"):
+            fehlzeit = _upsert(
+                schueler_id, _from_webuntis_date(row["date"]), row["startTime"], row["endTime"], "stunde"
             )
-            db.add(fehlzeit)
-            by_key[key] = fehlzeit
+            fehlzeit.fach = row.get("subjectId") or None
+            fehlzeit.grund_text = row.get("absenceReason") or None
+            fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
+            fehlzeit.invalid = False
+        else:
+            datum = _from_webuntis_date(row["date"])
+            tag_gruppen.setdefault((schueler_id, datum), []).append(row)
 
-        fehlzeit.fach = row.get("subjectId") or None
-        fehlzeit.grund_text = row.get("absenceReason") or None
-        fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
+    for (schueler_id, datum), gruppe in tag_gruppen.items():
+        merged_excuse_status_id, merged_grund_text = _merge_tag_gruppe(
+            gruppe, excuse_status_id_by_name, zaehlt_als_entschuldigt_by_id
+        )
+        fehlzeit = _upsert(schueler_id, datum, 0, 2359, "tag")
+        fehlzeit.fach = None
+        fehlzeit.grund_text = merged_grund_text
+        fehlzeit.excuse_status_id = merged_excuse_status_id
         fehlzeit.invalid = False
 
     await db.commit()
