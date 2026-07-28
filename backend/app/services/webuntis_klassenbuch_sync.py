@@ -40,9 +40,9 @@ async def sync_klassenbuch(client: WebUntisClient, db: AsyncSession, von: date, 
             logger.warning("Klassenbuch-Sync: unbekannte externe_id=%s, uebersprungen", row["studentid"])
             continue
 
-        kategorie_id = kategorie_id_by_webuntis_id.get(row["categoryId"])
+        kategorie_id = kategorie_id_by_webuntis_id.get(row.get("categoryId"))
         if kategorie_id is None:
-            logger.warning("Klassenbuch-Sync: unbekannte categoryId=%s, uebersprungen", row["categoryId"])
+            logger.warning("Klassenbuch-Sync: unbekannte categoryId=%s, uebersprungen", row.get("categoryId"))
             continue
 
         eintrag = by_webuntis_id.get(row["eventId"])
