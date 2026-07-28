@@ -22,6 +22,10 @@ class Absenzdash_Shortcode {
 	}
 
 	public function enqueue_assets(): void {
+		if ( ! is_singular() || ! has_shortcode( get_post()->post_content, 'absenzdash' ) ) {
+			return;
+		}
+
 		if ( defined( 'ABSENZDASH_VITE_DEV_SERVER' ) && ABSENZDASH_VITE_DEV_SERVER ) {
 			$dev_server = rtrim( ABSENZDASH_VITE_DEV_SERVER, '/' );
 			wp_enqueue_script( 'absenzdash-vite-client', $dev_server . '/@vite/client', array(), null, true );
@@ -58,8 +62,9 @@ class Absenzdash_Shortcode {
 			'absenzdash-spa',
 			'absenzdashConfig',
 			array(
-				'restUrl' => esc_url_raw( rest_url( 'absenzdash/v1/api' ) ),
-				'nonce'   => wp_create_nonce( 'wp_rest' ),
+				'restUrl'  => esc_url_raw( rest_url( 'absenzdash/v1/api' ) ),
+				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				'basename' => wp_parse_url( get_permalink(), PHP_URL_PATH ),
 			)
 		);
 	}

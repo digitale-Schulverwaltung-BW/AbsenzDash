@@ -6,7 +6,7 @@ import App from "./App";
 
 declare global {
   interface Window {
-    absenzdashConfig?: { restUrl: string; nonce: string };
+    absenzdashConfig?: { restUrl: string; nonce: string; basename: string };
   }
 }
 
@@ -16,7 +16,12 @@ if (container) {
   createRoot(container).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        {/* basename: the SPA is mounted on a WordPress page at an arbitrary path (e.g. "/absenzdash/"),
+            not at the site root, so React Router needs to know that prefix to match routes.
+            Deep links to /klasse/:id will additionally need a WordPress rewrite rule (or a switch to
+            HashRouter) once the follow-up student-list/detail plan starts linking those routes — open
+            decision for that plan, not resolved here. */}
+        <BrowserRouter basename={window.absenzdashConfig?.basename}>
           <App />
         </BrowserRouter>
       </QueryClientProvider>

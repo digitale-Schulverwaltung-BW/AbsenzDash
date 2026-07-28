@@ -58,4 +58,18 @@ describe("App", () => {
     );
     expect(screen.getByText("Schülerliste folgt in einem späteren Ausbauschritt.")).toBeInTheDocument();
   });
+
+  it("renders the Landing page when mounted under a non-root basename (regression: WordPress page path)", () => {
+    // Regression test for the bug where BrowserRouter had no basename: in production the SPA is
+    // mounted on a WordPress page at a path like "/absenzdash/", not at "/". App.tsx's routes are
+    // declared as absolute paths ("/", "/klasse/:id"), so without a matching basename on the router,
+    // <Routes> silently renders nothing on the real deployment even though root-path tests still pass.
+    setupMocks();
+    render(
+      <MemoryRouter basename="/absenzdash" initialEntries={["/absenzdash/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Ø Fehltage")).toBeInTheDocument();
+  });
 });
