@@ -27,6 +27,14 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
+    networks:
+      - default
+      - absenzflow-shared
 
 volumes:
   absenzdash-db-data:
+
+networks:
+  default:
+  absenzflow-shared:
+    external: true
