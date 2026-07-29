@@ -62,4 +62,19 @@ describe("AusnahmenSection", () => {
       expect(createMutate).toHaveBeenCalledWith({ kategorie: "klassenbuch", grund: "Attest", gueltig_bis: "2026-08-01" }),
     );
   });
+
+  it("submits with the default kategorie and a null gueltig_bis when only Grund is filled in", async () => {
+    const createMutate = vi.fn();
+    mockUseCreateExemption.mockReturnValue({ mutate: createMutate, isPending: false, isSuccess: false, error: null } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockUseRevokeExemption.mockReturnValue({ mutate: vi.fn(), isPending: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    render(<AusnahmenSection studentId={7} ausnahmen={[]} />);
+
+    fireEvent.change(screen.getByLabelText("Grund"), { target: { value: "Krankheit" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ausnahme setzen" }));
+
+    await waitFor(() =>
+      expect(createMutate).toHaveBeenCalledWith({ kategorie: "fehlzeiten", grund: "Krankheit", gueltig_bis: null }),
+    );
+  });
 });
