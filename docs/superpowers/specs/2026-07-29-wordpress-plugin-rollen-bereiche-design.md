@@ -100,6 +100,23 @@ PUT  <- [{id?, name, klasse_ids: [int], leiter: [{wp_user_id, email, name}]}]
 - Audit-Log-Eintrag pro Aufruf (`aktion="admin_bereiche_updated"`), analog zu den bestehenden
   Admin-PUT-Endpunkten.
 
+### `GET /admin/bereiche/vorschlag-aus-abteilungen`
+
+**Nachtrag (2026-07-29):** Live-Check gegen `getDepartments()`/`getKlassen()` zeigt, dass die
+bereits seit Plan 3 gepflegte `abteilung`-Tabelle (Schwellwert-Regel-Geltungsbereiche) strukturell
+genau das abbildet, was als Bereich gedacht ist — 29 Abteilungen an dieser Schule (z.B. `B-ME`/
+"Mechatronik", `A-TBK`/"Techn. Berufskolleg"), jede Klasse trägt bereits `klasse.abteilung_id`.
+Statt die Bereichsdefinition komplett manuell von Null aufzubauen, liefert dieser Endpunkt einen
+**reinen Einmal-Vorschlag** zur Vorbefüllung: `[{name: str, klasse_ids: [int]}]`, exakt ein Eintrag
+pro `abteilung`-Zeile (1:1, kein Zusammenlegen/Aufsplitten), `name` aus `abteilung.long_name`
+(fällt auf `abteilung.name` zurück, falls `long_name` leer ist — lesbarer als der reine
+Abteilungscode), `klasse_ids` aus allen Klassen mit passender `abteilung_id`.
+
+Kein Schreibzugriff, keine neue Spalte/kein `quelle`-Flag auf `bereich` — das Ergebnis füllt nur das
+Formular auf der Bereichsdefinition-Seite vor; der Admin bearbeitet/kürzt/benennt um und speichert
+regulär über `PUT /admin/bereiche`. Kein späterer Re-Sync, keine laufende Kopplung an `abteilung` —
+`bereich` bleibt danach wie in TECH-SPEC.md §4 festgelegt rein lokal gepflegt.
+
 ## WordPress-Plugin
 
 Zwei neue Dateien unter `wordpress-plugin/absenzdash/includes/`, als Untermenüs unter der
@@ -128,6 +145,10 @@ Meta-Keys).
 ### `class-bereiche-seite.php` (neu)
 
 - Lädt beim Rendern `GET /admin/bereiche` und `GET /admin/klassen` über den Proxy.
+- Button "Aus WebUntis-Abteilungen vorbefüllen": ruft `GET /admin/bereiche/vorschlag-aus-abteilungen`
+  und hängt die 29 vorgeschlagenen Bereichs-Entwürfe ans bestehende Formular an (nicht destruktiv —
+  bereits vorhandene/bearbeitete Zeilen bleiben unangetastet); nur sinnvoll nutzbar, solange die
+  Seite noch leer bzw. in Bearbeitung ist, kein automatischer Merge mit vorhandenen Bereichen.
 - Pro Bereich: Name-Feld, Mehrfachauswahl der zugehörigen Klassen (`<select multiple>` aus der
   Klassenliste), Mehrfachauswahl der Bereichsleiter (`<select multiple>` aus `get_users()`,
   gefiltert auf Nutzer mit `absenzdash_role = 'bereichsleiter'` als Vorauswahl-Hilfe, aber nicht
@@ -145,11 +166,13 @@ Teil des Standard-Profilbildschirms handelt).
 
 ## Testing
 
-- Backend: reguläre Pytest-Abdeckung für die drei neuen Endpunkte (analog `test_admin_*.py`) —
+- Backend: reguläre Pytest-Abdeckung für die vier neuen Endpunkte (analog `test_admin_*.py`) —
   Scope-Check (`require_schulleitung`), Whole-List-Replace-Semantik von `/admin/bereiche`
   (Hinzufügen/Entfernen/Umbenennen), Get-or-Create-Verhalten für neue Bereichsleiter,
   Validierungsfehler (leerer Name, doppelte Namen), `/admin/webuntis-teachers`-Fehlerpfad
-  (WebUntis nicht erreichbar → 502).
+  (WebUntis nicht erreichbar → 502), `/admin/bereiche/vorschlag-aus-abteilungen` (korrekte
+  1:1-Zuordnung, `long_name`-Fallback auf `name`, Klassen ohne `abteilung_id` werden in keinem
+  Vorschlag aufgeführt).
 - WP-Plugin: manuell gegen Staging (wie Plan 8), kein PHPUnit (YAGNI, gleiche Begründung wie
   bisher — reine Transport-/Admin-UI-Schicht ohne eigene Fachlogik).
 
