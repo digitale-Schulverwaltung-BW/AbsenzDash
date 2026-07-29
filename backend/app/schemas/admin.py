@@ -91,3 +91,36 @@ class SyncNowOut(BaseModel):
 class WebUntisTeacherOut(BaseModel):
     id: int
     kuerzel: str
+
+
+class KlasseOut(BaseModel):
+    id: int
+    name: str
+
+
+class BereichLeiterIn(BaseModel):
+    wp_user_id: str
+    email: str
+    name: str
+    rolle: str
+
+
+class BereichLeiterOut(BaseModel):
+    nutzer_id: int
+    wp_user_id: str
+    email: str
+    name: str
+
+
+class BereichIn(BaseModel):
+    id: int | None = None
+    name: str
+    klasse_ids: list[int] = []
+    leiter: list[BereichLeiterIn] = []
+
+
+class BereichOut(BaseModel):
+    id: int
+    name: str
+    klasse_ids: list[int]
+    leiter: list[BereichLeiterOut]

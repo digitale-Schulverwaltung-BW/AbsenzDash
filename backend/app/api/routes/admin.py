@@ -13,8 +13,11 @@ from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.audit_log import AuditLog
 from app.models.nutzer import Nutzer
 from app.schemas.admin import (
+    BereichIn,
+    BereichOut,
     ExcuseStatusIn,
     ExcuseStatusOut,
+    KlasseOut,
     MeasureTypeIn,
     MeasureTypeOut,
     SyncNowOut,
@@ -25,6 +28,7 @@ from app.schemas.admin import (
     WebUntisTeacherOut,
 )
 from app.services import (
+    bereich_service,
     excuse_status_service,
     measure_type_service,
     sync_settings_service,
@@ -34,6 +38,25 @@ from app.services import (
 from app.services.sync_orchestrator import run_sync_once
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_schulleitung)])
+
+
+@router.get("/klassen")
+async def get_klassen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[KlasseOut]:
+    return await bereich_service.list_klassen(db)
+
+
+@router.get("/bereiche")
+async def get_bereiche(db: Annotated[AsyncSession, Depends(get_db)]) -> list[BereichOut]:
+    return await bereich_service.list_bereiche(db)
+
+
+@router.put("/bereiche")
+async def put_bereiche(
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    payload: list[BereichIn],
+) -> list[BereichOut]:
+    return await bereich_service.replace_bereiche(db, payload, nutzer.id)
 
 
 @router.get("/threshold-rules")
