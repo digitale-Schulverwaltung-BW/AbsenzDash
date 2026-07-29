@@ -43,3 +43,119 @@ export interface Stats {
   own: StatsOwn;
   vergleich: StatsVergleichEintrag[];
 }
+
+export interface Klasse {
+  id: number;
+  name: string;
+}
+
+export interface Zaehlerstand {
+  aktueller_stand: number;
+  erreichte_stufe_nr: number | null;
+}
+
+export interface BenachrichtigungEmpfaenger {
+  rolle: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+export interface Benachrichtigung {
+  id: number;
+  regel_id: number | null;
+  typ: string | null;
+  stufe_nr: number;
+  gesendet_am: string;
+  empfaenger: BenachrichtigungEmpfaenger[];
+  status: string;
+}
+
+export interface StudentOverview {
+  id: number;
+  vorname: string;
+  nachname: string;
+  klasse: Klasse | null;
+  zaehlerstand: Record<string, Zaehlerstand>;
+  letzte_benachrichtigung: Benachrichtigung | null;
+  ohne_massnahme_seit_benachrichtigung: boolean;
+}
+
+export interface StudentList {
+  items: StudentOverview[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface Fehlzeit {
+  id: number;
+  typ: string;
+  datum: string;
+  start_zeit: number;
+  end_zeit: number;
+  fach: string | null;
+  excuse_status_id: number | null;
+  grund_text: string | null;
+}
+
+export interface KlassenbuchEintrag {
+  id: number;
+  kategorie_id: number;
+  datum: string;
+  text: string | null;
+  lesson_id: number | null;
+}
+
+export interface Massnahme {
+  id: number;
+  massnahmen_typ_id: number;
+  massnahmen_typ_name: string;
+  datum: string;
+  notiz: string | null;
+  erfasst_von_nutzer_id: number;
+  erfasst_von_name: string;
+}
+
+export interface Ausnahme {
+  id: number;
+  kategorie: "fehlzeiten" | "klassenbuch";
+  grund: string;
+  gueltig_bis: string | null;
+  aktiv: boolean;
+}
+
+export interface StudentDetail {
+  id: number;
+  vorname: string;
+  nachname: string;
+  klasse: Klasse | null;
+  zaehlerstand: Record<string, Zaehlerstand>;
+  fehlzeiten: Fehlzeit[];
+  klassenbuch: KlassenbuchEintrag[];
+  massnahmen: Massnahme[];
+  ausnahmen: Ausnahme[];
+  benachrichtigungen: Benachrichtigung[];
+}
+
+export interface MassnahmenTyp {
+  id: number;
+  name: string;
+}
+
+export interface ExcuseStatusCatalogEntry {
+  id: number;
+  name: string;
+  long_name: string | null;
+}
+
+export interface ClassregCategoryCatalogEntry {
+  id: number;
+  name: string;
+  long_name: string | null;
+}
+
+export interface StudentCatalog {
+  massnahmen_typen: MassnahmenTyp[];
+  excuse_statuses: ExcuseStatusCatalogEntry[];
+  classreg_categories: ClassregCategoryCatalogEntry[];
+}
