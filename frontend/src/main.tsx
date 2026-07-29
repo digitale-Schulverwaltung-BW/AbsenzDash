@@ -18,9 +18,11 @@ if (container) {
       <QueryClientProvider client={queryClient}>
         {/* basename: the SPA is mounted on a WordPress page at an arbitrary path (e.g. "/absenzdash/"),
             not at the site root, so React Router needs to know that prefix to match routes.
-            Deep links to /klasse/:id will additionally need a WordPress rewrite rule (or a switch to
-            HashRouter) once the follow-up student-list/detail plan starts linking those routes — open
-            decision for that plan, not resolved here. */}
+            Known limitation (live, unresolved): deep links to /schueler and /schueler/:id have no
+            matching WordPress rewrite rule, so a bookmark, browser reload, or pasted link on those
+            paths 404s against WordPress directly instead of reaching the SPA. In-app navigation via
+            <Link> works fine because it never triggers a real page load. Needs either a WordPress
+            rewrite rule or a switch from BrowserRouter to HashRouter — see docs/deployment.md. */}
         <BrowserRouter basename={window.absenzdashConfig?.basename}>
           <App />
         </BrowserRouter>

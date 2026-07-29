@@ -39,11 +39,11 @@ function setupMocks() {
 // Regression test for the bug where main.tsx mounted <BrowserRouter> with no `basename`. In
 // production the SPA is mounted on a WordPress page at a path like "/absenzdash/" (never "/"),
 // via window.absenzdashConfig.basename set by wp_localize_script. Without passing that basename
-// through to BrowserRouter, React Router matches App.tsx's absolute route paths ("/", "/klasse/:id")
-// against the full location.pathname ("/absenzdash/"), which never matches "/" — so <Routes>
-// renders nothing and the entire dashboard is a blank page. This test renders through the real
-// main.tsx entry point (not a MemoryRouter stand-in) with the browser location actually set to a
-// non-root path, so it fails the same way production did if main.tsx regresses.
+// through to BrowserRouter, React Router matches App.tsx's absolute route paths ("/", "/schueler",
+// "/schueler/:id") against the full location.pathname ("/absenzdash/"), which never matches "/" —
+// so <Routes> renders nothing and the entire dashboard is a blank page. This test renders through
+// the real main.tsx entry point (not a MemoryRouter stand-in) with the browser location actually
+// set to a non-root path, so it fails the same way production did if main.tsx regresses.
 describe("main.tsx", () => {
   beforeEach(() => {
     setupMocks();

@@ -87,6 +87,20 @@ sind sonst nicht nutzbar, siehe TECH-SPEC.md §3):
 Ohne WordPress-Einbindung kann `npm run dev` auch standalone geöffnet werden (`http://localhost:5173`) für
 schnelle UI-Iteration ohne echte Backend-Daten (siehe `frontend/index.html`).
 
+### Bekannte Einschränkung: Deep Links auf /schueler und /schueler/:id
+
+Die SPA nutzt `BrowserRouter` (siehe `frontend/src/main.tsx`), matcht also echte Pfade wie
+`/absenzdash/schueler/7` gegen `location.pathname`. In-App-Navigation über `<Link to="/schueler/:id">`
+(Schülerliste → Schüler-Detail) funktioniert problemlos, weil dabei nie ein echter Page-Load ausgelöst
+wird. Ein Lesezeichen, ein Browser-Reload auf der Detailseite oder ein weitergegebener Link auf
+`/schueler` bzw. `/schueler/:id` gehen dagegen direkt an WordPress — dafür existiert aktuell keine
+Rewrite-Regel, die WordPress-Instanz liefert also ein 404 statt die SPA zu laden.
+
+Noch offen, vor einer Nutzung außerhalb der In-App-Navigation zu klären: entweder eine WordPress-
+Rewrite-Regel für diese SPA-internen Pfade ergänzen, oder von `BrowserRouter` auf `HashRouter`
+umstellen (dann laufen alle SPA-Routen unter einem einzigen WordPress-Pfad mit `#`-Fragment, das der
+Server nie sieht).
+
 ## Netzwerk
 
 Das Backend tritt dem externen Docker-Netzwerk `absenzflow-shared` bei (siehe
