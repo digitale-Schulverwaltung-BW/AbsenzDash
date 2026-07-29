@@ -1,0 +1,67 @@
+import { useParams } from "react-router-dom";
+import { useStudentCatalog } from "../../api/hooks/useStudentCatalog";
+import { useStudentDetail } from "../../api/hooks/useStudentDetail";
+import { AusnahmenSection } from "../../components/StudentDetail/AusnahmenSection";
+import { BenachrichtigungenTable } from "../../components/StudentDetail/BenachrichtigungenTable";
+import { FehlzeitenTable } from "../../components/StudentDetail/FehlzeitenTable";
+import { KlassenbuchTable } from "../../components/StudentDetail/KlassenbuchTable";
+import { MassnahmenSection } from "../../components/StudentDetail/MassnahmenSection";
+import styles from "../../components/StudentDetail/StudentDetail.module.css";
+import { StatusBadge, stufeToTone } from "../../components/StatusBadge/StatusBadge";
+
+const ZAEHLERSTAND_LABEL: Record<string, string> = {
+  fehlzeiten: "Fehlzeiten",
+  klassenbuch: "Klassenbuch",
+};
+
+export function StudentDetail() {
+  const { id } = useParams<{ id: string }>();
+  const studentId = Number(id);
+  const { data: student, isLoading, isError } = useStudentDetail(studentId);
+  const { data: catalog } = useStudentCatalog();
+
+  if (isLoading) {
+    return <p>Lädt Schülerdaten…</p>;
+  }
+  if (isError || !student) {
+    return <p>Fehler beim Laden des Schülers.</p>;
+  }
+
+  return (
+    <div>
+      <section className={styles.section}>
+        <h2>
+          {student.nachname}, {student.vorname}
+        </h2>
+        <p>{student.klasse?.name ?? "—"}</p>
+        <div>
+          {Object.entries(student.zaehlerstand).map(([typ, stand]) => (
+            <StatusBadge
+              key={typ}
+              label={`${ZAEHLERSTAND_LABEL[typ] ?? typ}: ${stand.erreichte_stufe_nr ?? "–"}`}
+              tone={stufeToTone(stand.erreichte_stufe_nr)}
+            />
+          ))}
+        </div>
+      </section>
+      <section className={styles.section}>
+        <h3>Fehlzeiten</h3>
+        <FehlzeitenTable fehlzeiten={student.fehlzeiten} excuseStatuses={catalog?.excuse_statuses ?? []} />
+      </section>
+      <section className={styles.section}>
+        <h3>Klassenbuch</h3>
+        <KlassenbuchTable eintraege={student.klassenbuch} classregCategories={catalog?.classreg_categories ?? []} />
+      </section>
+      <MassnahmenSection
+        studentId={studentId}
+        massnahmen={student.massnahmen}
+        massnahmenTypen={catalog?.massnahmen_typen ?? []}
+      />
+      <AusnahmenSection studentId={studentId} ausnahmen={student.ausnahmen} />
+      <section className={styles.section}>
+        <h3>Benachrichtigungen</h3>
+        <BenachrichtigungenTable benachrichtigungen={student.benachrichtigungen} />
+      </section>
+    </div>
+  );
+}
