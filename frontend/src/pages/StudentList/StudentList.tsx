@@ -88,7 +88,11 @@ export function StudentList() {
         </thead>
         <tbody>
           {data.items.map((student) => (
-            <tr key={student.id} data-highlighted={student.ohne_massnahme_seit_benachrichtigung}>
+            <tr
+              key={student.id}
+              data-highlighted={student.ohne_massnahme_seit_benachrichtigung}
+              className={student.ohne_massnahme_seit_benachrichtigung ? styles.highlighted : undefined}
+            >
               <td>
                 <Link to={`/schueler/${student.id}`}>
                   {student.nachname}, {student.vorname}
