@@ -26,3 +26,27 @@ export async function apiGet<T>(path: string): Promise<T> {
   }
   return (await response.json()) as T;
 }
+
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const config = getConfig();
+  const response = await fetch(`${config.restUrl}/${path}`, {
+    method: "POST",
+    headers: { "X-WP-Nonce": config.nonce, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, `POST ${path} failed with status ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function apiDelete(path: string): Promise<void> {
+  const config = getConfig();
+  const response = await fetch(`${config.restUrl}/${path}`, {
+    method: "DELETE",
+    headers: { "X-WP-Nonce": config.nonce },
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, `DELETE ${path} failed with status ${response.status}`);
+  }
+}
