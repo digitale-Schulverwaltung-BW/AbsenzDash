@@ -21,7 +21,7 @@ define( 'ABSENZDASH_VERSION', '0.1.0' );
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-optionen.php';
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-proxy.php';
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-shortcode.php';
-require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-benutzerprofil.php';
+require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-rollen-seite.php';
 
 add_action(
 	'plugins_loaded',
@@ -29,6 +29,6 @@ add_action(
 		new Absenzdash_Optionen();
 		new Absenzdash_Proxy();
 		new Absenzdash_Shortcode();
-		new Absenzdash_Benutzerprofil();
+		new Absenzdash_Rollen_Seite();
 	}
 );
