@@ -17,9 +17,13 @@ from app.models.schueler import Schueler
 from app.schemas.students import (
     AusnahmeOut,
     BenachrichtigungOut,
+    ClassregCategoryCatalogOut,
+    ExcuseStatusCatalogOut,
     ExemptionCreateIn,
     MassnahmeOut,
+    MassnahmenTypCatalogOut,
     MeasureCreateIn,
+    StudentCatalogOut,
     StudentDetailOut,
     StudentListOut,
     StudentOverviewOut,
@@ -96,6 +100,27 @@ async def get_students(
         for schueler in schueler_list
     ]
     return StudentListOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/catalog")
+async def get_student_catalog(
+    nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> StudentCatalogOut:
+    typen = (
+        await db.execute(select(MassnahmenTyp).where(MassnahmenTyp.aktiv.is_(True)).order_by(MassnahmenTyp.name))
+    ).scalars().all()
+    excuse_statuses = await student_query.load_all_excuse_statuses(db)
+    classreg_categories = await student_query.load_all_classreg_categories(db)
+    return StudentCatalogOut(
+        massnahmen_typen=[MassnahmenTypCatalogOut(id=typ.id, name=typ.name) for typ in typen],
+        excuse_statuses=[
+            ExcuseStatusCatalogOut(id=s.id, name=s.name, long_name=s.long_name) for s in excuse_statuses
+        ],
+        classreg_categories=[
+            ClassregCategoryCatalogOut(id=c.id, name=c.name, long_name=c.long_name) for c in classreg_categories
+        ],
+    )
 
 
 @router.get("/{schueler_id}")

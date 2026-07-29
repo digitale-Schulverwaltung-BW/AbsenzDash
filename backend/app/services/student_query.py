@@ -111,6 +111,19 @@ async def load_classreg_category_map(db: AsyncSession, kategorie_ids: list[int])
     return {kategorie.id: kategorie for kategorie in result.scalars().all()}
 
 
+async def load_all_excuse_statuses(db: AsyncSession) -> list[ExcuseStatus]:
+    """Alle Entschuldigungsstatus-Stammdaten (auch inaktive, da historische
+    Fehlzeiten auf einen inzwischen deaktivierten Status verweisen koennen)."""
+    result = await db.execute(select(ExcuseStatus).order_by(ExcuseStatus.name))
+    return list(result.scalars().all())
+
+
+async def load_all_classreg_categories(db: AsyncSession) -> list[ClassregCategory]:
+    """Alle Klassenbuch-Kategorie-Stammdaten."""
+    result = await db.execute(select(ClassregCategory).order_by(ClassregCategory.name))
+    return list(result.scalars().all())
+
+
 async def load_zaehlerstand_map(db: AsyncSession, schueler_ids: list[int]) -> dict[int, dict[str, dict[str, Any]]]:
     """Pro schueler_id ein dict {typ: {aktueller_stand, erreichte_stufe_nr}}, mit
     {aktueller_stand: 0, erreichte_stufe_nr: None} synthetisiert fuer fehlende Typen."""

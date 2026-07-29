@@ -115,3 +115,26 @@ class ExemptionCreateIn(BaseModel):
     kategorie: Literal["fehlzeiten", "klassenbuch"]
     grund: str
     gueltig_bis: date | None = None
+
+
+class MassnahmenTypCatalogOut(BaseModel):
+    id: int
+    name: str
+
+
+class ExcuseStatusCatalogOut(BaseModel):
+    id: int
+    name: str
+    long_name: str | None
+
+
+class ClassregCategoryCatalogOut(BaseModel):
+    id: int
+    name: str
+    long_name: str | None
+
+
+class StudentCatalogOut(BaseModel):
+    massnahmen_typen: list[MassnahmenTypCatalogOut]
+    excuse_statuses: list[ExcuseStatusCatalogOut]
+    classreg_categories: list[ClassregCategoryCatalogOut]
