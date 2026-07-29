@@ -75,16 +75,27 @@ Danach in WP-Admin:
 3. Unter **Einstellungen → AbsenzDash** die Backend-URL (z.B. `http://absenzdash-backend:8000`,
    erreichbar über das gemeinsame `absenzflow-shared`-Docker-Netzwerk) und das Shared Secret
    eintragen — das Secret muss exakt `WORDPRESS_PROXY_SECRET` aus `backend/.env` entsprechen.
-4. Für jeden Testnutzer unter **Benutzer → Profil** die Rolle (`klassenlehrkraft` /
-   `bereichsleiter` / `schulleitung`) und optional die numerische WebUntis-Lehrkraft-ID setzen. Das
-   ist ein Übergangsmechanismus für Tests — die richtige Rollen-/Bereichs-Admin-Oberfläche folgt in
-   einem späteren Plan. Diese Felder sind nur für Benutzer mit der Fähigkeit `edit_users` (also
-   WordPress-Administratoren) sichtbar/editierbar.
+4. Rollen-Zuweisung & Bereichsdefinition konfigurieren (siehe Abschnitt unten).
 5. Voraussetzung: `npm run build` in `frontend/` mindestens einmal ausgeführt haben — das Build-Ergebnis
    (`wordpress-plugin/absenzdash/assets/spa/`) ist gitignored und existiert bei einem frischen Checkout
    nicht. Danach eine Seite mit dem Shortcode `[absenzdash]` anlegen und aufrufen: das Landing-Dashboard
    mit den Kennzahlen sollte erscheinen — das bestätigt die gesamte Proxy-Kette (WP-Auth → Backend →
    SPA-Rendering).
+
+### Rollen-Zuweisung & Bereichsdefinition
+
+Seit Plan 11 (`docs/superpowers/plans/2026-07-29-wordpress-plugin-rollen-bereiche.md`) ersetzen zwei
+dedizierte Admin-Seiten die vorherigen Profilfelder:
+
+- **Einstellungen → AbsenzDash-Rollen**: Rolle (Klassenlehrkraft/Bereichsleiter/Schulleitung) und
+  WebUntis-Kürzel je Nutzer, als Listenansicht statt Einzel-Profilbearbeitung. Die Kürzelliste wird
+  live aus WebUntis geladen (`GET /admin/webuntis-teachers`) — Backend muss dafür erreichbar sein.
+- **Einstellungen → AbsenzDash-Bereiche**: Bereiche anlegen, Klassen zuordnen, Bereichsleiter
+  zuweisen. Der Button "Aus WebUntis-Abteilungen vorbefüllen" schlägt einen Bereich pro
+  WebUntis-Abteilung vor (reiner Formular-Vorschlag, keine laufende Synchronisation).
+
+Beide Seiten sind nur für WP-Administratoren (`manage_options`) sichtbar und benötigen eine
+funktionierende Backend-Verbindung (Options-Seite, siehe oben).
 
 ## Frontend (React/TS-SPA)
 
