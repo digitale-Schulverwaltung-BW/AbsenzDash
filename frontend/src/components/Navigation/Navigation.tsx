@@ -1,10 +1,11 @@
-import { useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useNavOptions } from "../../api/hooks/useNavOptions";
 import styles from "./Navigation.module.css";
 
 export function Navigation() {
   const { data, isLoading, isError } = useNavOptions();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
 
   if (isLoading) {
     return <nav className={styles.nav}>Lädt Navigation…</nav>;
@@ -50,6 +51,20 @@ export function Navigation() {
 
   return (
     <nav className={styles.nav}>
+      <div className={styles.tabs}>
+        <Link
+          to={{ pathname: "/", search: location.search }}
+          className={location.pathname === "/" ? styles.tabActive : styles.tab}
+        >
+          Übersicht
+        </Link>
+        <Link
+          to={{ pathname: "/schueler", search: location.search }}
+          className={location.pathname === "/schueler" ? styles.tabActive : styles.tab}
+        >
+          Schülerliste
+        </Link>
+      </div>
       {showBereichDropdown && (
         <select
           aria-label="Bereich"

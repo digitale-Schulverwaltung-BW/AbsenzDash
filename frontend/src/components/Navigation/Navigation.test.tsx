@@ -131,4 +131,18 @@ describe("Navigation", () => {
 
     expect(screen.getByLabelText("Klasse")).toHaveValue("");
   });
+
+  it("renders navigation tabs that preserve the current search params", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }] },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderNavigation(["/?klasse=1"]);
+
+    expect(screen.getByRole("link", { name: "Übersicht" })).toHaveAttribute("href", "/?klasse=1");
+    expect(screen.getByRole("link", { name: "Schülerliste" })).toHaveAttribute("href", "/schueler?klasse=1");
+  });
 });
