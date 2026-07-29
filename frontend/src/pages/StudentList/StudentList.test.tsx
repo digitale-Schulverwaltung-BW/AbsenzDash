@@ -78,6 +78,34 @@ describe("StudentList", () => {
     );
   });
 
+  it("sets the min_stufe filter via the Mindeststufe select", () => {
+    mockUseStudents.mockReturnValue({
+      data: { items: [], total: 0, limit: 50, offset: 0 },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderList();
+    fireEvent.change(screen.getByLabelText("Mindeststufe"), { target: { value: "2" } });
+
+    expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ minStufe: 2 }));
+  });
+
+  it("resets offset back to 0 when a filter changes while paginated", () => {
+    mockUseStudents.mockReturnValue({
+      data: { items: [], total: 0, limit: 50, offset: 0 },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderList(["/schueler?offset=50"]);
+    fireEvent.click(screen.getByLabelText("Nur auffällige"));
+
+    expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 }));
+  });
+
   it("disables the Weiter button on the last page", () => {
     mockUseStudents.mockReturnValue({
       data: { items: [BASE_STUDENT], total: 1, limit: 50, offset: 0 },
