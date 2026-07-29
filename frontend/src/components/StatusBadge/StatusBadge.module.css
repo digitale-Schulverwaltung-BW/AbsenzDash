@@ -1,0 +1,32 @@
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.neutral {
+  background: #eee;
+  color: #555;
+}
+
+.info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.stufe1 {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.stufe2 {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.stufe3 {
+  background: #fecaca;
+  color: #991b1b;
+}
