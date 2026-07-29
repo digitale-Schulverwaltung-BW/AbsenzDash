@@ -15,6 +15,7 @@ describe("apiGet", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -32,6 +33,7 @@ describe("apiGet", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 403 })));
 
@@ -44,6 +46,7 @@ describe("apiPost", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -65,6 +68,7 @@ describe("apiPost", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 422 })));
 
@@ -77,6 +81,7 @@ describe("apiDelete", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -92,6 +97,7 @@ describe("apiDelete", () => {
     window.absenzdashConfig = {
       restUrl: "https://example.test/wp-json/absenzdash/v1/api",
       nonce: "abc123",
+      basename: "/absenzdash",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
 
