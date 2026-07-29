@@ -46,7 +46,16 @@
 		);
 
 		var entfernenButton = element('button', { type: 'button', class: 'button absenzdash-bereich-entfernen', text: 'Entfernen' });
-		entfernenButton.addEventListener('click', function () { zeile.remove(); });
+		entfernenButton.addEventListener('click', function () {
+			var aktuelleZeilen = document.querySelectorAll('.absenzdash-bereich-zeile');
+			var index = Array.prototype.indexOf.call(aktuelleZeilen, zeile);
+			var alle = ausZeilenLesen();
+			if (index !== -1) {
+				alle.splice(index, 1);
+			}
+			zustand.bereiche = alle;
+			bereicheNeuRendern();
+		});
 
 		var zeile = element('div', { class: 'absenzdash-bereich-zeile', style: 'border:1px solid #ccd0d4; padding:10px; margin-bottom:10px;' }, [
 			element('label', { text: 'Name: ' }), nameInput,
@@ -106,6 +115,9 @@
 				return r.json();
 			})
 			.then(function (vorschlaege) {
+				// Erst unsaved DOM-Edits übernehmen, bevor neue Einträge angehängt werden —
+				// sonst gehen laufende Änderungen beim Neu-Rendern verloren.
+				zustand.bereiche = ausZeilenLesen();
 				vorschlaege.forEach(function (vorschlag) {
 					zustand.bereiche.push({ id: null, name: vorschlag.name, klasse_ids: vorschlag.klasse_ids, leiter: [] });
 				});
@@ -117,6 +129,9 @@
 	}
 
 	function bereichHinzufuegen() {
+		// Erst unsaved DOM-Edits übernehmen, bevor eine neue Zeile angehängt wird — sonst
+		// gehen laufende Änderungen in anderen Zeilen beim Neu-Rendern verloren.
+		zustand.bereiche = ausZeilenLesen();
 		zustand.bereiche.push({ id: null, name: '', klasse_ids: [], leiter: [] });
 		bereicheNeuRendern();
 	}

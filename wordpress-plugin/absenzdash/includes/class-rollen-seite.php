@@ -12,6 +12,7 @@ class Absenzdash_Rollen_Seite {
 		add_action( 'admin_menu', array( $this, 'registriere_seite' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_post_absenzdash_rollen_speichern', array( $this, 'speichere_rollen' ) );
+		add_action( 'admin_notices', array( $this, 'zeige_hinweise' ) );
 	}
 
 	public function registriere_seite(): void {
@@ -104,6 +105,11 @@ class Absenzdash_Rollen_Seite {
 										data-vorschlag="<?php echo esc_attr( $zeile['absenzflow_vorschlag'] ); ?>"
 										data-aktuell="<?php echo esc_attr( $zeile['webuntis_code'] ); ?>">
 										<option value="">(keins)</option>
+										<?php if ( '' !== $zeile['webuntis_code'] ) : ?>
+											<option value="<?php echo esc_attr( $zeile['webuntis_code'] ); ?>" selected>
+												<?php echo esc_html( $zeile['webuntis_code'] ); ?>
+											</option>
+										<?php endif; ?>
 									</select>
 								</td>
 							</tr>
@@ -125,7 +131,24 @@ class Absenzdash_Rollen_Seite {
 		$rollen  = isset( $_POST['rolle'] ) ? wp_unslash( $_POST['rolle'] ) : array();
 		$kuerzel = isset( $_POST['webuntis_code'] ) ? wp_unslash( $_POST['webuntis_code'] ) : array();
 
-		foreach ( get_users() as $user ) {
+		$alle_nutzer = get_users();
+
+		// Doppelte WebUntis-Kürzel/IDs über alle Nutzer hinweg erkennen, bevor irgendetwas
+		// geschrieben wird: die Backend-Spalte ist unique, ein Duplikat würde sonst erst bei
+		// einer späteren, unabhängigen Anfrage als 500er auffallen.
+		$code_je_nutzer   = array();
+		$anzahl_je_code   = array();
+		foreach ( $alle_nutzer as $user ) {
+			$code = isset( $kuerzel[ $user->ID ] ) ? sanitize_text_field( $kuerzel[ $user->ID ] ) : '';
+			if ( '' !== $code && ctype_digit( $code ) ) {
+				$code_je_nutzer[ $user->ID ]    = $code;
+				$anzahl_je_code[ $code ]        = ( $anzahl_je_code[ $code ] ?? 0 ) + 1;
+			}
+		}
+
+		$namen_mit_duplikat = array();
+
+		foreach ( $alle_nutzer as $user ) {
 			$user_id = $user->ID;
 
 			$rolle = isset( $rollen[ $user_id ] ) ? sanitize_text_field( $rollen[ $user_id ] ) : '';
@@ -135,15 +158,46 @@ class Absenzdash_Rollen_Seite {
 				delete_user_meta( $user_id, 'absenzdash_role' );
 			}
 
-			$code = isset( $kuerzel[ $user_id ] ) ? sanitize_text_field( $kuerzel[ $user_id ] ) : '';
-			if ( '' !== $code && ctype_digit( $code ) ) {
+			$code       = $code_je_nutzer[ $user_id ] ?? '';
+			$ist_doppelt = '' !== $code && ( $anzahl_je_code[ $code ] ?? 0 ) > 1;
+
+			if ( '' !== $code && ! $ist_doppelt ) {
 				update_user_meta( $user_id, 'absenzdash_webuntis_code', $code );
 			} else {
 				delete_user_meta( $user_id, 'absenzdash_webuntis_code' );
 			}
+
+			if ( $ist_doppelt ) {
+				$namen_mit_duplikat[] = $user->display_name;
+			}
+		}
+
+		if ( ! empty( $namen_mit_duplikat ) ) {
+			set_transient(
+				'absenzdash_rollen_hinweis_' . get_current_user_id(),
+				sprintf(
+					/* translators: %s: Liste der betroffenen Nutzernamen. */
+					__( 'Doppeltes WebUntis-Kürzel bei: %s — nicht gespeichert.', 'absenzdash' ),
+					implode( ', ', $namen_mit_duplikat )
+				),
+				MINUTE_IN_SECONDS
+			);
 		}
 
 		wp_safe_redirect( add_query_arg( 'absenzdash_gespeichert', '1', wp_get_referer() ) );
 		exit;
+	}
+
+	public function zeige_hinweise(): void {
+		$transient_key = 'absenzdash_rollen_hinweis_' . get_current_user_id();
+		$hinweis       = get_transient( $transient_key );
+		if ( ! $hinweis ) {
+			return;
+		}
+		delete_transient( $transient_key );
+		printf(
+			'<div class="notice notice-warning is-dismissible"><p>%s</p></div>',
+			esc_html( $hinweis )
+		);
 	}
 }

@@ -17,12 +17,18 @@
 					var vorschlagId = '';
 
 					lehrkraefte.forEach(function (lehrkraft) {
+						var wert = String(lehrkraft.id);
+						if (wert === aktuell) {
+							// Bereits als vorausgewählte Option serverseitig gerendert (siehe
+							// render_seite()) — nicht doppelt hinzufügen.
+							return;
+						}
 						var option = document.createElement('option');
-						option.value = String(lehrkraft.id);
+						option.value = wert;
 						option.textContent = lehrkraft.kuerzel;
 						auswahl.appendChild(option);
 						if (!vorschlagId && lehrkraft.kuerzel.toUpperCase() === vorschlagKuerzel) {
-							vorschlagId = String(lehrkraft.id);
+							vorschlagId = wert;
 						}
 					});
 
