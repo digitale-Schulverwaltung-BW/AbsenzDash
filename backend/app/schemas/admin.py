@@ -86,3 +86,8 @@ class SyncSettingsIn(BaseModel):
 class SyncNowOut(BaseModel):
     status: str
     abgeschlossen_am: datetime
+
+
+class WebUntisTeacherOut(BaseModel):
+    id: int
+    kuerzel: str

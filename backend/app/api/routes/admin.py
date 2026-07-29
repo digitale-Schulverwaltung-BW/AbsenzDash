@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_schulleitung
+from app.core.config import settings
 from app.core.database import get_db
-from app.integrations.webuntis_client import WebUntisError
+from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.audit_log import AuditLog
 from app.models.nutzer import Nutzer
 from app.schemas.admin import (
@@ -21,12 +22,14 @@ from app.schemas.admin import (
     SyncSettingsOut,
     ThresholdRuleIn,
     ThresholdRuleOut,
+    WebUntisTeacherOut,
 )
 from app.services import (
     excuse_status_service,
     measure_type_service,
     sync_settings_service,
     threshold_rule_service,
+    webuntis_teacher_service,
 )
 from app.services.sync_orchestrator import run_sync_once
 
@@ -73,6 +76,15 @@ async def put_excuse_statuses(
     payload: list[ExcuseStatusIn],
 ) -> list[ExcuseStatusOut]:
     return await excuse_status_service.replace_excuse_statuses(db, payload, nutzer.id)
+
+
+@router.get("/webuntis-teachers")
+async def get_webuntis_teachers() -> list[WebUntisTeacherOut]:
+    try:
+        async with WebUntisClient(settings) as client:
+            return await webuntis_teacher_service.list_teachers(client)
+    except WebUntisError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"WebUntis nicht erreichbar: {exc}")
 
 
 @router.get("/sync-settings")
