@@ -3,6 +3,7 @@ import datetime
 import pytest
 from sqlalchemy import select
 
+from app.models.ausnahme import Ausnahme
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.classreg_category import ClassregCategory
@@ -220,6 +221,20 @@ async def test_load_student_detail_aggregates_all_sublists(db_session):
     assert typ_name == "Gespräch"
     assert nutzer_name == "Lehrer A"
     assert detail["zaehlerstand"]["fehlzeiten"] == {"aktueller_stand": 0, "erreichte_stufe_nr": None}
+
+
+@pytest.mark.asyncio
+async def test_load_student_detail_includes_active_and_revoked_ausnahmen(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    aktive_ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="Aktiv", aktiv=True)
+    aufgehobene_ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Aufgehoben", aktiv=False)
+    db_session.add_all([aktive_ausnahme, aufgehobene_ausnahme])
+    await db_session.commit()
+
+    detail = await student_query.load_student_detail(db_session, schueler.id)
+    assert {(a.grund, a.aktiv) for a in detail["ausnahmen"]} == {("Aktiv", True), ("Aufgehoben", False)}
 
 
 @pytest.mark.asyncio

@@ -222,10 +222,11 @@ async def load_student_detail(db: AsyncSession, schueler_id: int) -> dict[str, A
             .order_by(Massnahme.datum.desc())
         )
     ).all()
+    # Liefert alle Ausnahmen (aktiv und aufgehoben) fuer die Detailansicht - das Design (siehe
+    # docs/superpowers/specs/2026-07-28-schuelerliste-detail-design.md Abschnitt 5, Punkt 5) will
+    # eine "Liste aller Eintraege" inkl. aktiv-Status, nicht nur die aktiven.
     ausnahmen = (
-        await db.execute(
-            select(Ausnahme).where(Ausnahme.schueler_id == schueler_id, Ausnahme.aktiv.is_(True))
-        )
+        await db.execute(select(Ausnahme).where(Ausnahme.schueler_id == schueler_id))
     ).scalars().all()
     benachrichtigungen = (
         await db.execute(

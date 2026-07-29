@@ -188,6 +188,30 @@ async def test_get_student_detail_returns_all_sublists(db_session):
 
 
 @pytest.mark.asyncio
+async def test_get_student_detail_includes_revoked_ausnahmen(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    aktive_ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="Aktiv", aktiv=True)
+    aufgehobene_ausnahme = Ausnahme(schueler_id=schueler.id, kategorie="klassenbuch", grund="Aufgehoben", aktiv=False)
+    db_session.add_all([aktive_ausnahme, aufgehobene_ausnahme])
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students/{schueler.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    body = response.json()
+    gruende = {a["grund"]: a["aktiv"] for a in body["ausnahmen"]}
+    assert gruende == {"Aktiv": True, "Aufgehoben": False}
+
+
+@pytest.mark.asyncio
 async def test_get_student_detail_404s_for_out_of_scope_student(db_session):
     klasse_a = Klasse(webuntis_id=1, name="10a")
     klasse_b = Klasse(webuntis_id=2, name="10b")
