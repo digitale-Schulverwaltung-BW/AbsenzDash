@@ -6,12 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import ist_unique_violation
+from app.models.abteilung import Abteilung
 from app.models.audit_log import AuditLog
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.klasse import Klasse
 from app.models.nutzer import ROLLEN, Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
-from app.schemas.admin import BereichIn, BereichLeiterOut, BereichOut, KlasseOut
+from app.schemas.admin import BereichIn, BereichLeiterOut, BereichOut, BereichVorschlagOut, KlasseOut
 
 
 async def list_klassen(db: AsyncSession) -> list[KlasseOut]:
@@ -156,3 +157,26 @@ async def replace_bereiche(db: AsyncSession, payload: list[BereichIn], admin_nut
         raise
 
     return [await _bereich_out(db, b) for b in result_bereiche]
+
+
+async def vorschlag_aus_abteilungen(db: AsyncSession) -> list[BereichVorschlagOut]:
+    """Einmal-Vorschlag zur Vorbefuellung der Bereichsdefinition (1:1 pro Abteilung).
+
+    Kein Schreibzugriff, kein `quelle`-Flag -- reiner Formular-Vorschlag, siehe Design-Dok
+    Abschnitt 'GET /admin/bereiche/vorschlag-aus-abteilungen'.
+    """
+    abteilungen = (await db.execute(select(Abteilung).order_by(Abteilung.name))).scalars().all()
+    klassen = (await db.execute(select(Klasse))).scalars().all()
+
+    klassen_by_abteilung: dict[int, list[int]] = {}
+    for klasse in klassen:
+        if klasse.abteilung_id is not None:
+            klassen_by_abteilung.setdefault(klasse.abteilung_id, []).append(klasse.id)
+
+    return [
+        BereichVorschlagOut(
+            name=abteilung.long_name or abteilung.name,
+            klasse_ids=sorted(klassen_by_abteilung.get(abteilung.id, [])),
+        )
+        for abteilung in abteilungen
+    ]

@@ -168,3 +168,35 @@ async def test_replace_bereiche_rejects_unknown_rolle(db_session):
     with pytest.raises(HTTPException) as exc_info:
         await replace_bereiche(db_session, payload, admin_nutzer_id=None)
     assert exc_info.value.status_code == 422
+
+
+from app.models.abteilung import Abteilung
+from app.services.bereich_service import vorschlag_aus_abteilungen
+
+
+@pytest.mark.asyncio
+async def test_vorschlag_aus_abteilungen_maps_long_name_and_klassen(db_session):
+    abteilung = Abteilung(webuntis_id=51, name="B-ME", long_name="Mechatronik")
+    db_session.add(abteilung)
+    await db_session.flush()
+    klasse_zugehoerig = Klasse(webuntis_id=1, name="1ME", abteilung_id=abteilung.id)
+    klasse_fremd = Klasse(webuntis_id=2, name="2BFE")
+    db_session.add_all([klasse_zugehoerig, klasse_fremd])
+    await db_session.commit()
+
+    result = await vorschlag_aus_abteilungen(db_session)
+
+    assert len(result) == 1
+    assert result[0].name == "Mechatronik"
+    assert result[0].klasse_ids == [klasse_zugehoerig.id]
+
+
+@pytest.mark.asyncio
+async def test_vorschlag_aus_abteilungen_falls_back_to_name_without_long_name(db_session):
+    db_session.add(Abteilung(webuntis_id=59, name="B-IE", long_name=None))
+    await db_session.commit()
+
+    result = await vorschlag_aus_abteilungen(db_session)
+
+    assert result[0].name == "B-IE"
+    assert result[0].klasse_ids == []

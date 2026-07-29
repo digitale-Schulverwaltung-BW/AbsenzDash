@@ -15,6 +15,7 @@ from app.models.nutzer import Nutzer
 from app.schemas.admin import (
     BereichIn,
     BereichOut,
+    BereichVorschlagOut,
     ExcuseStatusIn,
     ExcuseStatusOut,
     KlasseOut,
@@ -57,6 +58,11 @@ async def put_bereiche(
     payload: list[BereichIn],
 ) -> list[BereichOut]:
     return await bereich_service.replace_bereiche(db, payload, nutzer.id)
+
+
+@router.get("/bereiche/vorschlag-aus-abteilungen")
+async def get_bereiche_vorschlag(db: Annotated[AsyncSession, Depends(get_db)]) -> list[BereichVorschlagOut]:
+    return await bereich_service.vorschlag_aus_abteilungen(db)
 
 
 @router.get("/threshold-rules")

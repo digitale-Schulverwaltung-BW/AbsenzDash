@@ -124,3 +124,8 @@ class BereichOut(BaseModel):
     name: str
     klasse_ids: list[int]
     leiter: list[BereichLeiterOut]
+
+
+class BereichVorschlagOut(BaseModel):
+    name: str
+    klasse_ids: list[int]

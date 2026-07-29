@@ -72,3 +72,27 @@ async def test_put_bereiche_rejects_unknown_klasse_id(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/bereiche", headers=HEADERS_SCHULLEITUNG, json=payload)
     assert response.status_code == 422
+
+
+from app.models.abteilung import Abteilung
+
+
+@pytest.mark.asyncio
+async def test_get_vorschlag_aus_abteilungen_rejects_non_schulleitung(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/bereiche/vorschlag-aus-abteilungen", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_vorschlag_aus_abteilungen_returns_one_per_abteilung(db_session):
+    db_session.add(Abteilung(webuntis_id=51, name="B-ME", long_name="Mechatronik"))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/bereiche/vorschlag-aus-abteilungen", headers=HEADERS_SCHULLEITUNG)
+
+    assert response.status_code == 200
+    assert response.json() == [{"name": "Mechatronik", "klasse_ids": []}]
