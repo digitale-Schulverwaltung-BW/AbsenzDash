@@ -22,6 +22,17 @@ export function MassnahmenSection({ studentId, massnahmen, massnahmenTypen }: Ma
     }
   }, [isSuccess]);
 
+  // massnahmenTypen may still be empty at mount if useStudentCatalog resolves after
+  // useStudentDetail (StudentDetail.tsx fires both in parallel and only gates rendering on the
+  // detail query). The useState initializer above only runs once, so once the catalog arrives we
+  // need to sync typId to the first available type — but only while the user hasn't made a valid
+  // selection yet, so we don't override an in-progress choice.
+  useEffect(() => {
+    if (typId === 0 && massnahmenTypen.length > 0) {
+      setTypId(massnahmenTypen[0].id);
+    }
+  }, [massnahmenTypen, typId]);
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     mutate({ massnahmen_typ_id: typId, datum, notiz: notiz || null });

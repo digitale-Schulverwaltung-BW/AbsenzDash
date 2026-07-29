@@ -57,6 +57,20 @@ describe("MassnahmenSection", () => {
     );
   });
 
+  it("syncs the selected type once massnahmenTypen arrives after the initial mount (async load-order race)", () => {
+    mockUseCreateMeasure.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { rerender } = render(<MassnahmenSection studentId={7} massnahmen={[]} massnahmenTypen={[]} />);
+
+    rerender(<MassnahmenSection studentId={7} massnahmen={[]} massnahmenTypen={[{ id: 2, name: "Gespräch" }]} />);
+
+    expect(screen.getByLabelText("Typ")).toHaveValue("2");
+  });
+
   it("disables the submit button while the mutation is pending", () => {
     mockUseCreateMeasure.mockReturnValue({
       mutate: vi.fn(),
