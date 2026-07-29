@@ -1,0 +1,174 @@
+(function () {
+	var zustand = { bereiche: [], klassen: [] };
+
+	function element(tag, attrs, kinder) {
+		var el = document.createElement(tag);
+		Object.keys(attrs || {}).forEach(function (key) {
+			if (key === 'text') {
+				el.textContent = attrs[key];
+			} else {
+				el.setAttribute(key, attrs[key]);
+			}
+		});
+		(kinder || []).forEach(function (kind) { el.appendChild(kind); });
+		return el;
+	}
+
+	function mehrfachauswahl(eintraege, wertFeld, labelFn, ausgewaehlteWerte, cssKlasse) {
+		var select = element('select', { multiple: 'multiple', class: cssKlasse, size: '6' });
+		eintraege.forEach(function (eintrag) {
+			var wert = String(eintrag[wertFeld]);
+			var option = element('option', { value: wert, text: labelFn(eintrag) });
+			if (ausgewaehlteWerte.indexOf(wert) !== -1) {
+				option.selected = true;
+			}
+			select.appendChild(option);
+		});
+		return select;
+	}
+
+	function ausgewaehlteWerte(select) {
+		return Array.prototype.slice.call(select.selectedOptions).map(function (option) { return option.value; });
+	}
+
+	function bereichZeileRendern(bereich) {
+		var nameInput = element('input', { type: 'text', class: 'absenzdash-bereich-name', value: bereich.name || '' });
+
+		var klassenAuswahl = mehrfachauswahl(
+			zustand.klassen, 'id', function (k) { return k.name; },
+			(bereich.klasse_ids || []).map(String), 'absenzdash-bereich-klassen'
+		);
+		var leiterAuswahl = mehrfachauswahl(
+			absenzdashBereicheConfig.wpNutzer, 'wp_user_id',
+			function (n) { return n.name + ' (' + (n.rolle || 'keine Rolle') + ')'; },
+			(bereich.leiter || []).map(function (l) { return l.wp_user_id; }),
+			'absenzdash-bereich-leiter'
+		);
+
+		var entfernenButton = element('button', { type: 'button', class: 'button absenzdash-bereich-entfernen', text: 'Entfernen' });
+		entfernenButton.addEventListener('click', function () { zeile.remove(); });
+
+		var zeile = element('div', { class: 'absenzdash-bereich-zeile', style: 'border:1px solid #ccd0d4; padding:10px; margin-bottom:10px;' }, [
+			element('label', { text: 'Name: ' }), nameInput,
+			element('br', {}),
+			element('label', { text: 'Klassen: ' }), klassenAuswahl,
+			element('br', {}),
+			element('label', { text: 'Bereichsleiter: ' }), leiterAuswahl,
+			element('br', {}),
+			entfernenButton
+		]);
+		zeile.dataset.bereichId = bereich.id != null ? String(bereich.id) : '';
+
+		return zeile;
+	}
+
+	function bereicheNeuRendern() {
+		var liste = document.getElementById('absenzdash-bereiche-liste');
+		liste.innerHTML = '';
+		zustand.bereiche.forEach(function (bereich) {
+			liste.appendChild(bereichZeileRendern(bereich));
+		});
+	}
+
+	function fehlerAnzeigen(nachricht) {
+		document.getElementById('absenzdash-bereiche-fehler').textContent = nachricht;
+	}
+
+	function laden() {
+		Promise.all([
+			fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche', {
+				headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
+			}).then(function (r) {
+				if (!r.ok) { throw new Error('Bereiche laden fehlgeschlagen (HTTP ' + r.status + ')'); }
+				return r.json();
+			}),
+			fetch(absenzdashBereicheConfig.restUrl + '/admin/klassen', {
+				headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
+			}).then(function (r) {
+				if (!r.ok) { throw new Error('Klassenliste laden fehlgeschlagen (HTTP ' + r.status + ')'); }
+				return r.json();
+			})
+		]).then(function (ergebnisse) {
+			zustand.bereiche = ergebnisse[0];
+			zustand.klassen = ergebnisse[1];
+			bereicheNeuRendern();
+		}).catch(function (fehler) {
+			fehlerAnzeigen(fehler.message);
+		});
+	}
+
+	function vorbefuellen() {
+		fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche/vorschlag-aus-abteilungen', {
+			headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
+		})
+			.then(function (r) {
+				if (!r.ok) { throw new Error('Vorschlag laden fehlgeschlagen (HTTP ' + r.status + ')'); }
+				return r.json();
+			})
+			.then(function (vorschlaege) {
+				vorschlaege.forEach(function (vorschlag) {
+					zustand.bereiche.push({ id: null, name: vorschlag.name, klasse_ids: vorschlag.klasse_ids, leiter: [] });
+				});
+				bereicheNeuRendern();
+			})
+			.catch(function (fehler) {
+				fehlerAnzeigen(fehler.message);
+			});
+	}
+
+	function bereichHinzufuegen() {
+		zustand.bereiche.push({ id: null, name: '', klasse_ids: [], leiter: [] });
+		bereicheNeuRendern();
+	}
+
+	function ausZeilenLesen() {
+		var zeilen = document.querySelectorAll('.absenzdash-bereich-zeile');
+		return Array.prototype.map.call(zeilen, function (zeile) {
+			var name = zeile.querySelector('.absenzdash-bereich-name').value;
+			var klasseIds = ausgewaehlteWerte(zeile.querySelector('.absenzdash-bereich-klassen')).map(Number);
+			var leiterIds = ausgewaehlteWerte(zeile.querySelector('.absenzdash-bereich-leiter'));
+			var leiter = leiterIds.map(function (wpUserId) {
+				var nutzer = absenzdashBereicheConfig.wpNutzer.filter(function (n) { return n.wp_user_id === wpUserId; })[0];
+				return {
+					wp_user_id: nutzer.wp_user_id,
+					email: nutzer.email,
+					name: nutzer.name,
+					rolle: nutzer.rolle || 'bereichsleiter'
+				};
+			});
+			var payload = { name: name, klasse_ids: klasseIds, leiter: leiter };
+			var id = zeile.dataset.bereichId;
+			if (id) { payload.id = Number(id); }
+			return payload;
+		});
+	}
+
+	function speichern() {
+		fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche', {
+			method: 'PUT',
+			headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce, 'Content-Type': 'application/json' },
+			body: JSON.stringify(ausZeilenLesen())
+		})
+			.then(function (r) {
+				return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+			})
+			.then(function (ergebnis) {
+				if (!ergebnis.ok) {
+					throw new Error(ergebnis.body.detail || 'Speichern fehlgeschlagen');
+				}
+				zustand.bereiche = ergebnis.body;
+				bereicheNeuRendern();
+				fehlerAnzeigen('');
+			})
+			.catch(function (fehler) {
+				fehlerAnzeigen(fehler.message);
+			});
+	}
+
+	document.addEventListener('DOMContentLoaded', function () {
+		laden();
+		document.getElementById('absenzdash-vorbefuellen').addEventListener('click', vorbefuellen);
+		document.getElementById('absenzdash-bereich-hinzufuegen').addEventListener('click', bereichHinzufuegen);
+		document.getElementById('absenzdash-bereiche-speichern').addEventListener('click', speichern);
+	});
+})();

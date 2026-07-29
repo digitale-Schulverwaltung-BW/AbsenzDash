@@ -22,6 +22,7 @@ require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-optionen.php';
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-proxy.php';
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-shortcode.php';
 require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-rollen-seite.php';
+require_once ABSENZDASH_PLUGIN_DIR . 'includes/class-bereiche-seite.php';
 
 add_action(
 	'plugins_loaded',
@@ -30,5 +31,6 @@ add_action(
 		new Absenzdash_Proxy();
 		new Absenzdash_Shortcode();
 		new Absenzdash_Rollen_Seite();
+		new Absenzdash_Bereiche_Seite();
 	}
 );
