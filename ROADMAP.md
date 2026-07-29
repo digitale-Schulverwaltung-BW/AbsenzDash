@@ -28,6 +28,7 @@ Grobe, noch unverbindliche Reihenfolge — jeder Punkt braucht vor der Umsetzung
 
 1. **WordPress-Plugin (Verbleibende Teile)** — Bereichsdefinition-Admin-Seite, vollwertige Rollen-Zuweisungs-Oberfläche. Der Proxy-/Shortcode-Grundstock und die Test-Übergangslösung für Rollen-/WebUntis-Code-Zuordnung sind in Plan 8 abgedeckt.
 2. **Excuse-Status-Admin-Pflege** — manuelle Verwaltung im Dashboard-Admin-Bereich, da kein WebUntis-Sync möglich (TECH-SPEC.md §1.2/§5). Kann Teil von Punkt 2/3 sein statt eigener Plan.
+3. **Admin-Bereich (Schwellwert-Regeln, Maßnahmen-Katalog-Pflege, Sync-Einstellungen)** — Backend-Endpunkte (`GET`/`PUT /admin/threshold-rules`, `/admin/measure-types`, `/admin/excuse-statuses`, `/admin/sync-settings`, `POST /admin/sync-now`) existieren bereits seit Plan 6, es fehlt nur die Dashboard-UI dafür. **Wichtig für die Umsetzung:** Migration `ecbb0df17a38` (2026-07-29) hat bereits einen Default-Maßnahmen-Katalog sowie je eine schulweite Schwellwert-Regel für `fehlzeiten` (4/8/12 Fehltage) und `klassenbuch` (3/6/9 Einträge) produktiv geseedet (siehe [docs/deployment.md](docs/deployment.md) Abschnitt "Default-Schwellwert-Regeln und Maßnahmen-Katalog") — ohne diese Regeln bleiben Zählerstand-Badges in Übersicht/Detail sonst dauerhaft leer. Diese Werte sind ein Startpunkt und keine endgültige Schul-Policy; die Admin-UI muss sie laden und editierbar machen, nicht von Grund auf neu anlegen.
 
 ## Technical debt
 

@@ -28,6 +28,32 @@ docker exec absenzdash-db psql -U absenzdash -d absenzdash -c "UPDATE einstellun
 Danach holt der nächste geplante oder manuell ausgelöste Sync (`POST /admin/sync-now`) den vollständigen
 Zeitraum ab `einstellung.schuljahr_start_cache` erneut ab.
 
+### Default-Schwellwert-Regeln und Maßnahmen-Katalog
+
+Migration `ecbb0df17a38` seedet bei jedem `alembic upgrade head` (idempotent, `ON CONFLICT`/`NOT EXISTS`-
+guarded) zwei produktiv benötigte Grunddaten, ohne die das Dashboard sonst dauerhaft nutzlos bliebe:
+
+- **Default-Maßnahmen-Katalog** aus SPECS.md Abschnitt 4 (Gespräch, Elterngespräch, Nachsitzen,
+  4h Nachsitzen, Schulverweis, Bußgeld, Zwangsgeld). War bereits einmal in einer früheren Migration
+  (`00e96fea061a`) geseedet worden, die Zeilen wurden aber in mindestens einer Umgebung wieder gelöscht
+  (z.B. durch einen DB-Reset ohne Reseed) — Alembic führt eine bereits angewendete Migration nicht erneut
+  aus, daher die neue, idempotente Nachhol-Migration.
+- **Je eine schulweite Schwellwert-Regel für `fehlzeiten` und `klassenbuch`**, jeweils mit drei Stufen:
+  - Fehlzeiten: Stufe 1 ab 4 Fehltagen (Klassenlehrkraft), Stufe 2 ab 8 (+ Bereichsleiter), Stufe 3 ab 12
+    (+ Schulleitung); zählt alle Fehltage (`fehlzeiten_filter = 'alle'`, nicht nur unentschuldigte).
+  - Klassenbuch: Stufe 1 ab 3 Einträgen, Stufe 2 ab 6, Stufe 3 ab 9, gleiche Rollen-Eskalation.
+
+  **Ohne mindestens eine Regel wird für keinen Schüler jemals ein `schueler_zaehlerstand` angelegt**
+  (`pruefe_schwellwerte` in `eskalations_pruefung.py` überspringt Schüler ohne auflösbare Regel komplett) —
+  Übersicht und Schüler-Detail zeigen dann bei jedem Schüler dauerhaft „–“ als Zählerstand, unabhängig
+  davon, wie viele Fehlzeiten/Klassenbucheinträge tatsächlich vorliegen. Nach dem Seed-Migration-Lauf
+  einmal `POST /admin/sync-now` (oder auf den nächsten geplanten Sync warten) auslösen, damit die
+  Zählerstände für bereits vorhandene Altdaten nachberechnet werden.
+
+  Diese Werte sind ein **Startpunkt**, keine endgültige Schul-Policy — sobald die Admin-Oberfläche für
+  Schwellwert-Regeln gebaut ist (siehe ROADMAP.md, Punkt "Admin-Bereich"), können/sollen sie dort von der
+  Schulleitung angepasst werden (`GET`/`PUT /admin/threshold-rules`, bereits seit Plan 6 vorhanden).
+
 ## WordPress-Plugin (Mini-Proxy & Shortcode)
 
 Voraussetzung: eine laufende WordPress-Instanz mit einer `docker-compose.yml`, die Plugin-Verzeichnisse
