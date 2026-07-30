@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiDelete, apiGet, apiPost } from "./client";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "./client";
 
 afterEach(() => {
   window.absenzdashConfig = undefined;
@@ -73,6 +73,41 @@ describe("apiPost", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 422 })));
 
     await expect(apiPost("students/1/measures", {})).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("apiPut", () => {
+  it("sends the nonce header, JSON content-type and body, returns the parsed response", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await apiPut<{ id: number }>("admin/schwellwerte/1", { schwellenwert: 5 });
+
+    expect(result).toEqual({ id: 1 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/wp-json/absenzdash/v1/api/admin/schwellwerte/1",
+      {
+        method: "PUT",
+        headers: { "X-WP-Nonce": "abc123", "Content-Type": "application/json" },
+        body: JSON.stringify({ schwellenwert: 5 }),
+      },
+    );
+  });
+
+  it("throws an ApiError when the response is not ok", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 422 })));
+
+    await expect(apiPut("admin/schwellwerte/1", {})).rejects.toBeInstanceOf(ApiError);
   });
 });
 

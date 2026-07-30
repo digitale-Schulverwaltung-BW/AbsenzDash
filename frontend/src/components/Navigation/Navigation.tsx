@@ -64,6 +64,14 @@ export function Navigation() {
         >
           Schülerliste
         </Link>
+        {data.rolle === "schulleitung" && (
+          <Link
+            to={{ pathname: "/admin", search: location.search }}
+            className={location.pathname.startsWith("/admin") ? styles.tabActive : styles.tab}
+          >
+            Admin
+          </Link>
+        )}
       </div>
       {showBereichDropdown && (
         <select

@@ -145,4 +145,26 @@ describe("Navigation", () => {
     expect(screen.getByRole("link", { name: "Übersicht" })).toHaveAttribute("href", "/?klasse=1");
     expect(screen.getByRole("link", { name: "Schülerliste" })).toHaveAttribute("href", "/schueler?klasse=1");
   });
+
+  it("shows the Admin link for schulleitung", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "schulleitung" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderNavigation();
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+  });
+
+  it("hides the Admin link for other roles", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderNavigation();
+    expect(screen.queryByText("Admin")).not.toBeInTheDocument();
+  });
 });

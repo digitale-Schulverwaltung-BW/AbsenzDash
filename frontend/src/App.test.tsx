@@ -1,12 +1,12 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { useNavOptions } from "./api/hooks/useNavOptions";
 import { useStats } from "./api/hooks/useStats";
 import { useStudentCatalog } from "./api/hooks/useStudentCatalog";
 import { useStudentDetail } from "./api/hooks/useStudentDetail";
 import { useStudents } from "./api/hooks/useStudents";
-import App from "./App";
+import App, { RequireSchulleitung } from "./App";
 
 vi.mock("./api/hooks/useNavOptions");
 vi.mock("./api/hooks/useStats");
@@ -34,7 +34,7 @@ const mockUseStudentCatalog = vi.mocked(useStudentCatalog);
 
 function setupMocks() {
   mockUseNavOptions.mockReturnValue({
-    data: { bereiche: [], klassen: [] },
+    data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft" },
     isLoading: false,
     isError: false,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,5 +131,23 @@ describe("App", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("Ø Fehltage")).toBeInTheDocument();
+  });
+
+  it("RequireSchulleitung redirects non-schulleitung users away", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<div>Startseite</div>} />
+          <Route path="/geschuetzt" element={<RequireSchulleitung><div>Geheim</div></RequireSchulleitung>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText("Geheim")).not.toBeInTheDocument();
   });
 });
