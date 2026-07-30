@@ -19,6 +19,7 @@ class NavKlasseOut(BaseModel):
 class NavOptionsOut(BaseModel):
     bereiche: list[NavBereichOut]
     klassen: list[NavKlasseOut]
+    rolle: str
 
 
 class StatsOwn(BaseModel):

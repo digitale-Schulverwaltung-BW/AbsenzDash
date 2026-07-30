@@ -69,6 +69,7 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         klassen=[
             NavKlasseOut(id=k.id, name=k.name, bereich_id=klasse_bereich_map.get(k.id)) for k in klassen
         ],
+        rolle=nutzer.rolle,
     )
 
 
