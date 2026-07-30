@@ -1,0 +1,18 @@
+.subnav {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.subtab,
+.subtabActive {
+  text-decoration: none;
+  color: inherit;
+  padding-bottom: 0.25rem;
+}
+
+.subtabActive {
+  border-bottom: 2px solid #1e40af;
+  font-weight: 600;
+}

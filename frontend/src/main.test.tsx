@@ -11,7 +11,7 @@ const mockUseStats = vi.mocked(useStats);
 
 function setupMocks() {
   mockUseNavOptions.mockReturnValue({
-    data: { bereiche: [], klassen: [] },
+    data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft" },
     isLoading: false,
     isError: false,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

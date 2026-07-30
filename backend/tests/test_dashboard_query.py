@@ -79,6 +79,17 @@ async def test_get_nav_options_for_bereichsleiter_returns_own_bereiche_and_their
     assert [k.id for k in options.klassen] == [klasse_a.id]
 
 
+@pytest.mark.asyncio
+async def test_get_nav_options_includes_rolle(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert result.rolle == "schulleitung"
+
+
 async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
     db_session.add(schueler)

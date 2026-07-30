@@ -19,7 +19,7 @@ function renderNavigation(initialEntries: string[] = ["/"]) {
 describe("Navigation", () => {
   it("shows no dropdowns for a single own Klasse and no Bereiche", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }] },
+      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }], rolle: "klassenlehrkraft" },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,6 +39,7 @@ describe("Navigation", () => {
           { id: 1, name: "10a", bereich_id: null },
           { id: 2, name: "10b", bereich_id: null },
         ],
+        rolle: "klassenlehrkraft",
       },
       isLoading: false,
       isError: false,
@@ -59,6 +60,7 @@ describe("Navigation", () => {
           { id: 10, name: "AME56", bereich_id: 1 },
           { id: 11, name: "AME57", bereich_id: 1 },
         ],
+        rolle: "klassenlehrkraft",
       },
       isLoading: false,
       isError: false,
@@ -85,6 +87,7 @@ describe("Navigation", () => {
           { id: 12, name: "AME57", bereich_id: 1 },
           { id: 11, name: "BME12", bereich_id: 2 },
         ],
+        rolle: "klassenlehrkraft",
       },
       isLoading: false,
       isError: false,
@@ -117,6 +120,7 @@ describe("Navigation", () => {
           { id: 11, name: "BME12", bereich_id: 2 },
           { id: 13, name: "BME13", bereich_id: 2 },
         ],
+        rolle: "klassenlehrkraft",
       },
       isLoading: false,
       isError: false,
@@ -134,7 +138,7 @@ describe("Navigation", () => {
 
   it("renders navigation tabs that preserve the current search params", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }] },
+      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }], rolle: "klassenlehrkraft" },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -144,5 +148,27 @@ describe("Navigation", () => {
 
     expect(screen.getByRole("link", { name: "Übersicht" })).toHaveAttribute("href", "/?klasse=1");
     expect(screen.getByRole("link", { name: "Schülerliste" })).toHaveAttribute("href", "/schueler?klasse=1");
+  });
+
+  it("shows the Admin link for schulleitung", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "schulleitung" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderNavigation();
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+  });
+
+  it("hides the Admin link for other roles", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderNavigation();
+    expect(screen.queryByText("Admin")).not.toBeInTheDocument();
   });
 });

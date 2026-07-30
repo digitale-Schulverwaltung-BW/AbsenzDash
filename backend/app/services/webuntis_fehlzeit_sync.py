@@ -101,6 +101,26 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
 
     schueler_id_by_externe_id = dict((await db.execute(select(Schueler.externe_id, Schueler.id))).all())
     excuse_status_id_by_name = dict((await db.execute(select(ExcuseStatus.name, ExcuseStatus.id))).all())
+
+    # excuse_status wird nicht manuell vorgepflegt (siehe TECH-SPEC.md Abschnitt 1.2/5) - unbekannte
+    # WebUntis-excuseStatus-Namen automatisch anlegen statt sie dauerhaft als NULL zu importieren.
+    # zaehlt_als_entschuldigt=False als sicherer Default: das Flag ist ueber keine WebUntis-JSON-RPC-
+    # Methode abrufbar, ein Mensch muss es im Admin-Bereich bestaetigen.
+    unbekannte_namen = {
+        row.get("excuseStatus")
+        for row in entries or []
+        if row.get("excuseStatus") and row.get("excuseStatus") not in excuse_status_id_by_name
+    }
+    for name in unbekannte_namen:
+        db.add(ExcuseStatus(name=name, zaehlt_als_entschuldigt=False))
+        logger.info(
+            "Fehlzeiten-Sync: unbekannter excuseStatus '%s' automatisch angelegt (zaehlt_als_entschuldigt=False)",
+            name,
+        )
+    if unbekannte_namen:
+        await db.flush()
+        excuse_status_id_by_name = dict((await db.execute(select(ExcuseStatus.name, ExcuseStatus.id))).all())
+
     zaehlt_als_entschuldigt_by_id = dict(
         (await db.execute(select(ExcuseStatus.id, ExcuseStatus.zaehlt_als_entschuldigt))).all()
     )

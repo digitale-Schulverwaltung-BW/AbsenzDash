@@ -11,7 +11,6 @@ from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
-from app.models.schwellwert_regel import SchwellwertRegel
 
 HEADERS_SCHULLEITUNG = {
     "X-WordPress-Secret": "test-secret",
@@ -38,7 +37,7 @@ async def test_get_measure_types_rejects_non_schulleitung(db_session):
 
 @pytest.mark.asyncio
 async def test_put_measure_types_creates_type(db_session):
-    payload = [{"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True, "betroffene_regel_ids": []}]
+    payload = [{"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True}]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
@@ -52,19 +51,12 @@ async def test_put_measure_types_creates_type(db_session):
 
 
 @pytest.mark.asyncio
-async def test_put_measure_types_upserts_and_reassigns_betroffene_regeln(db_session):
+async def test_put_measure_types_upserts_existing_type(db_session):
     typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
-    regel_a = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
-    regel_b = SchwellwertRegel(typ="klassenbuch", geltungsbereich="schulweit")
-    db_session.add_all([typ, regel_a, regel_b])
+    db_session.add(typ)
     await db_session.commit()
 
-    payload = [
-        {
-            "id": typ.id, "name": "Nachsitzen", "setzt_zaehler_zurueck": True,
-            "aktiv": False, "betroffene_regel_ids": [regel_a.id, regel_b.id],
-        }
-    ]
+    payload = [{"id": typ.id, "name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": False}]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
@@ -73,7 +65,6 @@ async def test_put_measure_types_upserts_and_reassigns_betroffene_regeln(db_sess
     body = response.json()
     assert body[0]["id"] == typ.id
     assert body[0]["aktiv"] is False
-    assert sorted(body[0]["betroffene_regel_ids"]) == sorted([regel_a.id, regel_b.id])
 
 
 @pytest.mark.asyncio
@@ -106,12 +97,8 @@ async def test_put_measure_types_returns_409_when_deleting_used_type(db_session)
 @pytest.mark.asyncio
 async def test_put_measure_types_returns_409_when_deleting_used_type_alongside_new_type(db_session):
     """Regression test: the in-use type is deleted implicitly (omitted from payload) while a
-    brand-new type is created in the same request. Creating a new type calls `await db.flush()`
-    (to obtain its id for the massnahmen_typ_regel association) before the final `db.commit()`.
-    That explicit flush also flushes the pending delete of the in-use type, so the FK violation
-    surfaces there. If that flush isn't inside the try/except around IntegrityError, it propagates
-    as an unhandled 500 instead of the documented 409 (see brief's own test, which only sends an
-    empty payload and never reaches this flush call)."""
+    brand-new type is created in the same request. The delete-then-insert-then-commit sequence
+    must surface the FK violation as a 409, not an unhandled 500."""
     used_typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster")
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
@@ -127,9 +114,7 @@ async def test_put_measure_types_returns_409_when_deleting_used_type_alongside_n
     )
     await db_session.commit()
 
-    payload = [
-        {"name": "Neuer Typ", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}
-    ]
+    payload = [{"name": "Neuer Typ", "setzt_zaehler_zurueck": False, "aktiv": True}]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
@@ -141,35 +126,39 @@ async def test_put_measure_types_returns_409_when_deleting_used_type_alongside_n
 
 
 @pytest.mark.asyncio
-async def test_put_measure_types_returns_409_with_name_conflict_message(db_session):
-    """Regression: die IntegrityError-Ursache ist hier eine UNIQUE-Verletzung auf `name` (der neue
-    Typ wird eingefügt, bevor die Umbenennung des bestehenden Typs den Namen freigibt) — kein
-    FK-in-Verwendung-Konflikt. Die alte Sammelmeldung war faktisch falsch und rendert mit leerer
-    `removed_names`-Liste sogar als '... bereits verwendet: .'."""
+async def test_put_measure_types_allows_reusing_a_name_freed_by_a_rename_in_the_same_request(db_session):
+    """A new type is created with the same name an existing type is being renamed away from, in
+    the same request. The final state has no duplicate name, so this must succeed.
+
+    (This used to assert a 409 "Name bereits vergeben" here: the old `measure_type_service`
+    called `await db.flush()` right after creating each new type, which — combined with
+    SQLAlchemy's INSERT-before-UPDATE ordering — forced the new row's INSERT to run before the
+    rename's UPDATE, producing a *transient* unique-constraint violation despite the final state
+    being conflict-free. Task 2 removed that flush (it only ever existed to obtain the new type's
+    id for populating the now-deleted `massnahmen_typ_regel` junction table), so all changes are
+    now flushed together at commit. Empirically this makes SQLAlchemy's unit-of-work apply the
+    UPDATE before the INSERT for this case, so the rename frees the name before the new row claims
+    it and the request succeeds — which is the actually-correct outcome for this payload. A real
+    duplicate name (both final names identical) is still rejected pre-flight by
+    `test_put_measure_types_rejects_duplicate_name`.)
+    """
     bestehend = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True, aktiv=True)
     db_session.add(bestehend)
     await db_session.commit()
 
     payload = [
-        {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
-        {
-            "id": bestehend.id, "name": "Bußgeld", "setzt_zaehler_zurueck": True,
-            "aktiv": True, "betroffene_regel_ids": [],
-        },
+        {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True},
+        {"id": bestehend.id, "name": "Bußgeld", "setzt_zaehler_zurueck": True, "aktiv": True},
     ]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
 
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert "Name bereits vergeben" in detail
-    assert "bereits verwendet" not in detail
-
-    await db_session.rollback()
-    remaining = await db_session.execute(select(MassnahmenTyp))
+    assert response.status_code == 200
+    db_session.expire_all()
+    remaining = await db_session.execute(select(MassnahmenTyp).order_by(MassnahmenTyp.id))
     rows = remaining.scalars().all()
-    assert [r.name for r in rows] == ["Nachsitzen"]
+    assert sorted(r.name for r in rows) == ["Bußgeld", "Nachsitzen"]
 
 
 @pytest.mark.asyncio
@@ -179,8 +168,8 @@ async def test_put_measure_types_rejects_duplicate_id_in_payload(db_session):
     await db_session.commit()
 
     payload = [
-        {"id": typ.id, "name": "A", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
-        {"id": typ.id, "name": "B", "setzt_zaehler_zurueck": True, "aktiv": False, "betroffene_regel_ids": []},
+        {"id": typ.id, "name": "A", "setzt_zaehler_zurueck": False, "aktiv": True},
+        {"id": typ.id, "name": "B", "setzt_zaehler_zurueck": True, "aktiv": False},
     ]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -213,8 +202,8 @@ async def test_put_measure_types_deletes_unused_type(db_session):
 @pytest.mark.asyncio
 async def test_put_measure_types_rejects_duplicate_name(db_session):
     payload = [
-        {"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True, "betroffene_regel_ids": []},
-        {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []},
+        {"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True},
+        {"name": "Nachsitzen", "setzt_zaehler_zurueck": False, "aktiv": True},
     ]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -224,18 +213,7 @@ async def test_put_measure_types_rejects_duplicate_name(db_session):
 
 @pytest.mark.asyncio
 async def test_put_measure_types_rejects_empty_name(db_session):
-    payload = [{"name": "   ", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}]
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_put_measure_types_rejects_unknown_regel_id(db_session):
-    payload = [
-        {"name": "Nachsitzen", "setzt_zaehler_zurueck": True, "aktiv": True, "betroffene_regel_ids": [999999]}
-    ]
+    payload = [{"name": "   ", "setzt_zaehler_zurueck": False, "aktiv": True}]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)
@@ -244,9 +222,7 @@ async def test_put_measure_types_rejects_unknown_regel_id(db_session):
 
 @pytest.mark.asyncio
 async def test_put_measure_types_rejects_unknown_id(db_session):
-    payload = [
-        {"id": 999999, "name": "X", "setzt_zaehler_zurueck": False, "aktiv": True, "betroffene_regel_ids": []}
-    ]
+    payload = [{"id": 999999, "name": "X", "setzt_zaehler_zurueck": False, "aktiv": True}]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put("/admin/measure-types", headers=HEADERS_SCHULLEITUNG, json=payload)

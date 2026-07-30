@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, ForeignKey, String, Table
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
-
-massnahmen_typ_regel = Table(
-    "massnahmen_typ_regel",
-    Base.metadata,
-    Column("massnahmen_typ_id", ForeignKey("massnahmen_typ.id", ondelete="CASCADE"), primary_key=True),
-    Column("regel_id", ForeignKey("schwellwert_regel.id", ondelete="CASCADE"), primary_key=True),
-)
 
 
 class MassnahmenTyp(Base, TimestampMixin):

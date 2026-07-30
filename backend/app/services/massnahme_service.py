@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
 from app.models.massnahme import Massnahme
-from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
+from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.schueler import Schueler
 from app.services.eskalations_pruefung import get_or_create_zaehlerstand, resolve_schwellwert_regel
 
@@ -20,10 +20,10 @@ async def record_massnahme(
     notiz: str | None,
     erfasst_von_nutzer_id: int,
 ) -> Massnahme:
-    """Erfasst eine Massnahme; setzt bei setzt_zaehler_zurueck=True den Zaehlerstand des Schuelers
-    fuer jeden Regel-Typ zurueck, FUER DEN DIE VERKNUEPFTE REGEL AUCH TATSAECHLICH GILT (nicht
-    blind fuer jede verknuepfte Regel-Zeile - eine Regel kann klassen-/abteilungsspezifisch sein
-    und nicht auf diesen Schueler zutreffen).
+    """Erfasst eine Massnahme; setzt bei setzt_zaehler_zurueck=True beide Zaehlerstaende
+    (fehlzeiten und klassenbuch) des Schuelers zurueck, jeweils unter der fuer ihn aktuell
+    aufgeloesten Regel (resolve_schwellwert_regel) - ohne Regel-Verknuepfung, siehe
+    docs/superpowers/specs/2026-07-30-admin-bereich-design.md.
     """
     massnahme = Massnahme(
         schueler_id=schueler_id,
@@ -47,22 +47,10 @@ async def record_massnahme(
 
     typ_row = (await db.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == massnahmen_typ_id))).scalar_one()
     if typ_row.setzt_zaehler_zurueck:
-        verknuepfte_regel_ids = set(
-            (
-                await db.execute(
-                    select(massnahmen_typ_regel.c.regel_id).where(
-                        massnahmen_typ_regel.c.massnahmen_typ_id == massnahmen_typ_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
         schueler = (await db.execute(select(Schueler).where(Schueler.id == schueler_id))).scalar_one()
-        betroffene_typen = {"fehlzeiten", "klassenbuch"}
-        for typ in betroffene_typen:
+        for typ in ("fehlzeiten", "klassenbuch"):
             regel = await resolve_schwellwert_regel(db, schueler.klasse_id, typ)
-            if regel is None or regel.id not in verknuepfte_regel_ids:
+            if regel is None:
                 continue
             zaehlerstand = await get_or_create_zaehlerstand(db, schueler_id, typ, regel.id)
             zaehlerstand.letzter_reset_am = datum

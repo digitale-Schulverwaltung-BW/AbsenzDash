@@ -4,10 +4,9 @@ import pytest
 from sqlalchemy import select
 
 from app.models.massnahme import Massnahme
-from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
+from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
-from app.models.schwellwert_regel import SchwellwertRegel
 
 
 @pytest.mark.asyncio
@@ -41,19 +40,3 @@ async def test_massnahmen_typ_defaults_to_aktiv(db_session):
 
     result = await db_session.execute(select(MassnahmenTyp).where(MassnahmenTyp.id == typ.id))
     assert result.scalar_one().aktiv is True
-
-
-@pytest.mark.asyncio
-async def test_massnahmen_typ_regel_association(db_session):
-    typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=True)
-    regel = SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit")
-    db_session.add_all([typ, regel])
-    await db_session.flush()
-
-    await db_session.execute(massnahmen_typ_regel.insert().values(massnahmen_typ_id=typ.id, regel_id=regel.id))
-    await db_session.commit()
-
-    result = await db_session.execute(select(massnahmen_typ_regel))
-    row = result.first()
-    assert row.massnahmen_typ_id == typ.id
-    assert row.regel_id == regel.id

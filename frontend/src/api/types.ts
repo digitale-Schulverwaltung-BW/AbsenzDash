@@ -12,6 +12,50 @@ export interface NavKlasse {
 export interface NavOptions {
   bereiche: NavBereich[];
   klassen: NavKlasse[];
+  rolle: string;
+}
+
+export interface SchwellwertStufe {
+  id?: number;
+  stufe_nr: number;
+  einheit: "fehltage" | "fehlstunden" | null;
+  schwellenwert: number;
+  fehlzeiten_filter: "nur_unentschuldigt" | "alle" | null;
+  empfaenger_rollen: string[];
+}
+
+export interface ThresholdRule {
+  id?: number;
+  typ: "fehlzeiten" | "klassenbuch";
+  geltungsbereich: "schulweit" | "abteilung";
+  abteilung_id: number | null;
+  stufen: SchwellwertStufe[];
+}
+
+export interface MeasureType {
+  id?: number;
+  name: string;
+  setzt_zaehler_zurueck: boolean;
+  aktiv: boolean;
+}
+
+export interface ExcuseStatus {
+  id: number;
+  name: string;
+  long_name: string | null;
+  zaehlt_als_entschuldigt: boolean;
+  aktiv: boolean;
+}
+
+export interface SyncSettings {
+  sync_interval_cron: string;
+  schuljahr_start_cache: string | null;
+  letzter_sync_am: string | null;
+}
+
+export interface Abteilung {
+  id: number;
+  name: string;
 }
 
 export interface StatsOwn {
