@@ -69,4 +69,24 @@ describe("StudentDetail", () => {
 
     expect(screen.getByText("Fehler beim Laden des Schülers.")).toBeInTheDocument();
   });
+
+  it("passes the schuljahr URL param through to useStudentDetail and hides the Zählerstand badges when in history mode", () => {
+    mockUseStudentDetail.mockReturnValue({
+      data: { ...DETAIL, zaehlerstand: {} },
+      isLoading: false,
+      isError: false,
+    } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    render(
+      <MemoryRouter initialEntries={["/schueler/7?schuljahr=27"]}>
+        <Routes>
+          <Route path="/schueler/:id" element={<StudentDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(mockUseStudentDetail).toHaveBeenLastCalledWith(7, 27);
+    expect(screen.queryByText(/Fehlzeiten: /)).not.toBeInTheDocument();
+  });
 });

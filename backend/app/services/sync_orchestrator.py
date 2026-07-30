@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.einstellung import Einstellung
+from app.models.schuljahr import Schuljahr
 from app.services.asv_csv_import import import_schueler
 from app.services.eskalations_pruefung import pruefe_schwellwerte
 from app.services.webuntis_abteilung_sync import sync_abteilungen
@@ -40,30 +41,88 @@ def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date) -> tuple[date, d
     return von, heute
 
 
+async def _juengstes_bereits_gestartetes_schuljahr(db: AsyncSession) -> Schuljahr:
+    """Fallback-Auswahl: das juengste Schuljahr, das bereits begonnen hat (start_datum
+    <= heute), damit ein bereits im Cache angelegtes aber noch nicht begonnenes
+    zukuenftiges Schuljahr nicht faelschlich als 'aktuell' gilt (siehe Live-Fund
+    2026-07-30: sonst wuerde schuljahr_start_cache auf ein Datum in der Zukunft
+    gesetzt und jedes Eskalations-Zaehlfenster leer laufen). Falls aus irgendeinem
+    Grund kein Schuljahr diese Bedingung erfuellt, wird ersatzweise das insgesamt
+    juengste bekannte Schuljahr zurueckgegeben, damit die Funktion immer ein
+    Ergebnis liefert."""
+    heute = datetime.now(timezone.utc).date()
+    result = await db.execute(
+        select(Schuljahr)
+        .where(Schuljahr.start_datum <= heute)
+        .order_by(Schuljahr.end_datum.desc())
+        .limit(1)
+    )
+    schuljahr = result.scalar_one_or_none()
+    if schuljahr is not None:
+        return schuljahr
+
+    result = await db.execute(select(Schuljahr).order_by(Schuljahr.end_datum.desc()).limit(1))
+    return result.scalar_one()
+
+
+async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) -> Schuljahr:
+    """Aktualisiert den schuljahr-Cache aus getSchoolyears und liefert das aktuell
+    gueltige Schuljahr zurueck. Wenn WebUntis kein aktuelles Schuljahr kennt (z.B.
+    Uebergangszeitraum zwischen zwei Schuljahren, siehe Live-Fund 2026-07-30), oder
+    das von getCurrentSchoolyear gemeldete Schuljahr entgegen Erwartung nicht im
+    gerade aktualisierten Cache steht, wird ersatzweise das juengste bereits
+    gestartete Schuljahr im Cache zurueckgegeben - so bekommen nachfolgende
+    schuljahresgebundene WebUntis-Aufrufe (z.B. getKlassen) immer eine gueltige
+    schoolyearId, auch waehrend der Luecke, und es wird nie ein noch nicht
+    begonnenes zukuenftiges Schuljahr faelschlich als 'aktuell' behandelt."""
+    rows = await client.call("getSchoolyears", {})
+    for row in rows:
+        start = datetime.strptime(str(row["startDate"]), "%Y%m%d").date()
+        end = datetime.strptime(str(row["endDate"]), "%Y%m%d").date()
+        bestehend = await db.get(Schuljahr, row["id"])
+        if bestehend is None:
+            db.add(Schuljahr(id=row["id"], name=row["name"], start_datum=start, end_datum=end))
+        else:
+            bestehend.name = row["name"]
+            bestehend.start_datum = start
+            bestehend.end_datum = end
+    await db.flush()
+
+    try:
+        aktuell = await client.call("getCurrentSchoolyear", {})
+    except WebUntisError as exc:
+        logger.warning(
+            "getCurrentSchoolyear fehlgeschlagen, kein aktives Schuljahr in WebUntis "
+            "konfiguriert; verwende juengstes bereits gestartetes Schuljahr als Fallback: %s",
+            exc,
+        )
+        return await _juengstes_bereits_gestartetes_schuljahr(db)
+
+    schuljahr = await db.get(Schuljahr, aktuell["id"])
+    if schuljahr is None:
+        logger.warning(
+            "getCurrentSchoolyear lieferte schoolyearId %s, die nicht im gerade "
+            "aktualisierten Schuljahr-Cache enthalten ist; verwende juengstes "
+            "bereits gestartetes Schuljahr als Fallback",
+            aktuell.get("id"),
+        )
+        return await _juengstes_bereits_gestartetes_schuljahr(db)
+    return schuljahr
+
+
 async def run_sync_once(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
-        await sync_abteilungen(client, db)
-        await sync_klassen(client, db)
-        await sync_kategorien(client, db)
-        await import_schueler(db)
-
         einstellung = await get_or_create_einstellung(db)
 
-        try:
-            schuljahr = await client.call("getCurrentSchoolyear", {})
-            schuljahr_start = datetime.strptime(str(schuljahr["startDate"]), "%Y%m%d").date()
-            if schuljahr_start != einstellung.schuljahr_start_cache:
-                einstellung.schuljahr_start_cache = schuljahr_start
-        except WebUntisError as exc:
-            # Kein aktives Schuljahr in WebUntis konfiguriert (z.B. Uebergangszeitraum
-            # zwischen zwei Schuljahren) -- gecachten Wert unveraendert lassen und
-            # den restlichen Sync-Lauf trotzdem durchfuehren.
-            logger.warning(
-                "getCurrentSchoolyear fehlgeschlagen, kein aktives Schuljahr in WebUntis "
-                "konfiguriert; behalte schuljahr_start_cache=%s bei: %s",
-                einstellung.schuljahr_start_cache,
-                exc,
-            )
+        aktuelles_schuljahr = await resolve_aktuelles_schuljahr(client, db)
+        einstellung.aktuelles_schuljahr_id = aktuelles_schuljahr.id
+        if aktuelles_schuljahr.start_datum != einstellung.schuljahr_start_cache:
+            einstellung.schuljahr_start_cache = aktuelles_schuljahr.start_datum
+
+        await sync_abteilungen(client, db)
+        await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
+        await sync_kategorien(client, db)
+        await import_schueler(db)
 
         heute = datetime.now(timezone.utc).date()
         von, bis = _fehlzeiten_zeitraum(einstellung, heute)

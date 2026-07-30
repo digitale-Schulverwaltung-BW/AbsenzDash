@@ -27,6 +27,9 @@ export function Navigation() {
           ? []
           : data.klassen.filter((k) => k.bereich_id === selectedBereichId);
   const showKlasseDropdown = visibleKlassen.length > 1;
+  const selectableSchuljahre = data.schuljahre.filter(
+    (schuljahr) => schuljahr.id !== data.aktuelles_schuljahr_id,
+  );
 
   function handleBereichChange(value: string) {
     const next = new URLSearchParams(searchParams);
@@ -45,6 +48,16 @@ export function Navigation() {
       next.delete("klasse");
     } else {
       next.set("klasse", value);
+    }
+    setSearchParams(next);
+  }
+
+  function handleSchuljahrChange(value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value === "") {
+      next.delete("schuljahr");
+    } else {
+      next.set("schuljahr", value);
     }
     setSearchParams(next);
   }
@@ -101,6 +114,19 @@ export function Navigation() {
           ))}
         </select>
       )}
+      <select
+        aria-label="Schuljahr"
+        className={styles.schuljahrSelect}
+        value={searchParams.get("schuljahr") ?? ""}
+        onChange={(event) => handleSchuljahrChange(event.target.value)}
+      >
+        <option value="">Aktuelles Schuljahr</option>
+        {selectableSchuljahre.map((schuljahr) => (
+          <option key={schuljahr.id} value={schuljahr.id}>
+            {schuljahr.name}
+          </option>
+        ))}
+      </select>
     </nav>
   );
 }

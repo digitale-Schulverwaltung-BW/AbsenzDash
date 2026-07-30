@@ -9,9 +9,9 @@ from app.models.klasse import Klasse
 from app.services.nutzer_klasse_sync import seed_nutzer_klasse_from_webuntis
 
 
-async def sync_klassen(client: WebUntisClient, db: AsyncSession) -> None:
+async def sync_klassen(client: WebUntisClient, db: AsyncSession, schoolyear_id: int) -> None:
     """getKlassen -> klasse (Upsert nach webuntis_id), danach nutzer_klasse-Seeding (TECH-SPEC.md Abschnitt 1.2)."""
-    rows = await client.call("getKlassen", {})
+    rows = await client.call("getKlassen", {"schoolyearId": schoolyear_id})
 
     existing = (await db.execute(select(Klasse))).scalars().all()
     by_webuntis_id = {klasse.webuntis_id: klasse for klasse in existing}

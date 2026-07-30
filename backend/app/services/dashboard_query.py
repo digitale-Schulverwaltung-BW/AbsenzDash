@@ -14,11 +14,13 @@ from app.models.klasse import Klasse
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
 from app.models.massnahme import Massnahme
 from app.models.nutzer import Nutzer
+from app.models.schuljahr import Schuljahr
 from app.models.schueler import Schueler
 from app.schemas.dashboard import (
     NavBereichOut,
     NavKlasseOut,
     NavOptionsOut,
+    NavSchuljahrOut,
     StatsContext,
     StatsOut,
     StatsOwn,
@@ -64,12 +66,23 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         ).all()
     )
 
+    schuljahre_result = await db.execute(select(Schuljahr).order_by(Schuljahr.start_datum.desc()))
+    schuljahre = [
+        NavSchuljahrOut(id=s.id, name=s.name, start_datum=s.start_datum, end_datum=s.end_datum)
+        for s in schuljahre_result.scalars().all()
+    ]
+
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    aktuelles_schuljahr_id = einstellung.aktuelles_schuljahr_id if einstellung else None
+
     return NavOptionsOut(
         bereiche=[NavBereichOut(id=b.id, name=b.name) for b in bereiche],
         klassen=[
             NavKlasseOut(id=k.id, name=k.name, bereich_id=klasse_bereich_map.get(k.id)) for k in klassen
         ],
         rolle=nutzer.rolle,
+        schuljahre=schuljahre,
+        aktuelles_schuljahr_id=aktuelles_schuljahr_id,
     )
 
 

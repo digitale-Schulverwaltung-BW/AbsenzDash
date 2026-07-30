@@ -6,9 +6,12 @@ export function studentDetailQueryKey(studentId: number) {
   return ["student-detail", studentId] as const;
 }
 
-export function useStudentDetail(studentId: number) {
+export function useStudentDetail(studentId: number, schuljahrId: number | null) {
   return useQuery({
-    queryKey: studentDetailQueryKey(studentId),
-    queryFn: () => apiGet<StudentDetail>(`students/${studentId}`),
+    queryKey: [...studentDetailQueryKey(studentId), schuljahrId] as const,
+    queryFn: () =>
+      apiGet<StudentDetail>(
+        schuljahrId !== null ? `students/${studentId}?schuljahr_id=${schuljahrId}` : `students/${studentId}`,
+      ),
   });
 }

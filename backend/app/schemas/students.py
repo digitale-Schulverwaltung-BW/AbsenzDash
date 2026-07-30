@@ -37,9 +37,12 @@ class StudentOverviewOut(BaseModel):
     vorname: str
     nachname: str
     klasse: KlasseOut | None
-    zaehlerstand: dict[str, ZaehlerstandOut]
-    letzte_benachrichtigung: BenachrichtigungOut | None
-    ohne_massnahme_seit_benachrichtigung: bool
+    zaehlerstand: dict[str, ZaehlerstandOut] | None = None
+    letzte_benachrichtigung: BenachrichtigungOut | None = None
+    ohne_massnahme_seit_benachrichtigung: bool | None = None
+    fehltage: int | None = None
+    fehlstunden: int | None = None
+    klassenbuch_anzahl: int | None = None
 
 
 class StudentListOut(BaseModel):

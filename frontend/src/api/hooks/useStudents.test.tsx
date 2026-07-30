@@ -15,7 +15,8 @@ describe("useStudents", () => {
     const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
 
     const { result } = renderHook(
-      () => useStudents({ bereichId: 3, klasseId: null, minStufe: 2, nurAuffaellige: true, offset: 50 }),
+      () =>
+        useStudents({ bereichId: 3, klasseId: null, minStufe: 2, nurAuffaellige: true, offset: 50, schuljahrId: null }),
       { wrapper },
     );
 
@@ -27,11 +28,39 @@ describe("useStudents", () => {
     const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
 
     const { result } = renderHook(
-      () => useStudents({ bereichId: null, klasseId: null, minStufe: null, nurAuffaellige: false, offset: 0 }),
+      () =>
+        useStudents({
+          bereichId: null,
+          klasseId: null,
+          minStufe: null,
+          nurAuffaellige: false,
+          offset: 0,
+          schuljahrId: null,
+        }),
       { wrapper },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(spy).toHaveBeenCalledWith("students?offset=0");
+  });
+
+  it("includes schuljahr_id in the query string when set", async () => {
+    const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+
+    const { result } = renderHook(
+      () =>
+        useStudents({
+          bereichId: null,
+          klasseId: null,
+          minStufe: null,
+          nurAuffaellige: false,
+          offset: 0,
+          schuljahrId: 27,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith("students?schuljahr_id=27&offset=0");
   });
 });

@@ -17,14 +17,14 @@ async def test_sync_klassen_creates_new_klasse(db_session):
         {"id": 3499, "name": "10a", "teacher1": 63, "teacher2": None},
     ]
 
-    await sync_klassen(client, db_session)
+    await sync_klassen(client, db_session, schoolyear_id=28)
 
     result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 3499))
     klasse = result.scalar_one()
     assert klasse.name == "10a"
     assert klasse.webuntis_teacher1_id == 63
     assert klasse.webuntis_teacher2_id is None
-    client.call.assert_awaited_once_with("getKlassen", {})
+    client.call.assert_awaited_once_with("getKlassen", {"schoolyearId": 28})
 
 
 @pytest.mark.asyncio
@@ -36,7 +36,7 @@ async def test_sync_klassen_updates_existing_klasse(db_session):
     client = AsyncMock()
     client.call.return_value = [{"id": 1, "name": "neu", "teacher1": 2, "teacher2": None}]
 
-    await sync_klassen(client, db_session)
+    await sync_klassen(client, db_session, schoolyear_id=28)
 
     result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 1))
     klasse = result.scalar_one()
@@ -53,7 +53,7 @@ async def test_sync_klassen_triggers_nutzer_klasse_seeding(db_session):
     client = AsyncMock()
     client.call.return_value = [{"id": 3499, "name": "10a", "teacher1": 63, "teacher2": None}]
 
-    await sync_klassen(client, db_session)
+    await sync_klassen(client, db_session, schoolyear_id=28)
 
     result = await db_session.execute(select(NutzerKlasse))
     rows = result.scalars().all()
@@ -70,7 +70,7 @@ async def test_sync_klassen_resolves_abteilung_id_from_did(db_session):
     client = AsyncMock()
     client.call.return_value = [{"id": 3499, "name": "10a", "did": 64, "teacher1": 63, "teacher2": None}]
 
-    await sync_klassen(client, db_session)
+    await sync_klassen(client, db_session, schoolyear_id=28)
 
     result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 3499))
     klasse = result.scalar_one()
@@ -82,7 +82,7 @@ async def test_sync_klassen_leaves_abteilung_id_none_when_did_unresolvable(db_se
     client = AsyncMock()
     client.call.return_value = [{"id": 3499, "name": "10a", "did": 999, "teacher1": 63, "teacher2": None}]
 
-    await sync_klassen(client, db_session)
+    await sync_klassen(client, db_session, schoolyear_id=28)
 
     result = await db_session.execute(select(Klasse).where(Klasse.webuntis_id == 3499))
     klasse = result.scalar_one()

@@ -17,6 +17,9 @@ export function StudentList() {
   const minStufeParam = searchParams.get("min_stufe");
   const nurAuffaellige = searchParams.get("nur_auffaellige") === "true";
   const offset = Number(searchParams.get("offset") ?? "0");
+  const schuljahrParam = searchParams.get("schuljahr");
+  const schuljahrId = schuljahrParam ? Number(schuljahrParam) : null;
+  const isHistoryMode = schuljahrId !== null;
 
   const { data, isLoading, isError } = useStudents({
     bereichId: bereichParam ? Number(bereichParam) : null,
@@ -24,6 +27,7 @@ export function StudentList() {
     minStufe: minStufeParam ? Number(minStufeParam) : null,
     nurAuffaellige,
     offset,
+    schuljahrId,
   });
 
   function updateParam(name: string, value: string) {
@@ -82,8 +86,18 @@ export function StudentList() {
           <tr>
             <th>Name</th>
             <th>Klasse</th>
-            <th>Zählerstand</th>
-            <th>Benachrichtigt</th>
+            {isHistoryMode ? (
+              <>
+                <th>Fehltage</th>
+                <th>Fehlstunden</th>
+                <th>Klassenbuch</th>
+              </>
+            ) : (
+              <>
+                <th>Zählerstand</th>
+                <th>Benachrichtigt</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -99,20 +113,30 @@ export function StudentList() {
                 </Link>
               </td>
               <td>{student.klasse?.name ?? "—"}</td>
-              <td>
-                <div className={styles.badges}>
-                  {Object.entries(student.zaehlerstand).map(([typ, stand]) => (
-                    <StatusBadge
-                      key={typ}
-                      label={`${ZAEHLERSTAND_LABEL[typ] ?? typ}: ${stand.erreichte_stufe_nr ?? "–"}`}
-                      tone={stufeToTone(stand.erreichte_stufe_nr)}
-                    />
-                  ))}
-                </div>
-              </td>
-              <td>
-                <NotificationFlyout benachrichtigung={student.letzte_benachrichtigung} />
-              </td>
+              {isHistoryMode ? (
+                <>
+                  <td>{student.fehltage}</td>
+                  <td>{student.fehlstunden}</td>
+                  <td>{student.klassenbuch_anzahl}</td>
+                </>
+              ) : (
+                <>
+                  <td>
+                    <div className={styles.badges}>
+                      {Object.entries(student.zaehlerstand ?? {}).map(([typ, stand]) => (
+                        <StatusBadge
+                          key={typ}
+                          label={`${ZAEHLERSTAND_LABEL[typ] ?? typ}: ${stand.erreichte_stufe_nr ?? "–"}`}
+                          tone={stufeToTone(stand.erreichte_stufe_nr)}
+                        />
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <NotificationFlyout benachrichtigung={student.letzte_benachrichtigung} />
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>

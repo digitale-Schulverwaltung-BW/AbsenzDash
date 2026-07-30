@@ -9,10 +9,19 @@ export interface NavKlasse {
   bereich_id: number | null;
 }
 
+export interface NavSchuljahr {
+  id: number;
+  name: string;
+  start_datum: string;
+  end_datum: string;
+}
+
 export interface NavOptions {
   bereiche: NavBereich[];
   klassen: NavKlasse[];
   rolle: string;
+  schuljahre: NavSchuljahr[];
+  aktuelles_schuljahr_id: number | null;
 }
 
 export interface SchwellwertStufe {
@@ -51,6 +60,7 @@ export interface SyncSettings {
   sync_interval_cron: string;
   schuljahr_start_cache: string | null;
   letzter_sync_am: string | null;
+  aktuelles_schuljahr: { id: number; name: string } | null;
 }
 
 export interface Abteilung {
@@ -119,9 +129,12 @@ export interface StudentOverview {
   vorname: string;
   nachname: string;
   klasse: Klasse | null;
-  zaehlerstand: Record<string, Zaehlerstand>;
+  zaehlerstand: Record<string, Zaehlerstand> | null;
   letzte_benachrichtigung: Benachrichtigung | null;
-  ohne_massnahme_seit_benachrichtigung: boolean;
+  ohne_massnahme_seit_benachrichtigung: boolean | null;
+  fehltage: number | null;
+  fehlstunden: number | null;
+  klassenbuch_anzahl: number | null;
 }
 
 export interface StudentList {

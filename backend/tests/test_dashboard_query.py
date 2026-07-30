@@ -1,4 +1,5 @@
 import datetime
+from datetime import date
 
 import pytest
 
@@ -14,6 +15,7 @@ from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
+from app.models.schuljahr import Schuljahr
 from app.models.schueler import Schueler
 from app.services import dashboard_query
 
@@ -88,6 +90,54 @@ async def test_get_nav_options_includes_rolle(db_session):
     result = await dashboard_query.get_nav_options(db_session, nutzer)
 
     assert result.rolle == "schulleitung"
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_includes_schuljahre_newest_first(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add_all(
+        [
+            nutzer,
+            Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30)),
+            Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29)),
+        ]
+    )
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert [s.id for s in result.schuljahre] == [28, 27]
+    assert result.schuljahre[0].name == "2025/2026"
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_includes_aktuelles_schuljahr_id_when_set(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add_all(
+        [
+            nutzer,
+            Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30)),
+            Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29)),
+        ]
+    )
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=28))
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert result.aktuelles_schuljahr_id == 28
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_aktuelles_schuljahr_id_is_none_when_not_set(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert result.aktuelles_schuljahr_id is None
 
 
 async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
