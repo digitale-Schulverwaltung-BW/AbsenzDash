@@ -100,6 +100,61 @@ async def test_sync_fehlzeiten_resolves_excuse_status_by_name(db_session):
 
 
 @pytest.mark.asyncio
+async def test_sync_fehlzeiten_auto_creates_unknown_excuse_status(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = {
+        "periodsWithAbsences": [
+            {
+                "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                "subjectId": "Deutsch", "excuseStatus": "hybrid", "invalid": False,
+            },
+        ]
+    }
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    status_result = await db_session.execute(select(ExcuseStatus).where(ExcuseStatus.name == "hybrid"))
+    neuer_status = status_result.scalar_one()
+    assert neuer_status.zaehlt_als_entschuldigt is False
+
+    fehlzeit_result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    fehlzeit = fehlzeit_result.scalar_one()
+    assert fehlzeit.excuse_status_id == neuer_status.id
+
+
+@pytest.mark.asyncio
+async def test_sync_fehlzeiten_does_not_duplicate_known_excuse_status(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    bestehender_status = ExcuseStatus(name="entsch.", zaehlt_als_entschuldigt=True)
+    db_session.add_all([schueler, bestehender_status])
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = {
+        "periodsWithAbsences": [
+            {
+                "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                "subjectId": "Deutsch", "excuseStatus": "entsch.", "invalid": False,
+            },
+        ]
+    }
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    status_result = await db_session.execute(select(ExcuseStatus).where(ExcuseStatus.name == "entsch."))
+    rows = status_result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].zaehlt_als_entschuldigt is True  # unveraendert, nicht auf False zurueckgesetzt
+
+    fehlzeit_result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    assert fehlzeit_result.scalar_one().excuse_status_id == bestehender_status.id
+
+
+@pytest.mark.asyncio
 async def test_sync_fehlzeiten_upserts_existing_entry(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     db_session.add(schueler)
