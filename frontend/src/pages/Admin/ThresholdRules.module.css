@@ -1,0 +1,22 @@
+.rule {
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.stufenRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  border-top: 1px solid #f5f5f5;
+}
+
+.stufenRow label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}

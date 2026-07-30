@@ -5,6 +5,7 @@ import { AdminLayout } from "./pages/Admin/AdminLayout";
 import { ExcuseStatuses } from "./pages/Admin/ExcuseStatuses";
 import { MeasureTypes } from "./pages/Admin/MeasureTypes";
 import { SyncSettings } from "./pages/Admin/SyncSettings";
+import { ThresholdRules } from "./pages/Admin/ThresholdRules";
 import { Landing } from "./pages/Landing/Landing";
 import { StudentDetail } from "./pages/StudentDetail/StudentDetail";
 import { StudentList } from "./pages/StudentList/StudentList";
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="sync" element={<SyncSettings />} />
           <Route path="entschuldigungsstatus" element={<ExcuseStatuses />} />
           <Route path="massnahmen" element={<MeasureTypes />} />
+          <Route path="schwellwerte" element={<ThresholdRules />} />
         </Route>
       </Route>
     </Routes>
