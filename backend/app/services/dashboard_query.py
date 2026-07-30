@@ -72,6 +72,9 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         for s in schuljahre_result.scalars().all()
     ]
 
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    aktuelles_schuljahr_id = einstellung.aktuelles_schuljahr_id if einstellung else None
+
     return NavOptionsOut(
         bereiche=[NavBereichOut(id=b.id, name=b.name) for b in bereiche],
         klassen=[
@@ -79,6 +82,7 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         ],
         rolle=nutzer.rolle,
         schuljahre=schuljahre,
+        aktuelles_schuljahr_id=aktuelles_schuljahr_id,
     )
 
 

@@ -49,7 +49,7 @@ const mockUseStudentCatalog = vi.mocked(useStudentCatalog);
 
 function setupMocks() {
   mockUseNavOptions.mockReturnValue({
-    data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [] },
+    data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [], aktuelles_schuljahr_id: null },
     isLoading: false,
     isError: false,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -150,7 +150,7 @@ describe("App", () => {
 
   it("RequireSchulleitung redirects non-schulleitung users away", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [] },
+      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [], aktuelles_schuljahr_id: null },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,7 +170,7 @@ describe("App", () => {
   it("renders the Admin sync-settings route for schulleitung", () => {
     setupMocks();
     vi.mocked(useNavOptions).mockReturnValue({
-      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [] },
+      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [], aktuelles_schuljahr_id: null },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -192,7 +192,7 @@ describe("App", () => {
   it("redirects /admin to the Schwellwert-Regeln tab (regression: blank page on /admin)", () => {
     setupMocks();
     vi.mocked(useNavOptions).mockReturnValue({
-      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [] },
+      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [], aktuelles_schuljahr_id: null },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

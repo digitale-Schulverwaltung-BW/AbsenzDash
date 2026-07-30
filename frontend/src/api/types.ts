@@ -21,6 +21,7 @@ export interface NavOptions {
   klassen: NavKlasse[];
   rolle: string;
   schuljahre: NavSchuljahr[];
+  aktuelles_schuljahr_id: number | null;
 }
 
 export interface SchwellwertStufe {

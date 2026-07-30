@@ -29,6 +29,7 @@ class NavOptionsOut(BaseModel):
     klassen: list[NavKlasseOut]
     rolle: str
     schuljahre: list[NavSchuljahrOut]
+    aktuelles_schuljahr_id: int | None
 
 
 class StatsOwn(BaseModel):

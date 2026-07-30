@@ -19,7 +19,13 @@ function renderNavigation(initialEntries: string[] = ["/"]) {
 describe("Navigation", () => {
   it("shows no dropdowns for a single own Klasse and no Bereiche", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }], rolle: "klassenlehrkraft", schuljahre: [] },
+      data: {
+        bereiche: [],
+        klassen: [{ id: 1, name: "10a", bereich_id: null }],
+        rolle: "klassenlehrkraft",
+        schuljahre: [],
+        aktuelles_schuljahr_id: null,
+      },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +47,7 @@ describe("Navigation", () => {
         ],
         rolle: "klassenlehrkraft",
         schuljahre: [],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,
@@ -63,6 +70,7 @@ describe("Navigation", () => {
         ],
         rolle: "klassenlehrkraft",
         schuljahre: [],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,
@@ -91,6 +99,7 @@ describe("Navigation", () => {
         ],
         rolle: "klassenlehrkraft",
         schuljahre: [],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,
@@ -125,6 +134,7 @@ describe("Navigation", () => {
         ],
         rolle: "klassenlehrkraft",
         schuljahre: [],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,
@@ -142,7 +152,13 @@ describe("Navigation", () => {
 
   it("renders navigation tabs that preserve the current search params", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [{ id: 1, name: "10a", bereich_id: null }], rolle: "klassenlehrkraft", schuljahre: [] },
+      data: {
+        bereiche: [],
+        klassen: [{ id: 1, name: "10a", bereich_id: null }],
+        rolle: "klassenlehrkraft",
+        schuljahre: [],
+        aktuelles_schuljahr_id: null,
+      },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,7 +172,7 @@ describe("Navigation", () => {
 
   it("shows the Admin link for schulleitung", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [] },
+      data: { bereiche: [], klassen: [], rolle: "schulleitung", schuljahre: [], aktuelles_schuljahr_id: null },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -167,7 +183,7 @@ describe("Navigation", () => {
 
   it("hides the Admin link for other roles", () => {
     mockUseNavOptions.mockReturnValue({
-      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [] },
+      data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [], aktuelles_schuljahr_id: null },
       isLoading: false,
       isError: false,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,6 +200,7 @@ describe("Navigation", () => {
           { id: 28, name: "2025/2026", start_datum: "2025-09-15", end_datum: "2026-07-29" },
           { id: 27, name: "2024/2025", start_datum: "2024-09-09", end_datum: "2025-07-30" },
         ],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,
@@ -196,11 +213,33 @@ describe("Navigation", () => {
     expect(options).toEqual(["Aktuelles Schuljahr", "2025/2026", "2024/2025"]);
   });
 
+  it("excludes the currently active Schuljahr from the dropdown options", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: {
+        bereiche: [], klassen: [], rolle: "klassenlehrkraft",
+        schuljahre: [
+          { id: 28, name: "2025/2026", start_datum: "2025-09-15", end_datum: "2026-07-29" },
+          { id: 27, name: "2024/2025", start_datum: "2024-09-09", end_datum: "2025-07-30" },
+        ],
+        aktuelles_schuljahr_id: 28,
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    render(<MemoryRouter><Navigation /></MemoryRouter>);
+
+    const select = screen.getByLabelText("Schuljahr") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.textContent);
+    expect(options).toEqual(["Aktuelles Schuljahr", "2024/2025"]);
+  });
+
   it("sets the schuljahr URL param on change and clears it when reset to current", () => {
     mockUseNavOptions.mockReturnValue({
       data: {
         bereiche: [], klassen: [], rolle: "klassenlehrkraft",
         schuljahre: [{ id: 27, name: "2024/2025", start_datum: "2024-09-09", end_datum: "2025-07-30" }],
+        aktuelles_schuljahr_id: null,
       },
       isLoading: false,
       isError: false,

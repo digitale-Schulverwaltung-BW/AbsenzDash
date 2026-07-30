@@ -110,6 +110,36 @@ async def test_get_nav_options_includes_schuljahre_newest_first(db_session):
     assert result.schuljahre[0].name == "2025/2026"
 
 
+@pytest.mark.asyncio
+async def test_get_nav_options_includes_aktuelles_schuljahr_id_when_set(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add_all(
+        [
+            nutzer,
+            Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30)),
+            Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29)),
+        ]
+    )
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=28))
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert result.aktuelles_schuljahr_id == 28
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_aktuelles_schuljahr_id_is_none_when_not_set(db_session):
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert result.aktuelles_schuljahr_id is None
+
+
 async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
     db_session.add(schueler)

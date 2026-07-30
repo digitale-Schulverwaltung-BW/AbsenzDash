@@ -27,6 +27,9 @@ export function Navigation() {
           ? []
           : data.klassen.filter((k) => k.bereich_id === selectedBereichId);
   const showKlasseDropdown = visibleKlassen.length > 1;
+  const selectableSchuljahre = data.schuljahre.filter(
+    (schuljahr) => schuljahr.id !== data.aktuelles_schuljahr_id,
+  );
 
   function handleBereichChange(value: string) {
     const next = new URLSearchParams(searchParams);
@@ -118,7 +121,7 @@ export function Navigation() {
         onChange={(event) => handleSchuljahrChange(event.target.value)}
       >
         <option value="">Aktuelles Schuljahr</option>
-        {data.schuljahre.map((schuljahr) => (
+        {selectableSchuljahre.map((schuljahr) => (
           <option key={schuljahr.id} value={schuljahr.id}>
             {schuljahr.name}
           </option>
