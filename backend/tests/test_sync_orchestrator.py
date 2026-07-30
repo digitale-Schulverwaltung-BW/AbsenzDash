@@ -134,6 +134,46 @@ def test_fehlzeiten_zeitraum_fallback():
 
 
 @pytest.mark.asyncio
+async def test_run_full_sync_continues_when_no_active_schoolyear(db_session, monkeypatch):
+    """WebUntis hat aktuell kein aktives Schuljahr konfiguriert (z.B. Uebergangszeitraum
+    zwischen zwei Schuljahren): getCurrentSchoolyear liefert einen JSON-RPC-Fehler.
+    Der Rest des Sync-Laufs muss trotzdem durchlaufen und committet werden, ohne
+    schuljahr_start_cache zu veraendern."""
+
+    class _FakeWebUntisClientOhneSchuljahr:
+        def __init__(self, _settings):
+            async def _call(method, _params):
+                if method == "getCurrentSchoolyear":
+                    raise WebUntisError(
+                        'Cannot invoke "com.grupet.web.basic.Schoolyear.getEndDate()" '
+                        'because "schoolyear" is null'
+                    )
+                return {"startDate": 20250915, "endDate": 20260729}
+
+            self.call = AsyncMock(side_effect=_call)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(sync_orchestrator, "WebUntisClient", _FakeWebUntisClientOhneSchuljahr)
+
+    vorhandener_cache = date(2025, 9, 1)
+    db_session.add(Einstellung(schuljahr_start_cache=vorhandener_cache))
+    await db_session.commit()
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    result = await db_session.execute(select(Einstellung))
+    einstellung = result.scalar_one()
+    assert einstellung.schuljahr_start_cache == vorhandener_cache
+    assert einstellung.letzter_sync_am is not None
+    assert einstellung.initialer_import_abgeschlossen is True
+
+
+@pytest.mark.asyncio
 async def test_run_full_sync_end_to_end_triggers_benachrichtigung(db_session, monkeypatch):
     """Einziger Test in dieser Datei, der pruefe_schwellwerte NICHT mockt - prueft die reale Verdrahtung."""
     monkeypatch.setattr(sync_orchestrator, "pruefe_schwellwerte", real_pruefe_schwellwerte)

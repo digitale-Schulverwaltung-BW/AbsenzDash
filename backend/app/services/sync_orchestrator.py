@@ -49,10 +49,21 @@ async def run_sync_once(db: AsyncSession) -> None:
 
         einstellung = await get_or_create_einstellung(db)
 
-        schuljahr = await client.call("getCurrentSchoolyear", {})
-        schuljahr_start = datetime.strptime(str(schuljahr["startDate"]), "%Y%m%d").date()
-        if schuljahr_start != einstellung.schuljahr_start_cache:
-            einstellung.schuljahr_start_cache = schuljahr_start
+        try:
+            schuljahr = await client.call("getCurrentSchoolyear", {})
+            schuljahr_start = datetime.strptime(str(schuljahr["startDate"]), "%Y%m%d").date()
+            if schuljahr_start != einstellung.schuljahr_start_cache:
+                einstellung.schuljahr_start_cache = schuljahr_start
+        except WebUntisError as exc:
+            # Kein aktives Schuljahr in WebUntis konfiguriert (z.B. Uebergangszeitraum
+            # zwischen zwei Schuljahren) -- gecachten Wert unveraendert lassen und
+            # den restlichen Sync-Lauf trotzdem durchfuehren.
+            logger.warning(
+                "getCurrentSchoolyear fehlgeschlagen, kein aktives Schuljahr in WebUntis "
+                "konfiguriert; behalte schuljahr_start_cache=%s bei: %s",
+                einstellung.schuljahr_start_cache,
+                exc,
+            )
 
         heute = datetime.now(timezone.utc).date()
         von, bis = _fehlzeiten_zeitraum(einstellung, heute)
