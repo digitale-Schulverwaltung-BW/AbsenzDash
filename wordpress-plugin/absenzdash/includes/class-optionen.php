@@ -24,9 +24,19 @@ class Absenzdash_Optionen {
 	}
 
 	public function registriere_menu(): void {
-		add_options_page(
+		add_menu_page(
 			'AbsenzDash',
 			'AbsenzDash',
+			'manage_options',
+			'absenzdash',
+			array( $this, 'render_seite' ),
+			'dashicons-groups',
+			80
+		);
+		add_submenu_page(
+			'absenzdash',
+			'AbsenzDash-Einstellungen',
+			'Einstellungen',
 			'manage_options',
 			'absenzdash',
 			array( $this, 'render_seite' )

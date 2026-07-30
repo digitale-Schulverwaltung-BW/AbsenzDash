@@ -8,6 +8,8 @@ class Absenzdash_Rollen_Seite {
 
 	const ROLLEN = array( 'klassenlehrkraft', 'bereichsleiter', 'schulleitung' );
 
+	private ?string $hook_suffix = null;
+
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'registriere_seite' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
@@ -16,9 +18,10 @@ class Absenzdash_Rollen_Seite {
 	}
 
 	public function registriere_seite(): void {
-		add_options_page(
+		$this->hook_suffix = add_submenu_page(
+			'absenzdash',
 			'AbsenzDash-Rollen',
-			'AbsenzDash-Rollen',
+			'Rollen',
 			'manage_options',
 			'absenzdash-rollen',
 			array( $this, 'render_seite' )
@@ -26,7 +29,7 @@ class Absenzdash_Rollen_Seite {
 	}
 
 	public function enqueue_assets( string $hook_suffix ): void {
-		if ( 'settings_page_absenzdash-rollen' !== $hook_suffix ) {
+		if ( $hook_suffix !== $this->hook_suffix ) {
 			return;
 		}
 		wp_enqueue_script(
