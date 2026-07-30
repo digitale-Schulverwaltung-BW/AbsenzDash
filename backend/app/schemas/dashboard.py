@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
@@ -16,10 +17,18 @@ class NavKlasseOut(BaseModel):
     bereich_id: int | None
 
 
+class NavSchuljahrOut(BaseModel):
+    id: int
+    name: str
+    start_datum: date
+    end_datum: date
+
+
 class NavOptionsOut(BaseModel):
     bereiche: list[NavBereichOut]
     klassen: list[NavKlasseOut]
     rolle: str
+    schuljahre: list[NavSchuljahrOut]
 
 
 class StatsOwn(BaseModel):
