@@ -3,6 +3,7 @@ import { useNavOptions } from "./api/hooks/useNavOptions";
 import { Navigation } from "./components/Navigation/Navigation";
 import { AdminLayout } from "./pages/Admin/AdminLayout";
 import { ExcuseStatuses } from "./pages/Admin/ExcuseStatuses";
+import { MeasureTypes } from "./pages/Admin/MeasureTypes";
 import { SyncSettings } from "./pages/Admin/SyncSettings";
 import { Landing } from "./pages/Landing/Landing";
 import { StudentDetail } from "./pages/StudentDetail/StudentDetail";
@@ -47,6 +48,7 @@ export default function App() {
         >
           <Route path="sync" element={<SyncSettings />} />
           <Route path="entschuldigungsstatus" element={<ExcuseStatuses />} />
+          <Route path="massnahmen" element={<MeasureTypes />} />
         </Route>
       </Route>
     </Routes>
