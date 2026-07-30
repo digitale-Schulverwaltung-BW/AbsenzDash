@@ -12,12 +12,17 @@ from app.models.bereich import Bereich, bereich_klasse
 from app.models.klasse import Klasse
 from app.models.nutzer import ROLLEN, Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
-from app.schemas.admin import BereichIn, BereichLeiterOut, BereichOut, BereichVorschlagOut, KlasseOut
+from app.schemas.admin import AbteilungOut, BereichIn, BereichLeiterOut, BereichOut, BereichVorschlagOut, KlasseOut
 
 
 async def list_klassen(db: AsyncSession) -> list[KlasseOut]:
     result = await db.execute(select(Klasse).order_by(Klasse.name))
     return [KlasseOut(id=k.id, name=k.name) for k in result.scalars().all()]
+
+
+async def list_abteilungen(db: AsyncSession) -> list[AbteilungOut]:
+    result = await db.execute(select(Abteilung).order_by(Abteilung.name))
+    return [AbteilungOut(id=a.id, name=a.name) for a in result.scalars().all()]
 
 
 async def _bereich_out(db: AsyncSession, bereich: Bereich) -> BereichOut:

@@ -13,6 +13,7 @@ from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.audit_log import AuditLog
 from app.models.nutzer import Nutzer
 from app.schemas.admin import (
+    AbteilungOut,
     BereichIn,
     BereichOut,
     BereichVorschlagOut,
@@ -44,6 +45,11 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 @router.get("/klassen")
 async def get_klassen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[KlasseOut]:
     return await bereich_service.list_klassen(db)
+
+
+@router.get("/abteilungen")
+async def get_abteilungen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[AbteilungOut]:
+    return await bereich_service.list_abteilungen(db)
 
 
 @router.get("/bereiche")

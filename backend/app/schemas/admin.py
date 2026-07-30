@@ -96,6 +96,11 @@ class KlasseOut(BaseModel):
     name: str
 
 
+class AbteilungOut(BaseModel):
+    id: int
+    name: str
+
+
 class BereichLeiterIn(BaseModel):
     wp_user_id: str
     email: str

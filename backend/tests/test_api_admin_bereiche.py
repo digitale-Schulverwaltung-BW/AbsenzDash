@@ -96,3 +96,27 @@ async def test_get_vorschlag_aus_abteilungen_returns_one_per_abteilung(db_sessio
 
     assert response.status_code == 200
     assert response.json() == [{"name": "Mechatronik", "klasse_ids": []}]
+
+
+@pytest.mark.asyncio
+async def test_get_abteilungen_returns_all(db_session):
+    abteilung_a = Abteilung(webuntis_id=1, name="Kaufmännisch")
+    abteilung_b = Abteilung(webuntis_id=2, name="Gewerblich")
+    db_session.add_all([abteilung_a, abteilung_b])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/abteilungen", headers=HEADERS_SCHULLEITUNG)
+
+    assert response.status_code == 200
+    names = sorted(item["name"] for item in response.json())
+    assert names == ["Gewerblich", "Kaufmännisch"]
+
+
+@pytest.mark.asyncio
+async def test_get_abteilungen_rejects_non_schulleitung(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/abteilungen", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 403
