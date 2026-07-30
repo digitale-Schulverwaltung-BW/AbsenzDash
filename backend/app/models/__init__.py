@@ -17,6 +17,7 @@ from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.schuljahr import Schuljahr
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 
@@ -42,6 +43,7 @@ __all__ = [
     "ROLLEN",
     "Schueler",
     "SchuelerZaehlerstand",
+    "Schuljahr",
     "SchwellwertRegel",
     "SchwellwertStufe",
 ]
