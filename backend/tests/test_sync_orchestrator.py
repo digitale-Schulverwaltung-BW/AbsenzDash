@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -190,6 +190,87 @@ async def test_resolve_aktuelles_schuljahr_falls_back_to_newest_cached_when_webu
 
     schuljahr = await sync_orchestrator.resolve_aktuelles_schuljahr(client, db_session)
 
+    assert schuljahr.id == 28
+    assert schuljahr.name == "2025/2026"
+
+
+@pytest.mark.asyncio
+async def test_resolve_aktuelles_schuljahr_fallback_ignores_future_not_yet_started_schuljahr(db_session):
+    """Regression: WebUntis meldet kein aktives Schuljahr, aber ein Admin hat bereits
+    das naechste Schuljahr (2026/2027, startet erst naechsten Monat) in WebUntis
+    angelegt. Der Fallback darf dieses zukuenftige Schuljahr NICHT waehlen (hoechstes
+    end_datum), sonst wird schuljahr_start_cache auf ein Datum in der Zukunft gesetzt
+    und jedes Eskalations-Zaehlfenster laeuft leer. Er muss stattdessen das juengste
+    bereits gestartete Schuljahr (2025/2026, gestern beendet) waehlen."""
+    heute = datetime.now(timezone.utc).date()
+    gestern = heute - timedelta(days=1)
+    naechster_monat = heute + timedelta(days=30)
+    ende_naechstes_jahr = naechster_monat + timedelta(days=300)
+
+    client = AsyncMock()
+
+    async def _call(method, _params):
+        if method == "getSchoolyears":
+            return [
+                {
+                    "id": 27,
+                    "name": "2024/2025",
+                    "startDate": (heute - timedelta(days=400)).strftime("%Y%m%d"),
+                    "endDate": (heute - timedelta(days=35)).strftime("%Y%m%d"),
+                },
+                {
+                    "id": 28,
+                    "name": "2025/2026",
+                    "startDate": (heute - timedelta(days=34)).strftime("%Y%m%d"),
+                    "endDate": gestern.strftime("%Y%m%d"),
+                },
+                {
+                    "id": 29,
+                    "name": "2026/2027",
+                    "startDate": naechster_monat.strftime("%Y%m%d"),
+                    "endDate": ende_naechstes_jahr.strftime("%Y%m%d"),
+                },
+            ]
+        if method == "getCurrentSchoolyear":
+            raise WebUntisError(
+                'Cannot invoke "com.grupet.web.basic.Schoolyear.getEndDate()" because "schoolyear" is null'
+            )
+        raise AssertionError(f"unexpected call: {method}")
+
+    client.call = AsyncMock(side_effect=_call)
+
+    schuljahr = await sync_orchestrator.resolve_aktuelles_schuljahr(client, db_session)
+
+    assert schuljahr.id == 28
+    assert schuljahr.name == "2025/2026"
+    assert schuljahr.start_datum <= heute
+
+
+@pytest.mark.asyncio
+async def test_resolve_aktuelles_schuljahr_falls_back_when_current_id_not_in_cache(db_session):
+    """Regression: getCurrentSchoolyear liefert eine schoolyearId, die im gerade aus
+    getSchoolyears aktualisierten Cache nicht enthalten ist (inkonsistente WebUntis-
+    Antworten zwischen zwei Aufrufen). db.get(Schuljahr, ...) liefert dann None - der
+    Resolver darf NICHT None zurueckgeben (das wuerde run_sync_once mit einem
+    AttributeError ausserhalb der Retry-Behandlung abstuerzen lassen), sondern muss
+    auf das juengste bereits gestartete Schuljahr zurueckfallen."""
+    client = AsyncMock()
+
+    async def _call(method, _params):
+        if method == "getSchoolyears":
+            return [
+                {"id": 27, "name": "2024/2025", "startDate": 20240909, "endDate": 20250730},
+                {"id": 28, "name": "2025/2026", "startDate": 20250915, "endDate": 20260729},
+            ]
+        if method == "getCurrentSchoolyear":
+            return {"id": 999, "name": "unbekannt", "startDate": 20260101, "endDate": 20261231}
+        raise AssertionError(f"unexpected call: {method}")
+
+    client.call = AsyncMock(side_effect=_call)
+
+    schuljahr = await sync_orchestrator.resolve_aktuelles_schuljahr(client, db_session)
+
+    assert schuljahr is not None
     assert schuljahr.id == 28
     assert schuljahr.name == "2025/2026"
 
