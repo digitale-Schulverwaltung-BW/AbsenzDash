@@ -110,8 +110,9 @@ def test_fehlzeiten_zeitraum_with_letzter_sync_am():
     sync_date = datetime(2024, 7, 15, 10, 30, tzinfo=timezone.utc)
     einstellung = Einstellung(letzter_sync_am=sync_date)
     heute = date(2024, 7, 20)
+    schuljahr_ende = date(2025, 7, 31)
 
-    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute, schuljahr_ende)
 
     assert von == date(2024, 7, 14)
     assert bis == heute
@@ -122,8 +123,9 @@ def test_fehlzeiten_zeitraum_with_schuljahr_start_cache():
     schuljahr_start = date(2024, 9, 1)
     einstellung = Einstellung(schuljahr_start_cache=schuljahr_start)
     heute = date(2024, 7, 20)
+    schuljahr_ende = date(2025, 7, 31)
 
-    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute, schuljahr_ende)
 
     assert von == schuljahr_start
     assert bis == heute
@@ -133,11 +135,29 @@ def test_fehlzeiten_zeitraum_fallback():
     """Branch 3: Both letzter_sync_am and schuljahr_start_cache are None, von = heute."""
     einstellung = Einstellung()
     heute = date(2024, 7, 20)
+    schuljahr_ende = date(2025, 7, 31)
 
-    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute)
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute, schuljahr_ende)
 
     assert von == heute
     assert bis == heute
+
+
+def test_fehlzeiten_zeitraum_clamps_bis_to_schuljahr_ende_in_uebergangsluecke():
+    """Regression Live-Fund 2026-07-30: Schuljahr 2025/2026 endete am 2026-07-29,
+    2026/2027 ist in WebUntis noch nicht als aktuell konfiguriert - wir befinden uns
+    in der Uebergangsluecke. Ohne Clamping waere bis=heute (2026-07-30), was aus dem
+    Schuljahr herausfaellt und getTimetableWithAbsences mit 'startDate and endDate are
+    not within a single school year' fehlschlagen laesst. bis muss stattdessen auf
+    schuljahr_ende gekappt werden."""
+    einstellung = Einstellung(schuljahr_start_cache=date(2025, 9, 15))
+    heute = date(2026, 7, 30)
+    schuljahr_ende = date(2026, 7, 29)
+
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute, schuljahr_ende)
+
+    assert bis == schuljahr_ende
+    assert von <= bis
 
 
 @pytest.mark.asyncio
