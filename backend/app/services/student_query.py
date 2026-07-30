@@ -201,6 +201,38 @@ async def load_overview_extras(db: AsyncSession, schueler_ids: list[int]) -> dic
     }
 
 
+async def load_schueler_rohzahlen(
+    db: AsyncSession, schueler_ids: list[int], von: date, bis: date
+) -> dict[int, dict[str, int]]:
+    """Rohzahlen (Fehltage/Fehlstunden/Klassenbuch-Anzahl) fuer den Historie-Modus:
+    zaehlt alle fehlzeit/klassenbuch_eintrag-Zeilen im Zeitraum, unabhaengig vom
+    Entschuldigungsstatus (bewusst anders als die Eskalations-Engine, siehe Task 5 Brief)."""
+    ergebnis = {sid: {"fehltage": 0, "fehlstunden": 0, "klassenbuch_anzahl": 0} for sid in schueler_ids}
+    if not schueler_ids:
+        return ergebnis
+
+    fehlzeit_result = await db.execute(
+        select(Fehlzeit.schueler_id, Fehlzeit.typ, func.count())
+        .where(Fehlzeit.schueler_id.in_(schueler_ids), Fehlzeit.datum.between(von, bis))
+        .group_by(Fehlzeit.schueler_id, Fehlzeit.typ)
+    )
+    for schueler_id, typ, anzahl in fehlzeit_result.all():
+        if typ == "tag":
+            ergebnis[schueler_id]["fehltage"] = anzahl
+        elif typ == "stunde":
+            ergebnis[schueler_id]["fehlstunden"] = anzahl
+
+    klassenbuch_result = await db.execute(
+        select(KlassenbuchEintrag.schueler_id, func.count())
+        .where(KlassenbuchEintrag.schueler_id.in_(schueler_ids), KlassenbuchEintrag.datum.between(von, bis))
+        .group_by(KlassenbuchEintrag.schueler_id)
+    )
+    for schueler_id, anzahl in klassenbuch_result.all():
+        ergebnis[schueler_id]["klassenbuch_anzahl"] = anzahl
+
+    return ergebnis
+
+
 async def load_student_detail(db: AsyncSession, schueler_id: int) -> dict[str, Any]:
     """Laedt alle Unterlisten fuer die Detailansicht eines Schuelers."""
     fehlzeiten = (

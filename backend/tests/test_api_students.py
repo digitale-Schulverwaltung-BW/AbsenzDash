@@ -1,4 +1,5 @@
 import datetime
+from datetime import date
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -10,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.ausnahme import Ausnahme
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
+from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
@@ -18,6 +20,7 @@ from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.schuljahr import Schuljahr
 from app.models.schwellwert_regel import SchwellwertRegel
 
 HEADERS_KLASSENLEHRKRAFT = {
@@ -472,3 +475,35 @@ async def test_export_pdf_404s_for_out_of_scope_student(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(f"/students/{schueler.id}/export.pdf", headers=HEADERS_KLASSENLEHRKRAFT)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    schueler_aktiv = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    schueler_inaktiv = Schueler(externe_id="ext-2", vorname="B", nachname="B", klasse_id=klasse.id, aktiv=False)
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add_all([schueler_aktiv, schueler_inaktiv, schuljahr])
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(schueler_id=schueler_inaktiv.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359)
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students?schuljahr_id={schuljahr.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    ids = {item["id"] for item in body["items"]}
+    assert schueler_inaktiv.id in ids  # inaktive Schueler erscheinen in der Historie
+    inaktiv_item = next(item for item in body["items"] if item["id"] == schueler_inaktiv.id)
+    assert inaktiv_item["fehltage"] == 1
+    assert inaktiv_item["zaehlerstand"] is None

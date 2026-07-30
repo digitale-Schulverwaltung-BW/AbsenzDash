@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -11,9 +12,11 @@ from app.core.database import get_db
 from app.models.audit_log import AuditLog
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
+from app.models.einstellung import Einstellung
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
+from app.models.schuljahr import Schuljahr
 from app.schemas.students import (
     AusnahmeOut,
     BenachrichtigungOut,
@@ -31,6 +34,20 @@ from app.schemas.students import (
 from app.services import ausnahme_service, export_service, massnahme_service, student_query
 
 router = APIRouter(prefix="/students", tags=["students"])
+
+
+async def _resolve_schuljahr_zeitraum(db: AsyncSession, schuljahr_id: int | None) -> tuple[date | None, date | None]:
+    """None, None heisst "aktuelles Schuljahr, unveraendertes Verhalten". Ein konkretes
+    (von, bis)-Paar heisst "Historie-Modus fuer dieses vergangene Schuljahr"."""
+    if schuljahr_id is None:
+        return None, None
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    if einstellung is not None and schuljahr_id == einstellung.aktuelles_schuljahr_id:
+        return None, None
+    schuljahr = await db.get(Schuljahr, schuljahr_id)
+    if schuljahr is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekanntes Schuljahr")
+    return schuljahr.start_datum, schuljahr.end_datum
 
 
 def _benachrichtigung_out(
@@ -59,26 +76,47 @@ async def get_students(
     min_stufe: int | None = None,
     nur_auffaellige: bool = False,
     nur_aktive: bool = True,
+    schuljahr_id: int | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StudentListOut:
     scope = await resolve_scope(db, nutzer)
+    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    ist_historie = von is not None
+
     schueler_list, total = await student_query.list_students(
         db,
         scope=scope,
         klasse_id=klasse_id,
         bereich_id=bereich_id,
-        typ=typ,
-        min_stufe=min_stufe,
-        nur_auffaellige=nur_auffaellige,
-        nur_aktive=nur_aktive,
+        typ=None if ist_historie else typ,
+        min_stufe=None if ist_historie else min_stufe,
+        nur_auffaellige=False if ist_historie else nur_auffaellige,
+        nur_aktive=False if ist_historie else nur_aktive,
         limit=limit,
         offset=offset,
     )
     schueler_ids = [schueler.id for schueler in schueler_list]
-    extras = await student_query.load_overview_extras(db, schueler_ids)
     klasse_ids = [schueler.klasse_id for schueler in schueler_list if schueler.klasse_id is not None]
     klasse_map = await student_query.load_klasse_map(db, klasse_ids)
+
+    if ist_historie:
+        rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, von, bis)
+        items = [
+            StudentOverviewOut(
+                id=schueler.id,
+                vorname=schueler.vorname,
+                nachname=schueler.nachname,
+                klasse=klasse_map.get(schueler.klasse_id) if schueler.klasse_id is not None else None,
+                fehltage=rohzahlen[schueler.id]["fehltage"],
+                fehlstunden=rohzahlen[schueler.id]["fehlstunden"],
+                klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
+            )
+            for schueler in schueler_list
+        ]
+        return StudentListOut(items=items, total=total, limit=limit, offset=offset)
+
+    extras = await student_query.load_overview_extras(db, schueler_ids)
     regel_ids = [
         extras[schueler.id]["letzte_benachrichtigung"].regel_id
         for schueler in schueler_list

@@ -1,4 +1,5 @@
 import datetime
+from datetime import date
 
 import pytest
 from sqlalchemy import select
@@ -8,7 +9,9 @@ from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.classreg_category import ClassregCategory
 from app.models.excuse_status import ExcuseStatus
+from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
+from app.models.klassenbuch_eintrag import KlassenbuchEintrag
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
@@ -304,3 +307,35 @@ async def test_load_classreg_category_map_returns_rows_by_id(db_session):
 async def test_load_classreg_category_map_returns_empty_dict_for_empty_input(db_session):
     result = await student_query.load_classreg_category_map(db_session, [])
     assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_load_schueler_rohzahlen_counts_within_range(db_session):
+    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A")
+    schueler_b = Schueler(externe_id="ext-b", vorname="B", nachname="B")
+    kategorie = ClassregCategory(name="stören", long_name="Störung des Unterrichts", group_name="Störung")
+    db_session.add_all([schueler_a, schueler_b, kategorie])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            # schueler_a: 2 Fehltage, 1 Fehlstunde within range, 1 Fehltag outside range
+            Fehlzeit(schueler_id=schueler_a.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler_a.id, typ="tag", datum=date(2025, 11, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler_a.id, typ="stunde", datum=date(2025, 10, 5), start_zeit=730, end_zeit=815),
+            Fehlzeit(schueler_id=schueler_a.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+            KlassenbuchEintrag(
+                schueler_id=schueler_a.id, webuntis_id=1, kategorie_id=kategorie.id, datum=date(2025, 10, 2)
+            ),
+            # schueler_b: nothing in range
+            Fehlzeit(schueler_id=schueler_b.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+
+    result = await student_query.load_schueler_rohzahlen(
+        db_session, [schueler_a.id, schueler_b.id], date(2025, 9, 15), date(2026, 7, 29)
+    )
+
+    assert result[schueler_a.id] == {"fehltage": 2, "fehlstunden": 1, "klassenbuch_anzahl": 1}
+    assert result[schueler_b.id] == {"fehltage": 0, "fehlstunden": 0, "klassenbuch_anzahl": 0}
