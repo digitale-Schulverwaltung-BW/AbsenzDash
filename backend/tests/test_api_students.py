@@ -507,3 +507,39 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
     inaktiv_item = next(item for item in body["items"] if item["id"] == schueler_inaktiv.id)
     assert inaktiv_item["fehltage"] == 1
     assert inaktiv_item["zaehlerstand"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_history_mode_filters_four_sections_not_massnahmen(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse.id)
+    typ = MassnahmenTyp(name="Gespraech", setzt_zaehler_zurueck=False)
+    nutzer = Nutzer(wp_user_id="u2", email="c@d.de", name="C", rolle="klassenlehrkraft")
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add_all([schueler, typ, nutzer, schuljahr])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359),
+            Massnahme(schueler_id=schueler.id, massnahmen_typ_id=typ.id, datum=date(2025, 10, 1), erfasst_von_nutzer_id=nutzer.id),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}?schuljahr_id={schuljahr.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["fehlzeiten"]) == 1
+    assert body["fehlzeiten"][0]["datum"] == "2024-10-01"
+    assert len(body["massnahmen"]) == 1  # unabhaengig vom Schuljahr-Filter sichtbar
+    assert body["zaehlerstand"] == {}

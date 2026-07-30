@@ -165,8 +165,10 @@ async def get_student_catalog(
 async def get_student_detail(
     schueler: Annotated[Schueler, Depends(get_scoped_schueler)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    schuljahr_id: int | None = None,
 ) -> StudentDetailOut:
-    detail = await student_query.load_student_detail(db, schueler.id)
+    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    detail = await student_query.load_student_detail(db, schueler.id, von=von, bis=bis)
     klasse = None
     if schueler.klasse_id is not None:
         klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])

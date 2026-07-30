@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ausnahme import Ausnahme
@@ -233,18 +233,45 @@ async def load_schueler_rohzahlen(
     return ergebnis
 
 
-async def load_student_detail(db: AsyncSession, schueler_id: int) -> dict[str, Any]:
-    """Laedt alle Unterlisten fuer die Detailansicht eines Schuelers."""
-    fehlzeiten = (
-        await db.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler_id).order_by(Fehlzeit.datum.desc()))
-    ).scalars().all()
-    klassenbuch = (
-        await db.execute(
-            select(KlassenbuchEintrag)
-            .where(KlassenbuchEintrag.schueler_id == schueler_id)
-            .order_by(KlassenbuchEintrag.datum.desc())
+async def load_student_detail(
+    db: AsyncSession, schueler_id: int, von: date | None = None, bis: date | None = None
+) -> dict[str, Any]:
+    """Laedt alle Unterlisten fuer die Detailansicht eines Schuelers.
+
+    Ohne von/bis (Standard): unveraendertes Verhalten, alle Zeilen, zaehlerstand befuellt.
+    Mit von/bis (Historie-Modus fuer ein vergangenes Schuljahr): fehlzeiten/klassenbuch/
+    ausnahmen/benachrichtigungen werden auf den Zeitraum gefiltert; massnahmen bleibt bewusst
+    ungefiltert (SPECS.md: Massnahmen sollen unabhaengig vom betrachteten Schuljahr sichtbar
+    bleiben); zaehlerstand ist in diesem Modus nicht aussagekraeftig (bezieht sich nur auf das
+    aktuelle Schuljahr) und wird daher als leeres dict geliefert.
+    """
+    fehlzeiten_query = select(Fehlzeit).where(Fehlzeit.schueler_id == schueler_id)
+    klassenbuch_query = select(KlassenbuchEintrag).where(KlassenbuchEintrag.schueler_id == schueler_id)
+    # Liefert alle Ausnahmen (aktiv und aufgehoben) fuer die Detailansicht - das Design (siehe
+    # docs/superpowers/specs/2026-07-28-schuelerliste-detail-design.md Abschnitt 5, Punkt 5) will
+    # eine "Liste aller Eintraege" inkl. aktiv-Status, nicht nur die aktiven.
+    ausnahmen_query = select(Ausnahme).where(Ausnahme.schueler_id == schueler_id)
+    benachrichtigungen_query = select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler_id)
+
+    if von is not None and bis is not None:
+        fehlzeiten_query = fehlzeiten_query.where(Fehlzeit.datum.between(von, bis))
+        klassenbuch_query = klassenbuch_query.where(KlassenbuchEintrag.datum.between(von, bis))
+        # Ausnahme hat keine gueltig_von-Spalte (nur gueltig_bis, nullable, plus created_at aus
+        # TimestampMixin) - created_at's Datum dient als praktischer Start der Gueltigkeit.
+        ausnahmen_query = ausnahmen_query.where(
+            func.date(Ausnahme.created_at) <= bis, or_(Ausnahme.gueltig_bis.is_(None), Ausnahme.gueltig_bis >= von)
         )
-    ).scalars().all()
+        benachrichtigungen_query = benachrichtigungen_query.where(
+            func.date(Benachrichtigung.gesendet_am).between(von, bis)
+        )
+
+    fehlzeiten = (await db.execute(fehlzeiten_query.order_by(Fehlzeit.datum.desc()))).scalars().all()
+    klassenbuch = (await db.execute(klassenbuch_query.order_by(KlassenbuchEintrag.datum.desc()))).scalars().all()
+    ausnahmen = (await db.execute(ausnahmen_query)).scalars().all()
+    benachrichtigungen = (
+        (await db.execute(benachrichtigungen_query.order_by(Benachrichtigung.gesendet_am.desc()))).scalars().all()
+    )
+
     massnahmen_rows = (
         await db.execute(
             select(Massnahme, MassnahmenTyp.name, Nutzer.name)
@@ -254,20 +281,10 @@ async def load_student_detail(db: AsyncSession, schueler_id: int) -> dict[str, A
             .order_by(Massnahme.datum.desc())
         )
     ).all()
-    # Liefert alle Ausnahmen (aktiv und aufgehoben) fuer die Detailansicht - das Design (siehe
-    # docs/superpowers/specs/2026-07-28-schuelerliste-detail-design.md Abschnitt 5, Punkt 5) will
-    # eine "Liste aller Eintraege" inkl. aktiv-Status, nicht nur die aktiven.
-    ausnahmen = (
-        await db.execute(select(Ausnahme).where(Ausnahme.schueler_id == schueler_id))
-    ).scalars().all()
-    benachrichtigungen = (
-        await db.execute(
-            select(Benachrichtigung)
-            .where(Benachrichtigung.schueler_id == schueler_id)
-            .order_by(Benachrichtigung.gesendet_am.desc())
-        )
-    ).scalars().all()
-    zaehlerstand_map = await load_zaehlerstand_map(db, [schueler_id])
+
+    zaehlerstand: dict[str, Any] = {}
+    if von is None and bis is None:
+        zaehlerstand = (await load_zaehlerstand_map(db, [schueler_id]))[schueler_id]
 
     return {
         "fehlzeiten": list(fehlzeiten),
@@ -275,5 +292,5 @@ async def load_student_detail(db: AsyncSession, schueler_id: int) -> dict[str, A
         "massnahmen": list(massnahmen_rows),
         "ausnahmen": list(ausnahmen),
         "benachrichtigungen": list(benachrichtigungen),
-        "zaehlerstand": zaehlerstand_map[schueler_id],
+        "zaehlerstand": zaehlerstand,
     }

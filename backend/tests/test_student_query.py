@@ -339,3 +339,47 @@ async def test_load_schueler_rohzahlen_counts_within_range(db_session):
 
     assert result[schueler_a.id] == {"fehltage": 2, "fehlstunden": 1, "klassenbuch_anzahl": 1}
     assert result[schueler_b.id] == {"fehltage": 0, "fehlstunden": 0, "klassenbuch_anzahl": 0}
+
+
+@pytest.mark.asyncio
+async def test_load_student_detail_filters_by_range_except_massnahmen(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    typ = MassnahmenTyp(name="Nachsitzen", setzt_zaehler_zurueck=False)
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
+    kategorie = ClassregCategory(name="stören", long_name="Störung des Unterrichts", group_name="Störung")
+    db_session.add_all([schueler, typ, nutzer, kategorie])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+            KlassenbuchEintrag(schueler_id=schueler.id, webuntis_id=1, kategorie_id=kategorie.id, datum=date(2025, 11, 1)),
+            KlassenbuchEintrag(schueler_id=schueler.id, webuntis_id=2, kategorie_id=kategorie.id, datum=date(2024, 11, 1)),
+            Benachrichtigung(
+                schueler_id=schueler.id, stufe_nr=1, gesendet_am=datetime.datetime(2025, 12, 1, tzinfo=datetime.timezone.utc),
+                empfaenger=[], status="gesendet",
+            ),
+            Benachrichtigung(
+                schueler_id=schueler.id, stufe_nr=1, gesendet_am=datetime.datetime(2024, 12, 1, tzinfo=datetime.timezone.utc),
+                empfaenger=[], status="gesendet",
+            ),
+            Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="im Bereich", gueltig_bis=None),
+            Massnahme(schueler_id=schueler.id, massnahmen_typ_id=typ.id, datum=date(2024, 6, 1), erfasst_von_nutzer_id=nutzer.id),
+        ]
+    )
+    await db_session.commit()
+
+    # bis liegt bewusst weit in der Zukunft (statt am "Ende des Schuljahres 2025/2026"), damit der
+    # Test unabhaengig vom tatsaechlichen Testlaufdatum ist: Ausnahme.created_at wird beim Insert
+    # auf "jetzt" gesetzt, und die Ausnahme soll trotzdem als ueberlappend gelten (unbefristet).
+    detail = await student_query.load_student_detail(
+        db_session, schueler.id, von=date(2025, 9, 15), bis=date(2099, 12, 31)
+    )
+
+    assert [f.datum for f in detail["fehlzeiten"]] == [date(2025, 10, 1)]
+    assert [k.datum for k in detail["klassenbuch"]] == [date(2025, 11, 1)]
+    assert len(detail["benachrichtigungen"]) == 1
+    assert len(detail["ausnahmen"]) == 1  # unbefristet, created vor dem Zeitraum, gilt trotzdem als ueberlappend
+    assert len(detail["massnahmen"]) == 1  # Massnahmen NIE gefiltert, auch die von 2024 bleibt sichtbar
+    assert detail["zaehlerstand"] == {}
