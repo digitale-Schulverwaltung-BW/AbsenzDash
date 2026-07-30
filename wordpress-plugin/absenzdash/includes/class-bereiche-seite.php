@@ -45,7 +45,7 @@ class Absenzdash_Bereiche_Seite {
 			'absenzdash-bereiche-seite',
 			ABSENZDASH_PLUGIN_URL . 'assets/admin/bereiche-seite.js',
 			array(),
-			ABSENZDASH_VERSION,
+			filemtime( ABSENZDASH_PLUGIN_DIR . 'assets/admin/bereiche-seite.js' ),
 			true
 		);
 		wp_localize_script(

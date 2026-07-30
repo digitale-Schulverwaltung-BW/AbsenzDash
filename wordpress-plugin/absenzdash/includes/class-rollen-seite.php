@@ -36,7 +36,7 @@ class Absenzdash_Rollen_Seite {
 			'absenzdash-rollen-seite',
 			ABSENZDASH_PLUGIN_URL . 'assets/admin/rollen-seite.js',
 			array(),
-			ABSENZDASH_VERSION,
+			filemtime( ABSENZDASH_PLUGIN_DIR . 'assets/admin/rollen-seite.js' ),
 			true
 		);
 		wp_localize_script(
