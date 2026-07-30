@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useStudentCatalog } from "../../api/hooks/useStudentCatalog";
 import { useStudentDetail } from "../../api/hooks/useStudentDetail";
 import { AusnahmenSection } from "../../components/StudentDetail/AusnahmenSection";
@@ -17,7 +17,10 @@ const ZAEHLERSTAND_LABEL: Record<string, string> = {
 export function StudentDetail() {
   const { id } = useParams<{ id: string }>();
   const studentId = Number(id);
-  const { data: student, isLoading, isError } = useStudentDetail(studentId);
+  const [searchParams] = useSearchParams();
+  const schuljahrParam = searchParams.get("schuljahr");
+  const schuljahrId = schuljahrParam ? Number(schuljahrParam) : null;
+  const { data: student, isLoading, isError } = useStudentDetail(studentId, schuljahrId);
   const { data: catalog } = useStudentCatalog();
 
   if (isLoading) {
