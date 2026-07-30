@@ -1,0 +1,37 @@
+stages:
+  - test
+
+# Backend tests using Python 3.11 + PostgreSQL
+backend-tests:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:15-alpine
+  variables:
+    POSTGRES_USER: "absenzdash"
+    POSTGRES_PASSWORD: "absenzdash"
+    POSTGRES_DB: "absenzdash"
+    POSTGRES_HOST_AUTH_METHOD: "trust"
+    DATABASE_URL: "postgresql://absenzdash:absenzdash@postgres:5432/absenzdash"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+        libpango-1.0-0
+        libpangocairo-1.0-0
+        libcairo2
+        libgdk-pixbuf-2.0-0
+        libffi-dev
+        shared-mime-info
+        fonts-liberation
+    - cd backend
+    - pip install --no-cache-dir -r requirements-dev.txt
+  script:
+    - pytest -v --tb=short
+  artifacts:
+    reports:
+      junit: backend/test-results.xml
+    when: always
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
