@@ -1,4 +1,5 @@
 import datetime
+from datetime import date
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +10,7 @@ from app.core.scheduler import MAIN_SYNC_JOB_ID, create_scheduler, start_schedul
 from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.einstellung import Einstellung
+from app.models.schuljahr import Schuljahr
 
 HEADERS_SCHULLEITUNG = {
     "X-WordPress-Secret": "test-secret",
@@ -91,3 +93,29 @@ async def test_put_sync_settings_rejects_invalid_cron(db_session):
         assert response.status_code == 422
     finally:
         scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_get_sync_settings_includes_aktuelles_schuljahr(db_session):
+    db_session.add(Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29)))
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=28))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/sync-settings", headers=HEADERS_SCHULLEITUNG)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["aktuelles_schuljahr"] == {"id": 28, "name": "2025/2026"}
+
+
+@pytest.mark.asyncio
+async def test_get_sync_settings_aktuelles_schuljahr_null_before_first_sync(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/sync-settings", headers=HEADERS_SCHULLEITUNG)
+
+    assert response.status_code == 200
+    assert response.json()["aktuelles_schuljahr"] is None

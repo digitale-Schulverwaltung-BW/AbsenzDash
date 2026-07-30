@@ -71,10 +71,16 @@ class ExcuseStatusOut(BaseModel):
     aktiv: bool
 
 
+class SyncSchuljahrOut(BaseModel):
+    id: int
+    name: str
+
+
 class SyncSettingsOut(BaseModel):
     sync_interval_cron: str
     schuljahr_start_cache: date | None
     letzter_sync_am: datetime | None
+    aktuelles_schuljahr: SyncSchuljahrOut | None
 
 
 class SyncSettingsIn(BaseModel):
