@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.einstellung import Einstellung
+from app.models.schuljahr import Schuljahr
 from app.services.asv_csv_import import import_schueler
 from app.services.eskalations_pruefung import pruefe_schwellwerte
 from app.services.webuntis_abteilung_sync import sync_abteilungen
@@ -40,30 +41,52 @@ def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date) -> tuple[date, d
     return von, heute
 
 
+async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) -> Schuljahr:
+    """Aktualisiert den schuljahr-Cache aus getSchoolyears und liefert das aktuell
+    gueltige Schuljahr zurueck. Wenn WebUntis kein aktuelles Schuljahr kennt (z.B.
+    Uebergangszeitraum zwischen zwei Schuljahren, siehe Live-Fund 2026-07-30), wird
+    ersatzweise das juengste im Cache bekannte Schuljahr (hoechstes end_datum)
+    zurueckgegeben - so bekommen nachfolgende schuljahresgebundene WebUntis-Aufrufe
+    (z.B. getKlassen) immer eine gueltige schoolyearId, auch waehrend der Luecke."""
+    rows = await client.call("getSchoolyears", {})
+    for row in rows:
+        start = datetime.strptime(str(row["startDate"]), "%Y%m%d").date()
+        end = datetime.strptime(str(row["endDate"]), "%Y%m%d").date()
+        bestehend = await db.get(Schuljahr, row["id"])
+        if bestehend is None:
+            db.add(Schuljahr(id=row["id"], name=row["name"], start_datum=start, end_datum=end))
+        else:
+            bestehend.name = row["name"]
+            bestehend.start_datum = start
+            bestehend.end_datum = end
+    await db.flush()
+
+    try:
+        aktuell = await client.call("getCurrentSchoolyear", {})
+        return await db.get(Schuljahr, aktuell["id"])
+    except WebUntisError as exc:
+        logger.warning(
+            "getCurrentSchoolyear fehlgeschlagen, kein aktives Schuljahr in WebUntis "
+            "konfiguriert; verwende juengstes bekanntes Schuljahr als Fallback: %s",
+            exc,
+        )
+        result = await db.execute(select(Schuljahr).order_by(Schuljahr.end_datum.desc()).limit(1))
+        return result.scalar_one()
+
+
 async def run_sync_once(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
-        await sync_abteilungen(client, db)
-        await sync_klassen(client, db)
-        await sync_kategorien(client, db)
-        await import_schueler(db)
-
         einstellung = await get_or_create_einstellung(db)
 
-        try:
-            schuljahr = await client.call("getCurrentSchoolyear", {})
-            schuljahr_start = datetime.strptime(str(schuljahr["startDate"]), "%Y%m%d").date()
-            if schuljahr_start != einstellung.schuljahr_start_cache:
-                einstellung.schuljahr_start_cache = schuljahr_start
-        except WebUntisError as exc:
-            # Kein aktives Schuljahr in WebUntis konfiguriert (z.B. Uebergangszeitraum
-            # zwischen zwei Schuljahren) -- gecachten Wert unveraendert lassen und
-            # den restlichen Sync-Lauf trotzdem durchfuehren.
-            logger.warning(
-                "getCurrentSchoolyear fehlgeschlagen, kein aktives Schuljahr in WebUntis "
-                "konfiguriert; behalte schuljahr_start_cache=%s bei: %s",
-                einstellung.schuljahr_start_cache,
-                exc,
-            )
+        aktuelles_schuljahr = await resolve_aktuelles_schuljahr(client, db)
+        einstellung.aktuelles_schuljahr_id = aktuelles_schuljahr.id
+        if aktuelles_schuljahr.start_datum != einstellung.schuljahr_start_cache:
+            einstellung.schuljahr_start_cache = aktuelles_schuljahr.start_datum
+
+        await sync_abteilungen(client, db)
+        await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
+        await sync_kategorien(client, db)
+        await import_schueler(db)
 
         heute = datetime.now(timezone.utc).date()
         von, bis = _fehlzeiten_zeitraum(einstellung, heute)
