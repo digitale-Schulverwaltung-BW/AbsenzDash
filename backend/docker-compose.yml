@@ -27,6 +27,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
+      - ./data/schueler.csv:/tmp/schueler.csv:ro
     networks:
       - default
       - absenzflow-shared
