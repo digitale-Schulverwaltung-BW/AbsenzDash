@@ -10,6 +10,7 @@ export interface StudentListParams {
   minStufe: number | null;
   nurAuffaellige: boolean;
   offset: number;
+  schuljahrId: number | null;
 }
 
 function buildQuery(params: StudentListParams): string {
@@ -18,6 +19,7 @@ function buildQuery(params: StudentListParams): string {
   if (params.klasseId !== null) query.set("klasse_id", String(params.klasseId));
   if (params.minStufe !== null) query.set("min_stufe", String(params.minStufe));
   if (params.nurAuffaellige) query.set("nur_auffaellige", "true");
+  if (params.schuljahrId !== null) query.set("schuljahr_id", String(params.schuljahrId));
   query.set("offset", String(params.offset));
   return query.toString();
 }

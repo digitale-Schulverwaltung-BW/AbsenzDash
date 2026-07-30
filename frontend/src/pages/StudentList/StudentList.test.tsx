@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { useStudents } from "../../api/hooks/useStudents";
@@ -27,6 +27,9 @@ const BASE_STUDENT = {
   },
   letzte_benachrichtigung: null,
   ohne_massnahme_seit_benachrichtigung: false,
+  fehltage: null,
+  fehlstunden: null,
+  klassenbuch_anzahl: null,
 };
 
 describe("StudentList", () => {
@@ -131,5 +134,51 @@ describe("StudentList", () => {
     renderList();
 
     expect(screen.getByText("Fehler beim Laden der Schülerliste.")).toBeInTheDocument();
+  });
+
+  it("reads schuljahr from the URL and passes it to useStudents", () => {
+    mockUseStudents.mockReturnValue({
+      data: { items: [], total: 0, limit: 50, offset: 0 },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderList(["/schueler?schuljahr=27"]);
+
+    expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ schuljahrId: 27 }));
+  });
+
+  it("shows raw counts instead of Ampel-badges and no Benachrichtigt column in history mode", () => {
+    mockUseStudents.mockReturnValue({
+      data: {
+        items: [
+          {
+            ...BASE_STUDENT,
+            zaehlerstand: null,
+            letzte_benachrichtigung: null,
+            ohne_massnahme_seit_benachrichtigung: null,
+            fehltage: 4,
+            fehlstunden: 2,
+            klassenbuch_anzahl: 3,
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderList(["/schueler?schuljahr=27"]);
+
+    const row = screen.getByRole("row", { name: /Muster, Max/ });
+    expect(within(row).getByText("4")).toBeInTheDocument();
+    expect(within(row).getByText("2")).toBeInTheDocument();
+    expect(within(row).getByText("3")).toBeInTheDocument();
+    expect(screen.queryByText("Fehlzeiten: –")).not.toBeInTheDocument();
+    expect(screen.queryByText("Benachrichtigt")).not.toBeInTheDocument();
   });
 });

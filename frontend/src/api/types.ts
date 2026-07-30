@@ -127,9 +127,12 @@ export interface StudentOverview {
   vorname: string;
   nachname: string;
   klasse: Klasse | null;
-  zaehlerstand: Record<string, Zaehlerstand>;
+  zaehlerstand: Record<string, Zaehlerstand> | null;
   letzte_benachrichtigung: Benachrichtigung | null;
-  ohne_massnahme_seit_benachrichtigung: boolean;
+  ohne_massnahme_seit_benachrichtigung: boolean | null;
+  fehltage: number | null;
+  fehlstunden: number | null;
+  klassenbuch_anzahl: number | null;
 }
 
 export interface StudentList {
