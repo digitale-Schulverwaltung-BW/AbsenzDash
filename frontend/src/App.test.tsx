@@ -1,9 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { useAbteilungen } from "./api/hooks/useAbteilungen";
 import { useNavOptions } from "./api/hooks/useNavOptions";
 import { useStats } from "./api/hooks/useStats";
 import { useSyncSettings } from "./api/hooks/useSyncSettings";
+import { useThresholdRules } from "./api/hooks/useThresholdRules";
 import { useStudentCatalog } from "./api/hooks/useStudentCatalog";
 import { useStudentDetail } from "./api/hooks/useStudentDetail";
 import { useStudents } from "./api/hooks/useStudents";
@@ -15,6 +17,8 @@ vi.mock("./api/hooks/useSyncSettings");
 vi.mock("./api/hooks/useStudents");
 vi.mock("./api/hooks/useStudentDetail");
 vi.mock("./api/hooks/useStudentCatalog");
+vi.mock("./api/hooks/useThresholdRules");
+vi.mock("./api/hooks/useAbteilungen");
 // StudentDetail renders MassnahmenSection/AusnahmenSection/BenachrichtigungenTable, which call these
 // mutation hooks. They need a QueryClient unless mocked directly, so mock them the same way
 // StudentDetail.test.tsx does rather than wrapping this test file's tree in a QueryClientProvider.
@@ -32,6 +36,9 @@ vi.mock("./api/hooks/useUpdateSyncSettings", () => ({
 }));
 vi.mock("./api/hooks/useTriggerSyncNow", () => ({
   useTriggerSyncNow: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, error: null }),
+}));
+vi.mock("./api/hooks/useUpdateThresholdRules", () => ({
+  useUpdateThresholdRules: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 
 const mockUseNavOptions = vi.mocked(useNavOptions);
@@ -180,5 +187,33 @@ describe("App", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "Sync-Einstellungen" })).toBeInTheDocument();
+  });
+
+  it("redirects /admin to the Schwellwert-Regeln tab (regression: blank page on /admin)", () => {
+    setupMocks();
+    vi.mocked(useNavOptions).mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "schulleitung" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("heading", { name: "Schwellwert-Regeln" })).toBeInTheDocument();
   });
 });

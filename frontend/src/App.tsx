@@ -47,6 +47,7 @@ export default function App() {
             </RequireSchulleitung>
           }
         >
+          <Route index element={<Navigate to="schwellwerte" replace />} />
           <Route path="sync" element={<SyncSettings />} />
           <Route path="entschuldigungsstatus" element={<ExcuseStatuses />} />
           <Route path="massnahmen" element={<MeasureTypes />} />

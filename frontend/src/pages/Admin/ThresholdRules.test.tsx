@@ -98,4 +98,56 @@ describe("ThresholdRules", () => {
     expect(screen.getAllByText("Stufe 2")).toHaveLength(1);
     expect(screen.queryByText("Stufe 3")).not.toBeInTheDocument();
   });
+
+  it("creates a new Klassenbuch rule with a Stufe whose fehlzeiten-only fields are null (regression: 422)", async () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as any);
+    const mutate = vi.fn();
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate, isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+
+    render(<ThresholdRules />);
+
+    await userEvent.click(screen.getByText("Neue Regel"));
+    await userEvent.selectOptions(screen.getByLabelText("Typ Regel 1"), "klassenbuch");
+    await userEvent.click(screen.getByText("Stufe hinzufügen"));
+
+    await userEvent.click(screen.getByText("Speichern"));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const rules = mutate.mock.calls[0][0];
+    expect(rules[0].typ).toBe("klassenbuch");
+    expect(rules[0].stufen[0].einheit).toBeNull();
+    expect(rules[0].stufen[0].fehlzeiten_filter).toBeNull();
+  });
+
+  it("clears einheit/fehlzeiten_filter on existing Stufen when switching an existing rule's Typ to Klassenbuch (regression: 422)", async () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [
+        {
+          id: 1, typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null,
+          stufen: [{ id: 1, stufe_nr: 1, einheit: "fehltage", schwellenwert: 4, fehlzeiten_filter: "nur_unentschuldigt", empfaenger_rollen: [] }],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    } as any);
+    const mutate = vi.fn();
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate, isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+
+    render(<ThresholdRules />);
+
+    await userEvent.selectOptions(screen.getByLabelText("Typ Regel 1"), "klassenbuch");
+    await userEvent.click(screen.getByText("Speichern"));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const rules = mutate.mock.calls[0][0];
+    expect(rules[0].typ).toBe("klassenbuch");
+    expect(rules[0].stufen[0].einheit).toBeNull();
+    expect(rules[0].stufen[0].fehlzeiten_filter).toBeNull();
+  });
 });

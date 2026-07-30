@@ -6,5 +6,7 @@ export function useSyncSettings() {
   return useQuery({
     queryKey: ["admin", "sync-settings"],
     queryFn: () => apiGet<SyncSettings>("admin/sync-settings"),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 }

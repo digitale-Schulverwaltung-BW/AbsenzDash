@@ -8,12 +8,18 @@ import sectionStyles from "../../components/StudentDetail/StudentDetail.module.c
 
 const ROLLEN = ["klassenlehrkraft", "bereichsleiter", "schulleitung"] as const;
 
-function leereStufe(stufeNr: number): SchwellwertStufe {
-  return { stufe_nr: stufeNr, einheit: "fehltage", schwellenwert: 1, fehlzeiten_filter: "nur_unentschuldigt", empfaenger_rollen: [] };
+function leereStufe(stufeNr: number, typ: ThresholdRule["typ"]): SchwellwertStufe {
+  return {
+    stufe_nr: stufeNr,
+    einheit: typ === "fehlzeiten" ? "fehltage" : null,
+    schwellenwert: 1,
+    fehlzeiten_filter: typ === "fehlzeiten" ? "nur_unentschuldigt" : null,
+    empfaenger_rollen: [],
+  };
 }
 
 function leereRegel(): ThresholdRule {
-  return { typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null, stufen: [leereStufe(1)] };
+  return { typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null, stufen: [leereStufe(1, "fehlzeiten")] };
 }
 
 // Renumbers stufe_nr sequentially (1, 2, 3, ...) by array position, so that
@@ -83,7 +89,25 @@ export function ThresholdRules() {
       current.map((rule, i) =>
         i !== ruleIndex
           ? rule
-          : { ...rule, stufen: renumberStufen([...rule.stufen, leereStufe(rule.stufen.length + 1)]) },
+          : { ...rule, stufen: renumberStufen([...rule.stufen, leereStufe(rule.stufen.length + 1, rule.typ)]) },
+      ),
+    );
+  }
+
+  function changeTyp(ruleIndex: number, typ: ThresholdRule["typ"]) {
+    setRules((current) =>
+      current.map((rule, i) =>
+        i !== ruleIndex
+          ? rule
+          : {
+              ...rule,
+              typ,
+              stufen: rule.stufen.map((stufe) => ({
+                ...stufe,
+                einheit: typ === "fehlzeiten" ? (stufe.einheit ?? "fehltage") : null,
+                fehlzeiten_filter: typ === "fehlzeiten" ? (stufe.fehlzeiten_filter ?? "nur_unentschuldigt") : null,
+              })),
+            },
       ),
     );
   }
@@ -116,7 +140,7 @@ export function ThresholdRules() {
             <select
               aria-label={`Typ Regel ${ruleIndex + 1}`}
               value={rule.typ}
-              onChange={(event) => updateRule(ruleIndex, { typ: event.target.value as ThresholdRule["typ"] })}
+              onChange={(event) => changeTyp(ruleIndex, event.target.value as ThresholdRule["typ"])}
             >
               <option value="fehlzeiten">Fehlzeiten</option>
               <option value="klassenbuch">Klassenbuch</option>
