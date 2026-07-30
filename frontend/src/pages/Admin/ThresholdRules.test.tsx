@@ -67,4 +67,35 @@ describe("ThresholdRules", () => {
     await userEvent.click(screen.getByText("Stufe entfernen"));
     expect(screen.queryByText("Stufe 1")).not.toBeInTheDocument();
   });
+
+  it("renumbers stufe_nr sequentially after removing a non-trailing Stufe and adding a new one", async () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [{ id: 1, typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null, stufen: [] }],
+      isLoading: false,
+      isError: false,
+    } as any);
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+
+    render(<ThresholdRules />);
+
+    // Build up two Stufen: "Stufe 1" and "Stufe 2".
+    await userEvent.click(screen.getByText("Stufe hinzufügen"));
+    await userEvent.click(screen.getByText("Stufe hinzufügen"));
+    expect(screen.getByText("Stufe 1")).toBeInTheDocument();
+    expect(screen.getByText("Stufe 2")).toBeInTheDocument();
+
+    // Remove the FIRST Stufe (not the trailing one) — the survivor previously
+    // kept its stale stufe_nr of 2 here, which then collided with a newly
+    // added Stufe's freshly computed stufe_nr of 2.
+    await userEvent.click(screen.getAllByText("Stufe entfernen")[0]);
+    expect(screen.queryByText("Stufe 2")).not.toBeInTheDocument();
+    expect(screen.getByText("Stufe 1")).toBeInTheDocument();
+
+    // Add a new Stufe — it must not collide with the renumbered survivor.
+    await userEvent.click(screen.getByText("Stufe hinzufügen"));
+    expect(screen.getAllByText("Stufe 1")).toHaveLength(1);
+    expect(screen.getAllByText("Stufe 2")).toHaveLength(1);
+    expect(screen.queryByText("Stufe 3")).not.toBeInTheDocument();
+  });
 });

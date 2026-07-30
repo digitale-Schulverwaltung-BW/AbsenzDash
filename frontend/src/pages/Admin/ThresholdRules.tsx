@@ -16,6 +16,13 @@ function leereRegel(): ThresholdRule {
   return { typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null, stufen: [leereStufe(1)] };
 }
 
+// Renumbers stufe_nr sequentially (1, 2, 3, ...) by array position, so that
+// stufe_nr always matches visual order and stays free of gaps/duplicates
+// regardless of prior add/remove history.
+function renumberStufen(stufen: SchwellwertStufe[]): SchwellwertStufe[] {
+  return stufen.map((stufe, index) => ({ ...stufe, stufe_nr: index + 1 }));
+}
+
 export function ThresholdRules() {
   const { data, isLoading, isError } = useThresholdRules();
   const { data: abteilungen } = useAbteilungen();
@@ -74,7 +81,9 @@ export function ThresholdRules() {
   function addStufe(ruleIndex: number) {
     setRules((current) =>
       current.map((rule, i) =>
-        i !== ruleIndex ? rule : { ...rule, stufen: [...rule.stufen, leereStufe(rule.stufen.length + 1)] },
+        i !== ruleIndex
+          ? rule
+          : { ...rule, stufen: renumberStufen([...rule.stufen, leereStufe(rule.stufen.length + 1)]) },
       ),
     );
   }
@@ -82,7 +91,9 @@ export function ThresholdRules() {
   function removeStufe(ruleIndex: number, stufeIndex: number) {
     setRules((current) =>
       current.map((rule, i) =>
-        i !== ruleIndex ? rule : { ...rule, stufen: rule.stufen.filter((_, j) => j !== stufeIndex) },
+        i !== ruleIndex
+          ? rule
+          : { ...rule, stufen: renumberStufen(rule.stufen.filter((_, j) => j !== stufeIndex)) },
       ),
     );
   }
