@@ -59,6 +59,7 @@ export interface SyncSettings {
   sync_interval_cron: string;
   schuljahr_start_cache: string | null;
   letzter_sync_am: string | null;
+  aktuelles_schuljahr: { id: number; name: string } | null;
 }
 
 export interface Abteilung {

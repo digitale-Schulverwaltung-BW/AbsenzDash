@@ -44,6 +44,10 @@ export function SyncSettings() {
       </form>
       <p>Schuljahresbeginn: {data.schuljahr_start_cache ?? "unbekannt (kein aktives Schuljahr in WebUntis)"}</p>
       <p>Letzter Sync: {data.letzter_sync_am ?? "noch nie"}</p>
+      <p>
+        Für den Sync verwendetes Schuljahr:{" "}
+        {data.aktuelles_schuljahr ? data.aktuelles_schuljahr.name : "unbekannt (noch kein erfolgreicher Sync)"}
+      </p>
       <button type="button" onClick={() => triggerSync()} disabled={isSyncing}>
         Sync jetzt ausführen
       </button>
