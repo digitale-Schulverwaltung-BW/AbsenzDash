@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run --reporter=verbose --reporter=junit --outputFile=test-results.xml"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.56.0",

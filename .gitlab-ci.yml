@@ -35,3 +35,22 @@ backend-tests:
     when:
       - runner_system_failure
       - stuck_or_timeout_failure
+
+# Frontend tests using Node.js + Vitest
+frontend-tests:
+  stage: test
+  image: node:18-slim
+  before_script:
+    - cd frontend
+    - npm install
+  script:
+    - npm test
+  artifacts:
+    reports:
+      junit: frontend/test-results.xml
+    when: always
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
