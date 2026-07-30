@@ -1,6 +1,8 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useNavOptions } from "./api/hooks/useNavOptions";
 import { Navigation } from "./components/Navigation/Navigation";
+import { AdminLayout } from "./pages/Admin/AdminLayout";
+import { SyncSettings } from "./pages/Admin/SyncSettings";
 import { Landing } from "./pages/Landing/Landing";
 import { StudentDetail } from "./pages/StudentDetail/StudentDetail";
 import { StudentList } from "./pages/StudentList/StudentList";
@@ -34,6 +36,16 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/schueler" element={<StudentList />} />
         <Route path="/schueler/:id" element={<StudentDetail />} />
+        <Route
+          path="/admin"
+          element={
+            <RequireSchulleitung>
+              <AdminLayout />
+            </RequireSchulleitung>
+          }
+        >
+          <Route path="sync" element={<SyncSettings />} />
+        </Route>
       </Route>
     </Routes>
   );

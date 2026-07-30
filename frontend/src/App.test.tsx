@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { useNavOptions } from "./api/hooks/useNavOptions";
 import { useStats } from "./api/hooks/useStats";
+import { useSyncSettings } from "./api/hooks/useSyncSettings";
 import { useStudentCatalog } from "./api/hooks/useStudentCatalog";
 import { useStudentDetail } from "./api/hooks/useStudentDetail";
 import { useStudents } from "./api/hooks/useStudents";
@@ -10,6 +11,7 @@ import App, { RequireSchulleitung } from "./App";
 
 vi.mock("./api/hooks/useNavOptions");
 vi.mock("./api/hooks/useStats");
+vi.mock("./api/hooks/useSyncSettings");
 vi.mock("./api/hooks/useStudents");
 vi.mock("./api/hooks/useStudentDetail");
 vi.mock("./api/hooks/useStudentCatalog");
@@ -24,6 +26,12 @@ vi.mock("./api/hooks/useCreateExemption", () => ({
 }));
 vi.mock("./api/hooks/useRevokeExemption", () => ({
   useRevokeExemption: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock("./api/hooks/useUpdateSyncSettings", () => ({
+  useUpdateSyncSettings: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+}));
+vi.mock("./api/hooks/useTriggerSyncNow", () => ({
+  useTriggerSyncNow: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, error: null }),
 }));
 
 const mockUseNavOptions = vi.mocked(useNavOptions);
@@ -150,5 +158,27 @@ describe("App", () => {
     );
     expect(screen.getByText("Startseite")).toBeInTheDocument();
     expect(screen.queryByText("Geheim")).not.toBeInTheDocument();
+  });
+
+  it("renders the Admin sync-settings route for schulleitung", () => {
+    setupMocks();
+    vi.mocked(useNavOptions).mockReturnValue({
+      data: { bereiche: [], klassen: [], rolle: "schulleitung" },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    vi.mocked(useSyncSettings).mockReturnValue({
+      data: { sync_interval_cron: "*/30 * * * *", schuljahr_start_cache: null, letzter_sync_am: null },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    render(
+      <MemoryRouter initialEntries={["/admin/sync"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("heading", { name: "Sync-Einstellungen" })).toBeInTheDocument();
   });
 });
