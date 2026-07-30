@@ -164,7 +164,12 @@ class Absenzdash_Rollen_Seite {
 			$code       = $code_je_nutzer[ $user_id ] ?? '';
 			$ist_doppelt = '' !== $code && ( $anzahl_je_code[ $code ] ?? 0 ) > 1;
 
-			if ( '' !== $code && ! $ist_doppelt ) {
+			if ( $ist_doppelt ) {
+				// Konflikt: die neue Zuweisung wird abgelehnt (siehe Hinweis unten), aber der
+				// zuvor gespeicherte Wert dieses Nutzers bleibt unangetastet — sonst würde ein
+				// neuer Konflikt bei EINEM Nutzer den unabhängigen, gültigen Bestandswert des
+				// ANDEREN Nutzers löschen, obwohl dessen Zeile unverändert mit-eingereicht wurde.
+			} elseif ( '' !== $code ) {
 				update_user_meta( $user_id, 'absenzdash_webuntis_code', $code );
 			} else {
 				delete_user_meta( $user_id, 'absenzdash_webuntis_code' );

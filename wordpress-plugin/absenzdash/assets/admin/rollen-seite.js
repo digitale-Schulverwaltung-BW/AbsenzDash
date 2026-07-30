@@ -20,7 +20,16 @@
 						var wert = String(lehrkraft.id);
 						if (wert === aktuell) {
 							// Bereits als vorausgewählte Option serverseitig gerendert (siehe
-							// render_seite()) — nicht doppelt hinzufügen.
+							// render_seite()) — nicht doppelt hinzufügen, aber das dort per
+							// Fallback als rohe numerische ID gesetzte Label jetzt durch das
+							// echte Kürzel ersetzen.
+							var bestehendeOption = auswahl.querySelector('option[value="' + wert + '"]');
+							if (bestehendeOption) {
+								bestehendeOption.textContent = lehrkraft.kuerzel;
+							}
+							if (!vorschlagId && lehrkraft.kuerzel.toUpperCase() === vorschlagKuerzel) {
+								vorschlagId = wert;
+							}
 							return;
 						}
 						var option = document.createElement('option');
