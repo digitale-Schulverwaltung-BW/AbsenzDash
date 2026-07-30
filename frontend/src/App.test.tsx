@@ -141,13 +141,14 @@ describe("App", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     render(
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={["/geschuetzt"]}>
         <Routes>
           <Route path="/" element={<div>Startseite</div>} />
           <Route path="/geschuetzt" element={<RequireSchulleitung><div>Geheim</div></RequireSchulleitung>} />
         </Routes>
       </MemoryRouter>,
     );
+    expect(screen.getByText("Startseite")).toBeInTheDocument();
     expect(screen.queryByText("Geheim")).not.toBeInTheDocument();
   });
 });
