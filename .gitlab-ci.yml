@@ -13,6 +13,15 @@ backend-tests:
     POSTGRES_DB: "absenzdash"
     POSTGRES_HOST_AUTH_METHOD: "trust"
     DATABASE_URL: "postgresql://absenzdash:absenzdash@postgres:5432/absenzdash"
+    WORDPRESS_PROXY_SECRET: "test-secret"
+    WEBUNTIS_SERVER: "test.webuntis.com"
+    WEBUNTIS_SCHOOL: "test-school"
+    WEBUNTIS_USERNAME: "test-user"
+    WEBUNTIS_PASSWORD: "test-password"
+    ASV_CSV_PATH: "/tmp/test-schueler.csv"
+    SMTP_HOST: "test.smtp.local"
+    SMTP_FROM_ADDRESS: "test@example.com"
+    DASHBOARD_BASE_URL: "http://localhost:3000"
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends
         libpango-1.0-0
