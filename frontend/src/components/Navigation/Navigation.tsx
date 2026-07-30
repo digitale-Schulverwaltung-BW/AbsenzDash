@@ -49,6 +49,16 @@ export function Navigation() {
     setSearchParams(next);
   }
 
+  function handleSchuljahrChange(value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value === "") {
+      next.delete("schuljahr");
+    } else {
+      next.set("schuljahr", value);
+    }
+    setSearchParams(next);
+  }
+
   return (
     <nav className={styles.nav}>
       <div className={styles.tabs}>
@@ -101,6 +111,19 @@ export function Navigation() {
           ))}
         </select>
       )}
+      <select
+        aria-label="Schuljahr"
+        className={styles.schuljahrSelect}
+        value={searchParams.get("schuljahr") ?? ""}
+        onChange={(event) => handleSchuljahrChange(event.target.value)}
+      >
+        <option value="">Aktuelles Schuljahr</option>
+        {data.schuljahre.map((schuljahr) => (
+          <option key={schuljahr.id} value={schuljahr.id}>
+            {schuljahr.name}
+          </option>
+        ))}
+      </select>
     </nav>
   );
 }

@@ -9,10 +9,18 @@ export interface NavKlasse {
   bereich_id: number | null;
 }
 
+export interface NavSchuljahr {
+  id: number;
+  name: string;
+  start_datum: string;
+  end_datum: string;
+}
+
 export interface NavOptions {
   bereiche: NavBereich[];
   klassen: NavKlasse[];
   rolle: string;
+  schuljahre: NavSchuljahr[];
 }
 
 export interface SchwellwertStufe {
