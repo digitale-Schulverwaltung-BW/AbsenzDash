@@ -7,27 +7,22 @@ from fastapi import HTTPException, status
 
 from app.core.database import ist_unique_violation
 from app.models.audit_log import AuditLog
-from app.models.massnahmen_typ import MassnahmenTyp, massnahmen_typ_regel
-from app.models.schwellwert_regel import SchwellwertRegel
+from app.models.massnahmen_typ import MassnahmenTyp
 from app.schemas.admin import MeasureTypeIn, MeasureTypeOut
 
 
-async def _typ_out(db: AsyncSession, typ: MassnahmenTyp) -> MeasureTypeOut:
-    result = await db.execute(
-        select(massnahmen_typ_regel.c.regel_id).where(massnahmen_typ_regel.c.massnahmen_typ_id == typ.id)
-    )
+def _typ_out(typ: MassnahmenTyp) -> MeasureTypeOut:
     return MeasureTypeOut(
         id=typ.id,
         name=typ.name,
         setzt_zaehler_zurueck=typ.setzt_zaehler_zurueck,
         aktiv=typ.aktiv,
-        betroffene_regel_ids=sorted(result.scalars().all()),
     )
 
 
 async def list_measure_types(db: AsyncSession) -> list[MeasureTypeOut]:
     result = await db.execute(select(MassnahmenTyp).order_by(MassnahmenTyp.id))
-    return [await _typ_out(db, t) for t in result.scalars().all()]
+    return [_typ_out(t) for t in result.scalars().all()]
 
 
 def _validate_payload(payload: list[MeasureTypeIn]) -> None:
@@ -48,21 +43,10 @@ def _validate_payload(payload: list[MeasureTypeIn]) -> None:
         seen_names.add(typ.name)
 
 
-async def _validate_regel_ids_exist(db: AsyncSession, payload: list[MeasureTypeIn]) -> None:
-    regel_ids = {rid for typ in payload for rid in typ.betroffene_regel_ids}
-    if not regel_ids:
-        return
-    result = await db.execute(select(SchwellwertRegel.id).where(SchwellwertRegel.id.in_(regel_ids)))
-    missing = regel_ids - set(result.scalars().all())
-    if missing:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown regel_id(s): {sorted(missing)}")
-
-
 async def replace_measure_types(
     db: AsyncSession, payload: list[MeasureTypeIn], nutzer_id: int
 ) -> list[MeasureTypeOut]:
     _validate_payload(payload)
-    await _validate_regel_ids_exist(db, payload)
 
     existing_result = await db.execute(select(MassnahmenTyp))
     existing_by_id = {t.id: t for t in existing_result.scalars().all()}
@@ -86,15 +70,11 @@ async def replace_measure_types(
                 typ.setzt_zaehler_zurueck = typ_in.setzt_zaehler_zurueck
                 typ.aktiv = typ_in.aktiv
             else:
-                typ = MassnahmenTyp(
-                    name=typ_in.name, setzt_zaehler_zurueck=typ_in.setzt_zaehler_zurueck, aktiv=typ_in.aktiv
+                db.add(
+                    MassnahmenTyp(
+                        name=typ_in.name, setzt_zaehler_zurueck=typ_in.setzt_zaehler_zurueck, aktiv=typ_in.aktiv
+                    )
                 )
-                db.add(typ)
-                await db.flush()
-
-            await db.execute(massnahmen_typ_regel.delete().where(massnahmen_typ_regel.c.massnahmen_typ_id == typ.id))
-            for regel_id in typ_in.betroffene_regel_ids:
-                await db.execute(massnahmen_typ_regel.insert().values(massnahmen_typ_id=typ.id, regel_id=regel_id))
 
         db.add(
             AuditLog(

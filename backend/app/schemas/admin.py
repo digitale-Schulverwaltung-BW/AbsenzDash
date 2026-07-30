@@ -46,15 +46,13 @@ class MeasureTypeIn(BaseModel):
     name: str
     setzt_zaehler_zurueck: bool
     aktiv: bool = True
-    betroffene_regel_ids: list[int] = []
 
 
 class MeasureTypeOut(BaseModel):
     id: int
     name: str
     setzt_zaehler_zurueck: bool
-    aktiv: bool
-    betroffene_regel_ids: list[int]
+    aktiv: bool = True
 
 
 class ExcuseStatusIn(BaseModel):
