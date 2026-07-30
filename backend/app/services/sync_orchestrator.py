@@ -31,14 +31,15 @@ async def get_or_create_einstellung(db: AsyncSession) -> Einstellung:
     return einstellung
 
 
-def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date) -> tuple[date, date]:
+def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date, schuljahr_ende: date) -> tuple[date, date]:
     if einstellung.letzter_sync_am is not None:
         von = einstellung.letzter_sync_am.date() - timedelta(days=1)
     elif einstellung.schuljahr_start_cache is not None:
         von = einstellung.schuljahr_start_cache
     else:
         von = heute
-    return von, heute
+    bis = min(heute, schuljahr_ende)
+    return von, bis
 
 
 async def _juengstes_bereits_gestartetes_schuljahr(db: AsyncSession) -> Schuljahr:
@@ -125,7 +126,7 @@ async def run_sync_once(db: AsyncSession) -> None:
         await import_schueler(db)
 
         heute = datetime.now(timezone.utc).date()
-        von, bis = _fehlzeiten_zeitraum(einstellung, heute)
+        von, bis = _fehlzeiten_zeitraum(einstellung, heute, aktuelles_schuljahr.end_datum)
         await sync_fehlzeiten(client, db, von, bis)
         await sync_klassenbuch(client, db, von, bis)
 
