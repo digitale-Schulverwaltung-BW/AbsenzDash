@@ -97,15 +97,16 @@ dedizierte Admin-Seiten die vorherigen Profilfelder:
 Beide Seiten sind nur für WP-Administratoren (`manage_options`) sichtbar und benötigen eine
 funktionierende Backend-Verbindung (Options-Seite, siehe oben).
 
-**Bootstrap-Reihenfolge bei einer Neuinstallation:** Direkt nach der Installation hat noch kein
-WP-Nutzer eine `absenzdash_role`. Jeder Backend-Aufruf läuft aber über den Proxy, der ohne
-zugewiesene Rolle mit HTTP 400 ("Keine Rolle zugewiesen") abbricht, und das Backend selbst verlangt
-für alle `/admin/*`-Endpunkte zusätzlich die Rolle `schulleitung`. Die AbsenzDash-Bereiche-Seite
-(inklusive Klassen-/WebUntis-Abteilungs-Daten) und die Kürzel-Autocomplete auf der
-AbsenzDash-Rollen-Seite selbst funktionieren deshalb erst, nachdem sich ein Administrator **zuerst**
-auf der AbsenzDash-Rollen-Seite selbst die Rolle `schulleitung` zuweist und speichert — das ist eine
-reine WordPress-Operation (User-Meta) und braucht noch keine Backend-Verbindung. Ohne diesen Schritt
-zeigt die Bereiche-Seite beim ersten Aufruf nur einen rohen HTTP-400-Fehler.
+**Kein Self-Lockout mehr:** Der Proxy erkennt WP-Administratoren (`manage_options`) und schickt für
+alle `/admin/*`-Aufrufe (Bereiche, Rollen, Schwellwert-Regeln, Maßnahmen-Katalog, Sync-Einstellungen)
+immer die Rolle `schulleitung` ans Backend, unabhängig davon, was in `absenzdash_role` gespeichert
+ist — auch wenn dort noch nichts oder eine andere Rolle (z. B. `bereichsleiter` zu Vorschauzwecken)
+hinterlegt ist. Ein Administrator kann sich damit weder direkt nach der Installation noch durch
+Selbstzuweisung einer anderen Rolle aus den AbsenzDash-Einstellungsseiten aussperren. Für alle
+übrigen (nicht-`/admin/*`) Aufrufe — also den eigentlichen Dashboard-Zugriff über das Shortcode-SPA —
+gilt weiterhin die tatsächlich zugewiesene `absenzdash_role`; Nutzer ohne `manage_options` benötigen
+dafür nach wie vor eine echte Rollenzuweisung auf der AbsenzDash-Rollen-Seite, sonst bricht der Proxy
+mit HTTP 400 ("Keine Rolle zugewiesen") ab.
 
 ## Frontend (React/TS-SPA)
 

@@ -36,11 +36,18 @@ class Absenzdash_Proxy {
 
 		$user  = wp_get_current_user();
 		$rolle = get_user_meta( $user->ID, 'absenzdash_role', true );
+
+		$pfad = '/' . ltrim( $request->get_param( 'pfad' ), '/' );
+
+		// Admins duerfen sich nie aus den eigenen Einstellungsseiten aussperren.
+		if ( $user->has_cap( 'manage_options' ) && 0 === strpos( $pfad, '/admin/' ) ) {
+			$rolle = 'schulleitung';
+		}
+
 		if ( empty( $rolle ) ) {
 			return new WP_Error( 'absenzdash_keine_rolle', 'Keine Rolle zugewiesen.', array( 'status' => 400 ) );
 		}
 
-		$pfad  = '/' . ltrim( $request->get_param( 'pfad' ), '/' );
 		$query = $request->get_query_params();
 		unset( $query['pfad'], $query['rest_route'] );
 		$ziel_url = $backend_url . $pfad;
