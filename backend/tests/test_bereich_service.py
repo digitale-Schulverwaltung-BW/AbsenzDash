@@ -200,3 +200,38 @@ async def test_vorschlag_aus_abteilungen_falls_back_to_name_without_long_name(db
 
     assert result[0].name == "B-IE"
     assert result[0].klasse_ids == []
+
+
+@pytest.mark.asyncio
+async def test_vorschlag_aus_abteilungen_disambiguates_colliding_long_names(db_session):
+    db_session.add_all(
+        [
+            Abteilung(webuntis_id=61, name="BT", long_name="Betriebstechnik"),
+            Abteilung(webuntis_id=62, name="B-BT", long_name="Betriebstechnik"),
+        ]
+    )
+    await db_session.commit()
+
+    result = await vorschlag_aus_abteilungen(db_session)
+
+    namen = [v.name for v in result]
+    assert len(namen) == len(set(namen))
+    assert "Betriebstechnik (BT)" in namen
+    assert "Betriebstechnik (B-BT)" in namen
+
+
+@pytest.mark.asyncio
+async def test_vorschlag_aus_abteilungen_leaves_unique_name_unsuffixed(db_session):
+    db_session.add_all(
+        [
+            Abteilung(webuntis_id=61, name="BT", long_name="Betriebstechnik"),
+            Abteilung(webuntis_id=62, name="B-BT", long_name="Betriebstechnik"),
+            Abteilung(webuntis_id=63, name="B-ME", long_name="Mechatronik"),
+        ]
+    )
+    await db_session.commit()
+
+    result = await vorschlag_aus_abteilungen(db_session)
+
+    namen = [v.name for v in result]
+    assert "Mechatronik" in namen

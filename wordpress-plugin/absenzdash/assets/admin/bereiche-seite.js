@@ -80,7 +80,20 @@
 	}
 
 	function fehlerAnzeigen(nachricht) {
-		document.getElementById('absenzdash-bereiche-fehler').textContent = nachricht;
+		var element = document.getElementById('absenzdash-bereiche-fehler');
+		element.textContent = nachricht;
+		if (nachricht) {
+			// Bei ~29 auto-generierten Zeilen (Vorbefüllen) reicht die rote Schrift allein nicht,
+			// damit ein Fehler auffällt — zusätzlich Hintergrund/Rahmen und ins Sichtfeld scrollen.
+			element.style.background = '#fbeaea';
+			element.style.border = '1px solid #b32d2e';
+			element.style.padding = '8px 12px';
+			element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		} else {
+			element.style.background = '';
+			element.style.border = '';
+			element.style.padding = '';
+		}
 	}
 
 	function laden() {

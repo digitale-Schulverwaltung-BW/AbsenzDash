@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -178,10 +180,17 @@ async def vorschlag_aus_abteilungen(db: AsyncSession) -> list[BereichVorschlagOu
         if klasse.abteilung_id is not None:
             klassen_by_abteilung.setdefault(klasse.abteilung_id, []).append(klasse.id)
 
+    namen = [abteilung.long_name or abteilung.name for abteilung in abteilungen]
+    # zwei Abteilungen koennen denselben long_name tragen (z.B. "BT" und "B-BT" -> beide
+    # "Betriebstechnik"); PUT /admin/bereiche lehnt Namensduplikate komplett ab, also muessen
+    # kollidierende Vorschlaege hier schon eindeutig gemacht werden. Nicht-kollidierende Namen
+    # bleiben unveraendert, um unnoetigen Diff-Laerm im Normalfall zu vermeiden.
+    namen_anzahl = Counter(namen)
+
     return [
         BereichVorschlagOut(
-            name=abteilung.long_name or abteilung.name,
+            name=f"{name} ({abteilung.name})" if namen_anzahl[name] > 1 else name,
             klasse_ids=sorted(klassen_by_abteilung.get(abteilung.id, [])),
         )
-        for abteilung in abteilungen
+        for abteilung, name in zip(abteilungen, namen)
     ]
