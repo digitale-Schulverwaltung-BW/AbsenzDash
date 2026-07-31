@@ -8,9 +8,12 @@ class Absenzdash_Optionen {
 
 	const OPTION_KEY = 'absenzdash_optionen';
 
+	private ?string $hook_suffix = null;
+
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'registriere_menu' ) );
 		add_action( 'admin_init', array( $this, 'registriere_einstellungen' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 	}
 
 	public static function get_backend_url(): string {
@@ -33,13 +36,34 @@ class Absenzdash_Optionen {
 			'dashicons-groups',
 			80
 		);
-		add_submenu_page(
+		$this->hook_suffix = add_submenu_page(
 			'absenzdash',
 			'AbsenzDash-Einstellungen',
 			'Einstellungen',
 			'manage_options',
 			'absenzdash',
 			array( $this, 'render_seite' )
+		);
+	}
+
+	public function enqueue_assets( string $hook_suffix ): void {
+		if ( $hook_suffix !== $this->hook_suffix ) {
+			return;
+		}
+		wp_enqueue_script(
+			'absenzdash-einstellungen-seite',
+			ABSENZDASH_PLUGIN_URL . 'assets/admin/einstellungen-seite.js',
+			array(),
+			filemtime( ABSENZDASH_PLUGIN_DIR . 'assets/admin/einstellungen-seite.js' ),
+			true
+		);
+		wp_localize_script(
+			'absenzdash-einstellungen-seite',
+			'absenzdashEinstellungenConfig',
+			array(
+				'restUrl' => esc_url_raw( rest_url( 'absenzdash/v1/api' ) ),
+				'nonce'   => wp_create_nonce( 'wp_rest' ),
+			)
 		);
 	}
 
@@ -87,6 +111,11 @@ class Absenzdash_Optionen {
 				</table>
 				<?php submit_button(); ?>
 			</form>
+			<h2>Verbindungstest</h2>
+			<p>
+				<button type="button" id="absenzdash-test-email-senden" class="button">Test-E-Mail senden</button>
+				<span id="absenzdash-test-email-ergebnis"></span>
+			</p>
 		</div>
 		<?php
 	}

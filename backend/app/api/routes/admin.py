@@ -25,6 +25,7 @@ from app.schemas.admin import (
     SyncNowOut,
     SyncSettingsIn,
     SyncSettingsOut,
+    TestEmailOut,
     ThresholdRuleIn,
     ThresholdRuleOut,
     WebUntisTeacherOut,
@@ -32,6 +33,7 @@ from app.schemas.admin import (
 from app.services import (
     bereich_service,
     excuse_status_service,
+    mailer,
     measure_type_service,
     sync_settings_service,
     threshold_rule_service,
@@ -176,3 +178,42 @@ async def post_sync_now(
     )
     await db.commit()
     return SyncNowOut(status="ok", abgeschlossen_am=abgeschlossen_am)
+
+
+@router.post("/test-email")
+async def post_test_email(
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TestEmailOut:
+    # Empfaenger kommt bewusst aus dem authentifizierten Nutzer (nicht aus dem Request-Body) --
+    # der Endpunkt darf nicht als beliebiger Mail-Relay missbraucht werden koennen.
+    empfaenger = nutzer.email
+    try:
+        await mailer.send_email(
+            settings,
+            [empfaenger],
+            "AbsenzDash Test-E-Mail",
+            "Diese Test-E-Mail bestaetigt, dass die SMTP-Konfiguration von AbsenzDash funktioniert.",
+        )
+    except OSError as exc:
+        db.add(
+            AuditLog(
+                user_id=nutzer.id,
+                aktion="admin_test_email_sent",
+                resource_typ="einstellung",
+                details={"status": "fehler", "empfaenger": empfaenger},
+            )
+        )
+        await db.commit()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Versand fehlgeschlagen: {exc}")
+
+    db.add(
+        AuditLog(
+            user_id=nutzer.id,
+            aktion="admin_test_email_sent",
+            resource_typ="einstellung",
+            details={"status": "ok", "empfaenger": empfaenger},
+        )
+    )
+    await db.commit()
+    return TestEmailOut(status="ok", empfaenger=empfaenger)

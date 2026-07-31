@@ -92,6 +92,11 @@ class SyncNowOut(BaseModel):
     abgeschlossen_am: datetime
 
 
+class TestEmailOut(BaseModel):
+    status: str
+    empfaenger: str
+
+
 class WebUntisTeacherOut(BaseModel):
     id: int
     kuerzel: str
