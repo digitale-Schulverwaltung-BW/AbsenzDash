@@ -88,3 +88,7 @@ describe("Landing", () => {
     expect(screen.getByText("Fehler beim Laden der Kennzahlen.")).toBeInTheDocument();
   });
 });
+
+// Die Bereich-vs-Klasse-Klick-Entscheidung (welcher URL-Param/welche Route ein Balken-Klick
+// ansteuert) ist als reine Funktion in entryClickTarget.test.ts getestet -- ein echter Klick auf
+// einen recharts-Balken laesst sich in jsdom nicht ausloesen (siehe ComparisonChart.test.tsx).
