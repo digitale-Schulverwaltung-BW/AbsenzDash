@@ -74,7 +74,10 @@ Danach in WP-Admin:
    sonst funktionieren `/wp-json/...`-URLs nicht.
 3. Unter **Einstellungen → AbsenzDash** die Backend-URL (z.B. `http://absenzdash-backend:8000`,
    erreichbar über das gemeinsame `absenzflow-shared`-Docker-Netzwerk) und das Shared Secret
-   eintragen — das Secret muss exakt `WORDPRESS_PROXY_SECRET` aus `backend/.env` entsprechen.
+   eintragen — das Secret muss exakt `WORDPRESS_PROXY_SECRET` aus `backend/.env` entsprechen. Der
+   Button "Test-E-Mail senden" auf derselben Seite verschickt darüber eine Test-Mail an die
+   Adresse des eingeloggten WP-Nutzers und prüft damit die SMTP-Konfiguration (`SMTP_*` in
+   `backend/.env`), unabhängig von der eigentlichen Eskalations-Engine.
 4. Rollen-Zuweisung & Bereichsdefinition konfigurieren (siehe Abschnitt unten).
 5. Voraussetzung: `npm run build` in `frontend/` mindestens einmal ausgeführt haben — das Build-Ergebnis
    (`wordpress-plugin/absenzdash/assets/spa/`) ist gitignored und existiert bei einem frischen Checkout
