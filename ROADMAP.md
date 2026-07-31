@@ -27,7 +27,7 @@ Stand: 2026-07-30
 
 ## Geplant (noch nicht als Plan ausgearbeitet)
 
-Am 2026-07-31 zu vier Bündeln sortiert (siehe Diskussion in dieser Session) — jedes Bündel braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf, aber die Zuordnung, was zusammen in einen Plan wandert, steht:
+Am 2026-07-31 zu fünf Bündeln sortiert (siehe Diskussion in dieser Session) — jedes Bündel braucht vor der Umsetzung noch einen eigenen Brainstorming-/Planungsdurchlauf, aber die Zuordnung, was zusammen in einen Plan wandert, steht:
 
 **Bundle A — Schülerliste-Feintuning**
 - Sortierbare Spalten: die Schülerliste (`GET /students`, `frontend/src/pages/StudentList/StudentList.tsx`) lässt sich aktuell nicht nach Spalten sortieren (Name, Klasse, Zählerstand, ggf. Rohzahlen im Historie-Modus). Braucht Sortier-Parameter im Backend-Query (`student_query.list_students`) und klickbare Spaltenköpfe im Frontend, inkl. Persistenz der Sortierung als URL-Parameter (analog zu `bereich`/`klasse`/`schuljahr`).
@@ -45,6 +45,11 @@ Am 2026-07-31 zu vier Bündeln sortiert (siehe Diskussion in dieser Session) —
 
 **Bundle D — "Bereiche"-Abschnitt im WP-Backend entschlacken**
 Die gleiche Argumentation, die für den Entschuldigungsstatus geführt wurde, gilt auch hier: die Zuordnung der Klassen zu den Bereichen bzw. (WebUntis-)Abteilungen findet schulseitig statt, ist quasi-statisch (ändert sich höchstens einmal zwischen zwei Schuljahren oder bei besonderen Umständen) und die vielen Inputs im WP-Backend machen die "Bereiche"-Konfigurations-Seite sehr unübersichtlich. Die Zuordnung der zuständigen Personen ist eigentlich das einzige, was man hier vorhalten sollte — die Zuordnung der Klassen zu den Bereichen/Abteilungen muss hier raus und stattdessen unveränderlich aus der bestehenden WebUntis-Abteilungszuordnung übernommen werden. **Kein Spike nötig** (Klärung vom 2026-07-31): die Klasse→Abteilung-Zuordnung liegt bereits synchronisiert in `klasse.abteilung_id` vor — exakt das, was "Aus WebUntis-Abteilungen vorbefüllen" (`GET /admin/bereiche/vorschlag-aus-abteilungen`, siehe Plan 11) schon heute daraus liest; hier soll das Ergebnis verbindlich (nicht editierbar) werden statt nur als Vorschlag. Eigenständiges Bündel, da größer/architektonischer als A–C (ändert die Bedeutung von `bereich_klasse`: von manuell gepflegt zu WebUntis-abgeleitet). Eigenes Brainstorming nötig.
+
+**Bundle E — Dashboard-Feintuning**
+- Die Balken im Landing-Page-Dashboard (`GET /dashboard/stats`, seit Plan 9) sind aktuell schwarz und sollten wertabhängig farbcodiert werden: Skala von dunkelrot (höchste Werte) über abgedunkeltes Gelb bis dunkelgrün (niedrigste Werte) — konzeptionell verwandt mit der Zählerstand-Farbcodierung aus Bundle A, aber eigene Komponente (`Dashboard`/Landing-Page statt `StudentList`).
+- Klick auf einen Balken soll navigieren: Klick auf eine Abteilung selektiert diese Abteilung auf dem Dashboard, Klick auf eine Klasse wechselt in die Klassen-Ansicht.
+- Eigenständiges Bündel: eigene Komponente (Landing-Page-Dashboard aus Plan 9, nicht `StudentList`/`StudentDetail`), daher nicht mit A–D zusammengelegt. Eigenes Brainstorming nötig (u.a. Farbskala-Grenzwerte je Balken-Typ, Navigationsziel bei Balken ohne eindeutiger Abteilung/Klasse-Zuordnung).
 
 **Zurückgestellt bis zum ersten Prod-Test-Deploy:**
 - Zu klären: warum die geplanten **Default-Maßnahmen** auf dem Dev-System nicht angelegt wurden und ob dies Einzelfall oder systemisch ist. Bewusst kein Feature-Plan — reine Fehlersuche (systematic-debugging), erst relevant, sobald sich das auch auf Prod zeigt oder nicht zeigt.
