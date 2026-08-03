@@ -145,6 +145,15 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
         if row.get("invalid"):
             continue
 
+        # WebUntis liefert fuer einmal "gepruefte" Tage die komplette Perioden-Liste des
+        # Schuelers zurueck (Timetable + Absence-Check-Ergebnis in einem), nicht nur echte
+        # Abwesenheiten -- unabhaengig von subjectId. Zeilen ohne jegliches Abwesenheits-Signal
+        # sind normal besuchter Unterricht bzw. reine Zeitplan-Metadaten (z.B. "status:
+        # irregular"), siehe TECH-SPEC.md Abschnitt 1.2 (Nachtrag 2026-08-03, live gegen die
+        # reale Instanz verifiziert: nur ~5% aller Zeilen im Testzeitraum trugen ein Signal).
+        if not (row.get("excuseStatus") or row.get("absenceReason") or row.get("absentTime")):
+            continue
+
         schueler_id = schueler_id_by_externe_id.get(row["studentId"])
         if schueler_id is None:
             logger.warning("Fehlzeiten-Sync: unbekannte externe_id=%s, uebersprungen", row["studentId"])

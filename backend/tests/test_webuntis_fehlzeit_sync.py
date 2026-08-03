@@ -11,6 +11,37 @@ from app.services.webuntis_fehlzeit_sync import sync_fehlzeiten
 
 
 @pytest.mark.asyncio
+async def test_sync_fehlzeiten_skips_rows_without_absence_signal(db_session):
+    """WebUntis liefert fuer einmal 'gepruefte' Tage die komplette Perioden-Liste des Schuelers
+    zurueck, nicht nur echte Abwesenheiten (siehe TECH-SPEC.md Abschnitt 1.2, Nachtrag
+    2026-08-03) -- Zeilen ohne excuseStatus/absenceReason/absentTime sind normal besuchter
+    Unterricht bzw. Zeitplan-Metadaten ('status: irregular'), unabhaengig von subjectId.
+    """
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = {
+        "periodsWithAbsences": [
+            {
+                "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
+                "subjectId": "", "status": "irregular", "checked": True, "invalid": False,
+            },
+            {
+                "date": 20260624, "startTime": 925, "endTime": 1010, "studentId": "ext-1",
+                "subjectId": "Deutsch", "checked": True,
+            },
+        ]
+    }
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
 async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     db_session.add(schueler)
@@ -21,11 +52,12 @@ async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
-                "subjectId": "", "checked": False, "invalid": False,
+                "subjectId": "", "checked": False, "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
-                "subjectId": "Deutsch", "absenceReason": "", "excuseStatus": None, "invalid": False,
+                "subjectId": "Deutsch", "absenceReason": "", "excuseStatus": None, "absentTime": 45,
+                "invalid": False,
             },
         ]
     }
@@ -65,7 +97,10 @@ async def test_sync_fehlzeiten_skips_unknown_externe_id(db_session):
     client = AsyncMock()
     client.call.return_value = {
         "periodsWithAbsences": [
-            {"date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "unbekannt", "subjectId": "", "invalid": False},
+            {
+                "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "unbekannt",
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
+            },
         ]
     }
 
@@ -171,7 +206,7 @@ async def test_sync_fehlzeiten_upserts_existing_entry(db_session):
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
-                "subjectId": "", "status": "irregular", "invalid": False,
+                "subjectId": "", "status": "irregular", "absenceReason": "krank", "invalid": False,
             },
         ]
     }
@@ -193,15 +228,15 @@ async def test_sync_fehlzeiten_merges_multiple_tag_rows_into_one_day(db_session)
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 815, "endTime": 900, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 925, "endTime": 1010, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
     }
@@ -340,15 +375,15 @@ async def test_sync_fehlzeiten_merge_keeps_stunde_rows_separate(db_session):
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 815, "endTime": 900, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 1425, "endTime": 1510, "studentId": "ext-1",
-                "subjectId": "Deutsch", "invalid": False,
+                "subjectId": "Deutsch", "absenceReason": "krank", "invalid": False,
             },
         ]
     }
@@ -373,11 +408,11 @@ async def test_sync_fehlzeiten_merge_is_idempotent_across_reruns(db_session):
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
                 "date": 20260624, "startTime": 815, "endTime": 900, "studentId": "ext-1",
-                "subjectId": "", "invalid": False,
+                "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
     }
