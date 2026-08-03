@@ -11,6 +11,14 @@ Behebung eines Datenkorrektheits-Bugs im Sync (wie der Ganztages-Merge-Fix vom 2
 siehe `docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md`) fehlerhaft synchronisierte
 Altdaten zu entfernen, bevor der nächste Sync sie korrekt neu einliest.
 
+**2026-08-03:** Drei weitere Sync-Fixes (TECH-SPEC.md Abschnitt 1.2, Nachträge 2–4) verändern,
+welche WebUntis-Zeilen überhaupt als Fehlzeit gelten bzw. wie sie zu `tag`/`stunde` gruppiert
+werden — auf dem Dev-System sank die Zeilenzahl dadurch von 278.993 auf 28.979. **Vor dem
+Deployment dieser Commits auf Prod muss derselbe Reset (`TRUNCATE fehlzeit` + `letzter_sync_am`
+zurücksetzen, siehe unten) einmalig durchgeführt werden**, sonst bleiben die alten, stark
+überzählten Fehlzeiten dort stehen und verzerren Dashboard-Kennzahlen und
+Schwellwert-Eskalationen weiter.
+
 **Wichtig:** Dabei dürfen nicht nur die `fehlzeit`-Zeilen gelöscht werden — `einstellung.letzter_sync_am`
 muss im selben Zug auf `NULL` zurückgesetzt werden. Der Grund: `sync_orchestrator._fehlzeiten_zeitraum`
 wählt den Start des Sync-Zeitraums als `letzter_sync_am - 1 Tag`, sofern `letzter_sync_am` gesetzt ist,
