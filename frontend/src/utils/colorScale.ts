@@ -1,14 +1,18 @@
-const DUNKELROT: [number, number, number] = [153, 27, 27];
-const DUNKELGELB: [number, number, number] = [161, 98, 7];
-const DUNKELGRUEN: [number, number, number] = [22, 101, 52];
+type HSL = [hue: number, saturation: number, lightness: number];
 
-function mische(von: [number, number, number], nach: [number, number, number], anteil: number): string {
-  const [r1, g1, b1] = von;
-  const [r2, g2, b2] = nach;
-  const r = Math.round(r1 + (r2 - r1) * anteil);
-  const g = Math.round(g1 + (g2 - g1) * anteil);
-  const b = Math.round(b1 + (b2 - b1) * anteil);
-  return `rgb(${r}, ${g}, ${b})`;
+// HSL statt RGB interpoliert: Gruen/Gelb/Rot in RGB liegen sich im Gruen-Kanal fast gleich (~100),
+// wodurch eine RGB-Mischung durch ein mattes Oliv/Braun statt durch klares Gelb laeuft. Bei
+// gleichbleibender Saettigung/Helligkeit und nur wanderndem Farbton bleibt jede Zwischenstufe klar
+// erkennbar gruen/gelb/rot.
+const DUNKELGRUEN: HSL = [142, 71, 33];
+const DUNKELGELB: HSL = [38, 92, 33];
+const DUNKELROT: HSL = [0, 70, 35];
+
+function mische(von: HSL, nach: HSL, anteil: number): string {
+  const h = Math.round(von[0] + (nach[0] - von[0]) * anteil);
+  const s = Math.round(von[1] + (nach[1] - von[1]) * anteil);
+  const l = Math.round(von[2] + (nach[2] - von[2]) * anteil);
+  return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
 /**
