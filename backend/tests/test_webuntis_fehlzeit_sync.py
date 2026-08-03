@@ -55,7 +55,7 @@ async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
                 "subjectId": "", "checked": False, "absenceReason": "krank", "invalid": False,
             },
             {
-                "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                "date": 20260625, "startTime": 730, "endTime": 815, "studentId": "ext-1",
                 "subjectId": "Deutsch", "absenceReason": "", "excuseStatus": None, "absentTime": 45,
                 "invalid": False,
             },
@@ -365,7 +365,9 @@ async def test_sync_fehlzeiten_merge_truncates_grund_text_to_column_limit(db_ses
 
 
 @pytest.mark.asyncio
-async def test_sync_fehlzeiten_merge_keeps_stunde_rows_separate(db_session):
+async def test_sync_fehlzeiten_keeps_stunde_rows_separate_when_day_has_no_tag_candidate(db_session):
+    """Eine subjectId-Zeile wird nur dann eigenstaendig als 'stunde' gefuehrt, wenn ihr Tag
+    keine subjectId-lose Abwesenheits-Zeile hat -- hier ein anderer Tag als die 'tag'-Gruppe."""
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
     db_session.add(schueler)
     await db_session.commit()
@@ -382,7 +384,7 @@ async def test_sync_fehlzeiten_merge_keeps_stunde_rows_separate(db_session):
                 "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
             {
-                "date": 20260624, "startTime": 1425, "endTime": 1510, "studentId": "ext-1",
+                "date": 20260625, "startTime": 1425, "endTime": 1510, "studentId": "ext-1",
                 "subjectId": "Deutsch", "absenceReason": "krank", "invalid": False,
             },
         ]
@@ -395,6 +397,45 @@ async def test_sync_fehlzeiten_merge_keeps_stunde_rows_separate(db_session):
     assert len(rows) == 2
     assert rows["tag"].start_zeit == 0
     assert rows["stunde"].fach == "Deutsch"
+
+
+@pytest.mark.asyncio
+async def test_sync_fehlzeiten_merges_stunde_rows_into_tag_when_same_day_has_tag_candidate(db_session):
+    """Kernfall aus der Live-Beobachtung (2026-08-03): ein durchgehend entschuldigter Tag deckt
+    sowohl subjectId-lose Leerstunden als auch echte Unterrichtsstunden ab -- alle gehoeren zum
+    selben Abwesenheits-Ereignis und muessen zu EINER 'tag'-Zeile zusammengefasst werden, nicht
+    zusaetzlich als separate 'stunde'-Zeilen."""
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    entschuldigt = ExcuseStatus(name="entsch.", zaehlt_als_entschuldigt=True)
+    db_session.add_all([schueler, entschuldigt])
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = {
+        "periodsWithAbsences": [
+            {
+                "date": 20260624, "startTime": 815, "endTime": 900, "studentId": "ext-1",
+                "subjectId": "Englisch", "absenceReason": "priv", "excuseStatus": "entsch.", "invalid": False,
+            },
+            {
+                "date": 20260624, "startTime": 925, "endTime": 1010, "studentId": "ext-1",
+                "subjectId": "Mathematik", "absenceReason": "priv", "excuseStatus": "entsch.", "invalid": False,
+            },
+            {
+                "date": 20260624, "startTime": 1110, "endTime": 1155, "studentId": "ext-1",
+                "subjectId": "", "absenceReason": "priv", "excuseStatus": "entsch.", "invalid": False,
+            },
+        ]
+    }
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].typ == "tag"
+    assert rows[0].fach is None
+    assert rows[0].excuse_status_id == entschuldigt.id
 
 
 @pytest.mark.asyncio

@@ -91,7 +91,10 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
     diese werden pro Schueler/Tag zu einer einzigen typ='tag'-Zeile zusammengefuehrt, bevor
     sie geschrieben werden (siehe
     docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md). Zeilen mit subjectId
-    (typ='stunde') bleiben unveraendert, eine Zeile pro Absenz.
+    (typ='stunde') bleiben nur dann eigenstaendig, wenn der betroffene Tag KEINE
+    subjectId-lose Abwesenheits-Zeile hat -- sonst gehoert die Stunde zum selben, ueber den
+    Tag verteilten Entschuldigungs-Ereignis und wird mit in die 'tag'-Zeile gemergt (siehe
+    TECH-SPEC.md Abschnitt 1.2, Nachtrag 2026-08-03).
     """
     result = await client.call(
         "getTimetableWithAbsences",
@@ -139,7 +142,16 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             by_key[key] = fehlzeit
         return fehlzeit
 
-    tag_gruppen: dict[tuple[int, date], list[dict]] = {}
+    # Zwei Durchlaeufe statt einem: im ersten werden alle echten Abwesenheits-Zeilen eingesammelt
+    # und dabei ermittelt, an welchen (schueler_id, datum)-Tagen ueberhaupt eine subjectId-lose
+    # Zeile vorkommt ("Tag-Kandidat"). Grund: ein Tag mit durchgehender Entschuldigung deckt in
+    # der Praxis sowohl subjectId-lose Leerstunden als auch echte Unterrichtsstunden ab (z.B.
+    # "priv, entschuldigt" ueber den kompletten Schultag) -- 95% Uebereinstimmung von Status/Grund
+    # zwischen tag- und stunde-Zeilen desselben Tages in einer Live-Stichprobe (Nachtrag 2026-08-03
+    # unten). Ohne diesen zweiten Durchlauf wuerden solche Tage faelschlich in einen 'tag'- UND
+    # mehrere 'stunde'-Eintraege gesplittet, obwohl es ein einziges Abwesenheits-Ereignis ist.
+    signal_zeilen: list[tuple[int, date, dict]] = []
+    tag_kandidat_tage: set[tuple[int, date]] = set()
 
     for row in entries or []:
         if row.get("invalid"):
@@ -159,17 +171,22 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             logger.warning("Fehlzeiten-Sync: unbekannte externe_id=%s, uebersprungen", row["studentId"])
             continue
 
-        if row.get("subjectId"):
-            fehlzeit = _upsert(
-                schueler_id, _from_webuntis_date(row["date"]), row["startTime"], row["endTime"], "stunde"
-            )
+        datum = _from_webuntis_date(row["date"])
+        signal_zeilen.append((schueler_id, datum, row))
+        if not row.get("subjectId"):
+            tag_kandidat_tage.add((schueler_id, datum))
+
+    tag_gruppen: dict[tuple[int, date], list[dict]] = {}
+
+    for schueler_id, datum, row in signal_zeilen:
+        if (schueler_id, datum) in tag_kandidat_tage:
+            tag_gruppen.setdefault((schueler_id, datum), []).append(row)
+        else:
+            fehlzeit = _upsert(schueler_id, datum, row["startTime"], row["endTime"], "stunde")
             fehlzeit.fach = row.get("subjectId") or None
             fehlzeit.grund_text = row.get("absenceReason") or None
             fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
             fehlzeit.invalid = False
-        else:
-            datum = _from_webuntis_date(row["date"])
-            tag_gruppen.setdefault((schueler_id, datum), []).append(row)
 
     for (schueler_id, datum), gruppe in tag_gruppen.items():
         merged_excuse_status_id, merged_grund_text = _merge_tag_gruppe(
