@@ -22,6 +22,15 @@ def _from_webuntis_date(value: int) -> date:
     return datetime.strptime(str(value), "%Y%m%d").date()
 
 
+def _hhmm_zu_minuten(value: int) -> int:
+    """WebUntis-Uhrzeiten sind HMM/HHMM-Ganzzahlen (z.B. 730 = 7:30, 1055 = 10:55), keine
+    Minuten seit Mitternacht -- fuer Luecken-/Dauer-Berechnung muss umgerechnet werden."""
+    return (value // 100) * 60 + (value % 100)
+
+
+TAG_MINDESTDAUER_MINUTEN = 90
+
+
 def _zaehlt_als_entschuldigt(excuse_status_id: int | None, zaehlt_als_entschuldigt_by_id: dict[int, bool]) -> bool:
     if excuse_status_id is None:
         return False
@@ -88,13 +97,18 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
 
     WebUntis liefert fuer ganztaegige Absenzen an dieser Schule mehrere Perioden-Zeilen
     ohne subjectId statt einer einzigen Ganztages-Zeile (siehe TECH-SPEC.md Abschnitt 1.2) -
-    diese werden pro Schueler/Tag zu einer einzigen typ='tag'-Zeile zusammengefuehrt, bevor
-    sie geschrieben werden (siehe
-    docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md). Zeilen mit subjectId
-    (typ='stunde') bleiben nur dann eigenstaendig, wenn der betroffene Tag KEINE
-    subjectId-lose Abwesenheits-Zeile hat -- sonst gehoert die Stunde zum selben, ueber den
-    Tag verteilten Entschuldigungs-Ereignis und wird mit in die 'tag'-Zeile gemergt (siehe
-    TECH-SPEC.md Abschnitt 1.2, Nachtrag 2026-08-03).
+    diese werden pro Schueler/Tag nach (excuseStatus, absenceReason) gruppiert (nicht nach
+    Zeit-Naehe, siehe Nachtrag 2026-08-03) und nur dann als einzelne typ='tag'-Zeile (fester
+    Rahmen start_zeit=0/end_zeit=2359) geschrieben, wenn die subjectId-losen Zeilen dieser
+    Gruppe zusammen mindestens 90 Minuten abdecken -- siehe
+    docs/superpowers/specs/2026-07-28-fehltag-merge-fix-design.md sowie TECH-SPEC.md
+    Abschnitt 1.2, Nachtrag 2026-08-03 fuer die Herleitung der Mindestdauer. Kuerzere
+    subjectId-lose Gruppen (z.B. eine einzelne Randstunde oder eine kurze Verspaetung)
+    werden ebenfalls zusammengefuehrt, aber als typ='stunde' mit ihrer echten Uhrzeit
+    geschrieben statt als "ganzer Tag". Zeilen mit subjectId werden nur dann in eine
+    'tag'-Gruppe gezogen, wenn sie dieselbe (excuseStatus, absenceReason)-Signatur tragen wie
+    eine bestaetigte (>= 90 Minuten) subjectId-lose Gruppe -- sonst bleiben sie eigenstaendige
+    'stunde'-Zeilen wie zuvor.
     """
     result = await client.call(
         "getTimetableWithAbsences",
@@ -142,16 +156,18 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             by_key[key] = fehlzeit
         return fehlzeit
 
-    # Zwei Durchlaeufe statt einem: im ersten werden alle echten Abwesenheits-Zeilen eingesammelt
-    # und dabei ermittelt, an welchen (schueler_id, datum)-Tagen ueberhaupt eine subjectId-lose
-    # Zeile vorkommt ("Tag-Kandidat"). Grund: ein Tag mit durchgehender Entschuldigung deckt in
-    # der Praxis sowohl subjectId-lose Leerstunden als auch echte Unterrichtsstunden ab (z.B.
-    # "priv, entschuldigt" ueber den kompletten Schultag) -- 95% Uebereinstimmung von Status/Grund
-    # zwischen tag- und stunde-Zeilen desselben Tages in einer Live-Stichprobe (Nachtrag 2026-08-03
-    # unten). Ohne diesen zweiten Durchlauf wuerden solche Tage faelschlich in einen 'tag'- UND
-    # mehrere 'stunde'-Eintraege gesplittet, obwohl es ein einziges Abwesenheits-Ereignis ist.
-    signal_zeilen: list[tuple[int, date, dict]] = []
-    tag_kandidat_tage: set[tuple[int, date]] = set()
+    # Signal-Zeilen pro (schueler_id, datum) sammeln (siehe Filter-Kommentar unten), dann pro Tag
+    # nach (excuseStatus, absenceReason) gruppieren statt alles, was subjectId-los ist, blind auf
+    # den ganzen Tag zu strecken. Ein reiner Zeit-Nachbarschafts-Ansatz (Luecke <= X Minuten)
+    # wurde verworfen: eindeutig zusammengehoerige Tage haben oft grosse interne Luecken
+    # (Mittagspause, teils >180 Minuten in der Live-Stichprobe), eine dafuer ausreichend grosse
+    # Toleranz wuerde aber auch zwei tatsaechlich unabhaengige, Minuten-kurze Verspaetungen am
+    # selben Tag wieder zusammenziehen. Die Signatur (excuseStatus, absenceReason) ist der
+    # robustere Schluessel: in einer Live-Stichprobe ueber ein Schuljahr teilten sich 97% der
+    # mehrzeiligen subjectId-losen Tagesgruppen exakt dieselbe Signatur (siehe Nachtrag
+    # 2026-08-03 unten) -- unterschiedliche Signatur am selben Tag ist ein starkes Indiz fuer
+    # zwei unabhaengige Ereignisse, nicht eines mit natuerlicher Pause dazwischen.
+    tage: dict[tuple[int, date], list[dict]] = {}
 
     for row in entries or []:
         if row.get("invalid"):
@@ -172,30 +188,57 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             continue
 
         datum = _from_webuntis_date(row["date"])
-        signal_zeilen.append((schueler_id, datum, row))
-        if not row.get("subjectId"):
-            tag_kandidat_tage.add((schueler_id, datum))
+        tage.setdefault((schueler_id, datum), []).append(row)
 
-    tag_gruppen: dict[tuple[int, date], list[dict]] = {}
-
-    for schueler_id, datum, row in signal_zeilen:
-        if (schueler_id, datum) in tag_kandidat_tage:
-            tag_gruppen.setdefault((schueler_id, datum), []).append(row)
-        else:
-            fehlzeit = _upsert(schueler_id, datum, row["startTime"], row["endTime"], "stunde")
-            fehlzeit.fach = row.get("subjectId") or None
-            fehlzeit.grund_text = row.get("absenceReason") or None
-            fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
-            fehlzeit.invalid = False
-
-    for (schueler_id, datum), gruppe in tag_gruppen.items():
-        merged_excuse_status_id, merged_grund_text = _merge_tag_gruppe(
-            gruppe, excuse_status_id_by_name, zaehlt_als_entschuldigt_by_id
+    def _spanne_minuten(rows: list[dict]) -> int:
+        return max(_hhmm_zu_minuten(r["endTime"]) for r in rows) - min(
+            _hhmm_zu_minuten(r["startTime"]) for r in rows
         )
-        fehlzeit = _upsert(schueler_id, datum, 0, 2359, "tag")
-        fehlzeit.fach = None
-        fehlzeit.grund_text = merged_grund_text
-        fehlzeit.excuse_status_id = merged_excuse_status_id
-        fehlzeit.invalid = False
+
+    for (schueler_id, datum), zeilen in tage.items():
+        signatur_gruppen: dict[tuple[str | None, str | None], list[dict]] = {}
+        for row in zeilen:
+            signatur = (row.get("excuseStatus"), row.get("absenceReason") or None)
+            signatur_gruppen.setdefault(signatur, []).append(row)
+
+        for gruppe in signatur_gruppen.values():
+            subjectid_lose_zeilen = [r for r in gruppe if not r.get("subjectId")]
+
+            if subjectid_lose_zeilen and _spanne_minuten(subjectid_lose_zeilen) >= TAG_MINDESTDAUER_MINUTEN:
+                # Ganze Signatur-Gruppe (inkl. subjectId-tragender Zeilen) ist ein einziges,
+                # ueber den Tag verteiltes Entschuldigungs-Ereignis (siehe Nachtrag 2026-08-03).
+                merged_excuse_status_id, merged_grund_text = _merge_tag_gruppe(
+                    gruppe, excuse_status_id_by_name, zaehlt_als_entschuldigt_by_id
+                )
+                fehlzeit = _upsert(schueler_id, datum, 0, 2359, "tag")
+                fehlzeit.fach = None
+                fehlzeit.grund_text = merged_grund_text
+                fehlzeit.excuse_status_id = merged_excuse_status_id
+                fehlzeit.invalid = False
+                continue
+
+            # Gruppe zu kurz fuer 'tag': subjectId-tragende Zeilen bleiben eigenstaendige
+            # 'stunde'-Eintraege wie bisher; subjectId-lose Zeilen der Gruppe werden zu einer
+            # 'stunde'-Zeile mit ihrer echten Uhrzeit zusammengefuehrt (kein Fach, aber auch
+            # kein falscher "ganzer Tag").
+            for row in gruppe:
+                if row.get("subjectId"):
+                    fehlzeit = _upsert(schueler_id, datum, row["startTime"], row["endTime"], "stunde")
+                    fehlzeit.fach = row.get("subjectId") or None
+                    fehlzeit.grund_text = row.get("absenceReason") or None
+                    fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
+                    fehlzeit.invalid = False
+
+            if subjectid_lose_zeilen:
+                merged_excuse_status_id, merged_grund_text = _merge_tag_gruppe(
+                    subjectid_lose_zeilen, excuse_status_id_by_name, zaehlt_als_entschuldigt_by_id
+                )
+                start_zeit = min(r["startTime"] for r in subjectid_lose_zeilen)
+                end_zeit = max(r["endTime"] for r in subjectid_lose_zeilen)
+                fehlzeit = _upsert(schueler_id, datum, start_zeit, end_zeit, "stunde")
+                fehlzeit.fach = None
+                fehlzeit.grund_text = merged_grund_text
+                fehlzeit.excuse_status_id = merged_excuse_status_id
+                fehlzeit.invalid = False
 
     await db.commit()
