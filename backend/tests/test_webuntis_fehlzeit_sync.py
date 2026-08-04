@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 
+from app.integrations.webuntis_client import WebUntisError
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.schueler import Schueler
@@ -15,16 +16,21 @@ from app.services.webuntis_fehlzeit_sync import (
 )
 
 
-def _make_client(periods, subjects=None):
+def _make_client(periods, subjects=None, subjects_raises=False):
 	"""AsyncMock for WebUntisClient that dispatches by method name, so a test can supply a
 	getTimetableWithAbsences payload without also having to fake getSubjects (defaults to no
-	subjects, i.e. every fach falls back to the raw WebUntis longName)."""
+	subjects, i.e. every fach falls back to the raw WebUntis longName).
+
+	subjects_raises=True simulates getSubjects failing with a WebUntisError (e.g. permission
+	change, transient error), to verify the sync degrades gracefully instead of aborting."""
 	client = AsyncMock()
 
 	async def _call(method, params):
 		if method == "getTimetableWithAbsences":
 			return periods
 		if method == "getSubjects":
+			if subjects_raises:
+				raise WebUntisError("getSubjects fehlgeschlagen")
 			return subjects if subjects is not None else []
 		raise AssertionError(f"unexpected WebUntis call in test: {method}")
 
@@ -625,3 +631,30 @@ async def test_sync_fehlzeiten_keeps_langname_when_no_matching_subject(db_sessio
 
     result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
     assert result.scalars().one().fach == "Bildende Kunst"
+
+
+@pytest.mark.asyncio
+async def test_sync_fehlzeiten_survives_getsubjects_failure(db_session):
+    """getSubjects ist nur fuer die Fach-Kuerzel-Aufloesung relevant (Anzeige-Detail) - ein
+    Fehler dabei darf den restlichen Sync nicht abbrechen, sondern soll wie bei fehlenden/
+    nicht passenden subjects auf den Langnamen zurueckfallen (siehe _resolve_fach_kurzname)."""
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    client = _make_client(
+        {
+            "periodsWithAbsences": [
+                {
+                    "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                    "subjectId": "Deutsch", "absentTime": 45, "invalid": False,
+                },
+            ]
+        },
+        subjects_raises=True,
+    )
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    assert result.scalars().one().fach == "Deutsch"

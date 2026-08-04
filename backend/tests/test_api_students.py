@@ -1,5 +1,6 @@
 import datetime
 from datetime import date
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -445,6 +446,39 @@ async def test_export_pdf_filters_by_schuljahr_id(db_session):
 
     assert response.status_code == 200
     assert response.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_forwards_resolved_schuljahr_zeitraum_to_export_service(db_session, monkeypatch):
+    """Route-level Test fuer die schuljahr_id -> (von, bis, schuljahr_name)-Aufloesung: der
+    reine Statuscode/PDF-Smoke-Test oben wuerde nicht bemerken, wenn die Route aufhoert, diese
+    Werte an export_service.render_student_export_html durchzureichen."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add_all([schueler, schuljahr])
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    render_mock = AsyncMock(return_value="<html></html>")
+    monkeypatch.setattr("app.api.routes.students.export_service.render_student_export_html", render_mock)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}/export.pdf",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            params={"schuljahr_id": schuljahr.id},
+        )
+
+    assert response.status_code == 200
+    render_mock.assert_awaited_once()
+    _, kwargs = render_mock.call_args
+    assert kwargs["von"] == date(2024, 9, 9)
+    assert kwargs["bis"] == date(2025, 7, 30)
+    assert kwargs["schuljahr_name"] == "2024/2025"
 
 
 @pytest.mark.asyncio

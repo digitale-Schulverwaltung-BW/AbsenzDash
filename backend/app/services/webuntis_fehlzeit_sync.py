@@ -6,7 +6,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.integrations.webuntis_client import WebUntisClient
+from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.schueler import Schueler
@@ -140,7 +140,11 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
     )
     entries = result.get("periodsWithAbsences", []) if isinstance(result, dict) else result
 
-    subjects_result = await client.call("getSubjects", {})
+    try:
+        subjects_result = await client.call("getSubjects", {})
+    except WebUntisError as exc:
+        logger.warning("getSubjects fehlgeschlagen, fach bleibt Langname: %s", exc)
+        subjects_result = []
     kurzname_by_longname = _build_kurzname_by_longname(subjects_result or [])
 
     schueler_id_by_externe_id = dict((await db.execute(select(Schueler.externe_id, Schueler.id))).all())

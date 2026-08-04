@@ -62,8 +62,10 @@ export function PdfExportSection({ studentId, schuljahrId }: PdfExportSectionPro
       const link = document.createElement("a");
       link.href = url;
       link.download = filename;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch {
       setError(true);
     } finally {
