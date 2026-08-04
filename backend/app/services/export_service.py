@@ -35,13 +35,19 @@ def build_export_filename(nachname: str, vorname: str) -> str:
 
 
 async def render_student_export_html(
-    db: AsyncSession, schueler: Schueler, klasse: Klasse | None, sections: set[str]
+    db: AsyncSession,
+    schueler: Schueler,
+    klasse: Klasse | None,
+    sections: set[str],
+    von: datetime.date | None = None,
+    bis: datetime.date | None = None,
+    schuljahr_name: str | None = None,
 ) -> str:
     """Laedt die Detaildaten des Schuelers und rendert das PDF-Export-Template zu HTML.
     Enthaelt nur die in `sections` angeforderten Abschnitte; Namen fuer
     excuse_status/classreg_category werden hier aufgeloest (in den *Out-Schemas
     fuer GET /students/{id} bisher nicht aufgeloest)."""
-    detail = await student_query.load_student_detail(db, schueler.id)
+    detail = await student_query.load_student_detail(db, schueler.id, von=von, bis=bis)
 
     fehlzeiten: list[dict[str, Any]] = []
     if "fehlzeiten" in sections:
@@ -122,6 +128,7 @@ async def render_student_export_html(
         massnahmen=massnahmen,
         ausnahmen=ausnahmen,
         benachrichtigungen=benachrichtigungen,
+        schuljahr_name=schuljahr_name,
     )
 
 

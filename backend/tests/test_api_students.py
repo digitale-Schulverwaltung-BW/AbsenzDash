@@ -418,6 +418,36 @@ async def test_export_pdf_returns_pdf_with_all_sections_by_default(db_session):
 
 
 @pytest.mark.asyncio
+async def test_export_pdf_filters_by_schuljahr_id(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add_all([schueler, schuljahr])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 2, 1), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}/export.pdf",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            params={"schuljahr_id": schuljahr.id},
+        )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
 async def test_export_pdf_writes_audit_log_with_requested_sections(db_session):
     klasse = Klasse(webuntis_id=1, name="10a")
     db_session.add(klasse)

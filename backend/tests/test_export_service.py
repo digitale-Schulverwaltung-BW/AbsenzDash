@@ -161,3 +161,54 @@ async def test_render_student_export_html_converts_gesendet_am_to_berlin_local_t
 
     # 08:00 UTC in Februar (Winterzeit, UTC+1) -> 09:00 Berlin-Lokalzeit
     assert "01.02.2026 09:00" in html
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_filters_fehlzeiten_by_von_bis(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=datetime.date(2024, 10, 1), start_zeit=0, end_zeit=2359)
+    )
+    await db_session.commit()
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"},
+        von=datetime.date(2026, 1, 1), bis=datetime.date(2026, 12, 31),
+    )
+
+    assert "01.02.2026" in html  # aus _seed_full_student, liegt im Zeitraum
+    assert "01.10.2024" not in html  # ausserhalb des Zeitraums
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_does_not_filter_massnahmen_by_von_bis(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"massnahmen"},
+        von=datetime.date(2030, 1, 1), bis=datetime.date(2030, 12, 31),
+    )
+
+    assert "Elterngespräch" in html  # Massnahme liegt ausserhalb des Zeitraums, bleibt trotzdem sichtbar
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_shows_schuljahr_name_in_meta_when_given(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"}, schuljahr_name="2024/2025",
+    )
+
+    assert "2024/2025" in html
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_shows_gesamte_historie_when_no_schuljahr_given(db_session):
+    schueler, klasse = await _seed_full_student(db_session)
+
+    html = await export_service.render_student_export_html(
+        db_session, schueler, klasse, sections={"fehlzeiten"},
+    )
+
+    assert "gesamte Historie" in html
