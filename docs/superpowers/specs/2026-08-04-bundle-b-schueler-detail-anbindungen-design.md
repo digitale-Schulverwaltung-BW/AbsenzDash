@@ -42,18 +42,31 @@ Neue Funktion `apiDownload(path: string): Promise<{ blob: Blob; filename: string
 
 Auslösen des Downloads: kurzlebiges `<a>`-Element mit `URL.createObjectURL(blob)` und `download`-Attribut, per Klick ausgelöst und danach entfernt (kein neuer Tab, kein Popup-Blocker-Risiko, funktioniert innerhalb des WP-iframe-Kontexts).
 
+### Schuljahr-Filter (Korrektur ggü. erstem Entwurf)
+
+Der Export filtert bisher **gar nicht** nach Zeitraum — `render_student_export_html` ruft `student_query.load_student_detail(db, schueler.id)` ohne `von`/`bis` auf und liefert damit immer die komplette Historie über alle Schuljahre. Das ist nicht das gewünschte Verhalten: gerade außerhalb eines laufenden Schuljahres (z.B. jetzt, in den Sommerferien) soll ein gezielter Export "nur letztes Schuljahr" möglich sein. Die dafür nötige Filterung existiert im Backend bereits fertig (Schuljahr-Historie-Feature, `_resolve_schuljahr_zeitraum` + `load_student_detail(db, id, von, bis)`), wird vom Export nur noch nicht genutzt.
+
+- `export_student_pdf` (`students.py`, gleiche Datei wie `_resolve_schuljahr_zeitraum`) bekommt einen zusätzlichen optionalen Query-Parameter `schuljahr_id: int | None = None`, aufgelöst über die bereits vorhandene `_resolve_schuljahr_zeitraum(db, schuljahr_id)` — identisches Muster wie bei `GET /students` und `GET /students/{id}`.
+- `render_student_export_html` bekommt zwei zusätzliche optionale Parameter `von`/`bis`, durchgereicht an `load_student_detail(db, schueler.id, von, bis)`. Maßnahmen bleiben bewusst ungefiltert (konsistent mit der bereits getroffenen Entscheidung für die Detail-Ansicht, siehe `docs/superpowers/specs/2026-07-30-schuljahr-auswahl-design.md` Abschnitt 2).
+- `export_pdf.html`: Meta-Zeile ergänzt um den betrachteten Zeitraum (`{{ schuljahr_name }}` falls gesetzt, sonst z.B. "gesamte Historie") — ohne das wäre auf dem gedruckten Blatt nicht erkennbar, für welchen Zeitraum es gilt.
+
 ### Neue Komponente `PdfExportSection.tsx`
 
 Liegt unter `components/StudentDetail/`, eingebunden in `StudentDetail.tsx` als letzter `<section>` (unterhalb von Benachrichtigungen), sichtbar für alle Rollen (keine Frontend-Rollenprüfung nötig — der Endpunkt scoped bereits über `get_scoped_schueler`).
 
 - 5 Checkboxen, eine pro `sections`-Wert (Fehlzeiten, Klassenbuch, Maßnahmen, Ausnahmen, Benachrichtigungen), alle standardmäßig angehakt.
+- Übernimmt den aktuell gewählten Schuljahr-Kontext: `StudentDetail.tsx` liest `schuljahr` bereits aus den URL-Suchparametern (bestehender Code, `useStudentDetail(studentId, schuljahrId)`) und reicht `schuljahrId` als Prop durch. Ist ein Schuljahr gewählt, wird es als `schuljahr_id` an den Export-Request angehängt und im UI kurz benannt (z.B. "Export für Schuljahr 2024/2025"); ohne Auswahl (aktuelles Schuljahr/Default) läuft der Export wie gewohnt ungefiltert über die komplette Historie — keine eigene Auswahl-UI in dieser Sektion, der bestehende Schuljahr-Dropdown in der Navigation bleibt die einzige Bedienstelle dafür.
 - Button "PDF exportieren". Baut den `sections`-Query-Param aus den angehakten Boxen; sind alle angehakt (Normalfall), wird der Parameter ganz weggelassen (entspricht dem Backend-Default, kürzere URL).
 - Lokaler `useState` für Pending/Error (kein `useMutation`/React-Query nötig — kein JSON-Response, kein Cache-Invalidieren, kein Wiederverwendungsbedarf an anderer Stelle).
 - Fehleranzeige im bestehenden Stil (`sectionStyles.formError`, wie in `ThresholdRules.tsx`/`MassnahmenSection.tsx`).
 - Kein Verhalten für "keine Checkbox angehakt" spezifiziert außer der offensichtlichen Konsequenz (leerer `sections`-Query-Param → Backend-422, siehe `_EXPORT_SECTIONS`-Validierung) — Umsetzungsplan entscheidet, ob das clientseitig verhindert wird (Button disabled o.ä.) oder der Backend-Fehler einfach durchgereicht wird; angesichts des frischen Lessons-Learned aus dem Schwellwert-Regel-422-Fix (ROADMAP Bundle E) sollte hier dieselbe clientseitige Vorprüfung angewendet werden.
 
+## Performance: zusätzlicher `getSubjects()`-Call pro Sync
+
+Live gemessen (`scratchpad/webuntis_subjects_spike.py`, 2026-08-04): `getSubjects()` liefert an dieser Schule 466 Fächer; der Call ist ein kleiner Bruchteil der Gesamtlaufzeit eines Testlaufs, der zusätzlich 46.503 Fehlzeiten-Einträge lädt. Der reguläre Sync läuft alle 30 Minuten (Default `einstellung.sync_interval_cron`) und holt bereits deutlich größere Datenmengen (z.B. 7.006 Schüler komplett bei jedem Lauf) — eine zusätzliche kleine RPC für 466 Fach-Stammdaten fällt performance-mäßig nicht ins Gewicht, kein gesondertes Caching/Throttling nötig.
+
 ## Nicht-Ziele dieses Plans
 
-- Kein Schuljahr-/Zeitraum-Filter im PDF-Export (bewusst schon in Plan 7 so entschieden, siehe `docs/superpowers/specs/2026-07-30-schuljahr-auswahl-design.md` Abschnitt "Nicht-Ziele").
 - Keine neue DB-Tabelle für Fach-Stammdaten — reine String-Auflösung zur Anzeigezeit des Sync, kein FK-Katalog wie bei `excuse_status`/`classreg_category`.
 - Keine Garantie für global eindeutige Kurznamen — bewusst in Kauf genommene Einschränkung bei Namenskollisionen in den WebUntis-Fach-Stammdaten (siehe oben).
+- Kein eigener Schuljahr-Auswahl-UI-Baustein innerhalb der PDF-Export-Sektion — der bestehende Schuljahr-Dropdown in der Navigation ist die einzige Bedienstelle, die Export-Sektion übernimmt den Kontext nur passiv.
