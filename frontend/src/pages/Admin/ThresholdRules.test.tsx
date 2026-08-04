@@ -114,6 +114,8 @@ describe("ThresholdRules", () => {
     await userEvent.click(screen.getByText("Neue Regel"));
     await userEvent.selectOptions(screen.getByLabelText("Typ Regel 1"), "klassenbuch");
     await userEvent.click(screen.getByText("Stufe hinzufügen"));
+    await userEvent.click(screen.getByLabelText("klassenlehrkraft Regel 1 Stufe 1"));
+    await userEvent.click(screen.getByLabelText("klassenlehrkraft Regel 1 Stufe 2"));
 
     await userEvent.click(screen.getByText("Speichern"));
 
@@ -142,6 +144,7 @@ describe("ThresholdRules", () => {
     render(<ThresholdRules />);
 
     await userEvent.selectOptions(screen.getByLabelText("Typ Regel 1"), "klassenbuch");
+    await userEvent.click(screen.getByLabelText("klassenlehrkraft Regel 1 Stufe 1"));
     await userEvent.click(screen.getByText("Speichern"));
 
     expect(mutate).toHaveBeenCalledTimes(1);
@@ -149,5 +152,32 @@ describe("ThresholdRules", () => {
     expect(rules[0].typ).toBe("klassenbuch");
     expect(rules[0].stufen[0].einheit).toBeNull();
     expect(rules[0].stufen[0].fehlzeiten_filter).toBeNull();
+  });
+
+  it("blocks saving and shows an inline hint when a Stufe has no Empfänger (regression: backend 422)", async () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [{ id: 1, typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null, stufen: [] }],
+      isLoading: false,
+      isError: false,
+    } as any);
+    const mutate = vi.fn();
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate, isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+
+    render(<ThresholdRules />);
+
+    await userEvent.click(screen.getByText("Stufe hinzufügen"));
+    expect(screen.queryByText("Bitte mindestens einen Empfänger auswählen.")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Speichern"));
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Bitte mindestens einen Empfänger auswählen.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText("klassenlehrkraft Regel 1 Stufe 1"));
+    expect(screen.queryByText("Bitte mindestens einen Empfänger auswählen.")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Speichern"));
+    expect(mutate).toHaveBeenCalledTimes(1);
   });
 });

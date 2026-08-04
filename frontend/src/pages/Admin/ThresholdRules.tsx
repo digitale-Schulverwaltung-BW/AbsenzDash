@@ -5,6 +5,7 @@ import { useUpdateThresholdRules } from "../../api/hooks/useUpdateThresholdRules
 import type { SchwellwertStufe, ThresholdRule } from "../../api/types";
 import styles from "./ThresholdRules.module.css";
 import sectionStyles from "../../components/StudentDetail/StudentDetail.module.css";
+import { validateThresholdRules } from "./thresholdRuleValidation";
 
 const ROLLEN = ["klassenlehrkraft", "bereichsleiter", "schulleitung"] as const;
 
@@ -34,6 +35,8 @@ export function ThresholdRules() {
   const { data: abteilungen } = useAbteilungen();
   const { mutate, isPending, error } = useUpdateThresholdRules();
   const [rules, setRules] = useState<ThresholdRule[]>([]);
+  const [attemptedSave, setAttemptedSave] = useState(false);
+  const validationErrors = validateThresholdRules(rules);
 
   useEffect(() => {
     if (data) {
@@ -128,6 +131,14 @@ export function ThresholdRules() {
 
   function addRule() {
     setRules((current) => [...current, leereRegel()]);
+  }
+
+  function handleSave() {
+    setAttemptedSave(true);
+    if (validationErrors.length > 0) {
+      return;
+    }
+    mutate(rules);
   }
 
   return (
@@ -238,6 +249,9 @@ export function ThresholdRules() {
                     {rolle}
                   </label>
                 ))}
+                {attemptedSave && stufe.empfaenger_rollen.length === 0 && (
+                  <p className={sectionStyles.formError}>Bitte mindestens einen Empfänger auswählen.</p>
+                )}
               </fieldset>
               <button type="button" onClick={() => removeStufe(ruleIndex, stufeIndex)}>
                 Stufe entfernen
@@ -255,9 +269,14 @@ export function ThresholdRules() {
       <button type="button" onClick={addRule}>
         Neue Regel
       </button>
-      <button type="button" onClick={() => mutate(rules)} disabled={isPending}>
+      <button type="button" onClick={handleSave} disabled={isPending}>
         Speichern
       </button>
+      {attemptedSave && validationErrors.length > 0 && (
+        <p className={sectionStyles.formError}>
+          Bitte die markierten Stufen korrigieren, bevor gespeichert werden kann.
+        </p>
+      )}
       {error && <p className={sectionStyles.formError}>Fehler beim Speichern — Regeln prüfen (z.B. doppelte Abteilungs-Regel).</p>}
     </section>
   );
