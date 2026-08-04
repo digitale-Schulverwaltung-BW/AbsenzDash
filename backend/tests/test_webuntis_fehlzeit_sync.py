@@ -7,7 +7,67 @@ from sqlalchemy import select
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.schueler import Schueler
-from app.services.webuntis_fehlzeit_sync import _merge_tag_gruppe, sync_fehlzeiten
+from app.services.webuntis_fehlzeit_sync import (
+    _build_kurzname_by_longname,
+    _merge_tag_gruppe,
+    _resolve_fach_kurzname,
+    sync_fehlzeiten,
+)
+
+
+def _make_client(periods, subjects=None):
+	"""AsyncMock for WebUntisClient that dispatches by method name, so a test can supply a
+	getTimetableWithAbsences payload without also having to fake getSubjects (defaults to no
+	subjects, i.e. every fach falls back to the raw WebUntis longName)."""
+	client = AsyncMock()
+
+	async def _call(method, params):
+		if method == "getTimetableWithAbsences":
+			return periods
+		if method == "getSubjects":
+			return subjects if subjects is not None else []
+		raise AssertionError(f"unexpected WebUntis call in test: {method}")
+
+	client.call.side_effect = _call
+	return client
+
+
+def test_build_kurzname_by_longname_maps_longname_to_name():
+    subjects = [{"id": 61, "name": "D", "longName": "Deutsch"}, {"id": 62, "name": "M", "longName": "Mathematik"}]
+    assert _build_kurzname_by_longname(subjects) == {"Deutsch": "D", "Mathematik": "M"}
+
+
+def test_build_kurzname_by_longname_first_match_wins_on_collision():
+    """Live-bestaetigte Kollision: BK und BKOM tragen an dieser Schule denselben Langnamen
+    'Betriebliche Kommunikation' (TECH-SPEC.md Abschnitt 1.2, Nachtrag 5)."""
+    subjects = [
+        {"id": 16, "name": "BK", "longName": "Betriebliche Kommunikation"},
+        {"id": 458, "name": "BKOM", "longName": "Betriebliche Kommunikation"},
+    ]
+    assert _build_kurzname_by_longname(subjects) == {"Betriebliche Kommunikation": "BK"}
+
+
+def test_build_kurzname_by_longname_skips_entries_without_longname_or_name():
+    subjects = [{"id": 1, "name": "", "longName": "Ohne Kuerzel"}, {"id": 2, "name": "X", "longName": ""}]
+    assert _build_kurzname_by_longname(subjects) == {}
+
+
+def test_resolve_fach_kurzname_returns_kurzname_when_found():
+    assert _resolve_fach_kurzname("Deutsch", {"Deutsch": "D"}) == "D"
+
+
+def test_resolve_fach_kurzname_falls_back_to_langname_when_not_found():
+    """z.B. inzwischen umbenanntes/deaktiviertes Fach, das nicht mehr in getSubjects() auftaucht
+    (live beobachtet: 'Bildende Kunst')."""
+    assert _resolve_fach_kurzname("Bildende Kunst", {"Deutsch": "D"}) == "Bildende Kunst"
+
+
+def test_resolve_fach_kurzname_returns_none_for_none_input():
+    assert _resolve_fach_kurzname(None, {"Deutsch": "D"}) is None
+
+
+def test_resolve_fach_kurzname_returns_none_for_empty_string_input():
+    assert _resolve_fach_kurzname("", {"Deutsch": "D"}) is None
 
 
 @pytest.mark.asyncio
@@ -21,8 +81,7 @@ async def test_sync_fehlzeiten_skips_rows_without_absence_signal(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
@@ -33,7 +92,7 @@ async def test_sync_fehlzeiten_skips_rows_without_absence_signal(db_session):
                 "subjectId": "Deutsch", "checked": True,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -47,8 +106,7 @@ async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
@@ -60,7 +118,7 @@ async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
                 "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -68,7 +126,7 @@ async def test_sync_fehlzeiten_creates_tag_and_stunde_entries(db_session):
     rows = {f.typ: f for f in result.scalars().all()}
     assert rows["tag"].start_zeit == 0
     assert rows["stunde"].fach == "Deutsch"
-    client.call.assert_awaited_once_with(
+    client.call.assert_any_await(
         "getTimetableWithAbsences", {"options": {"startDate": 20260601, "endDate": 20260630}}
     )
 
@@ -79,12 +137,11 @@ async def test_sync_fehlzeiten_skips_invalid_entries(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {"date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1", "subjectId": "", "invalid": True},
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -94,15 +151,14 @@ async def test_sync_fehlzeiten_skips_invalid_entries(db_session):
 
 @pytest.mark.asyncio
 async def test_sync_fehlzeiten_skips_unknown_externe_id(db_session):
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "unbekannt",
                 "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -117,15 +173,14 @@ async def test_sync_fehlzeiten_resolves_excuse_status_by_name(db_session):
     db_session.add_all([schueler, excuse_status])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
                 "subjectId": "Deutsch", "excuseStatus": "nicht entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -140,15 +195,14 @@ async def test_sync_fehlzeiten_auto_creates_unknown_excuse_status(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
                 "subjectId": "Deutsch", "excuseStatus": "hybrid", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -168,15 +222,14 @@ async def test_sync_fehlzeiten_does_not_duplicate_known_excuse_status(db_session
     db_session.add_all([schueler, bestehender_status])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
                 "subjectId": "Deutsch", "excuseStatus": "entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -201,15 +254,14 @@ async def test_sync_fehlzeiten_upserts_existing_entry(db_session):
     db_session.add(existing)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 0, "endTime": 2359, "studentId": "ext-1",
                 "subjectId": "", "status": "irregular", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -223,8 +275,7 @@ async def test_sync_fehlzeiten_merges_multiple_tag_rows_into_one_day(db_session)
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
@@ -239,7 +290,7 @@ async def test_sync_fehlzeiten_merges_multiple_tag_rows_into_one_day(db_session)
                 "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -278,8 +329,7 @@ async def test_sync_fehlzeiten_merge_keeps_entschuldigt_when_all_periods_entschu
     db_session.add_all([schueler, entschuldigt])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
@@ -290,7 +340,7 @@ async def test_sync_fehlzeiten_merge_keeps_entschuldigt_when_all_periods_entschu
                 "subjectId": "", "excuseStatus": "entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -331,8 +381,7 @@ async def test_sync_fehlzeiten_keeps_stunde_rows_separate_when_day_has_no_tag_ca
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
@@ -347,7 +396,7 @@ async def test_sync_fehlzeiten_keeps_stunde_rows_separate_when_day_has_no_tag_ca
                 "subjectId": "Deutsch", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -369,8 +418,7 @@ async def test_sync_fehlzeiten_merges_stunde_rows_into_tag_when_same_day_has_tag
     db_session.add_all([schueler, entschuldigt])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 815, "endTime": 900, "studentId": "ext-1",
@@ -385,7 +433,7 @@ async def test_sync_fehlzeiten_merges_stunde_rows_into_tag_when_same_day_has_tag
                 "subjectId": "", "absenceReason": "priv", "excuseStatus": "entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     # subjectId-lose Zeile allein deckt 95 Minuten ab (>= Schwelle) und teilt die Signatur
     # (entsch., priv) mit den beiden subjectId-Zeilen -- alle drei gehoeren in dieselbe Gruppe,
@@ -406,8 +454,7 @@ async def test_sync_fehlzeiten_merge_is_idempotent_across_reruns(db_session):
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
@@ -418,7 +465,7 @@ async def test_sync_fehlzeiten_merge_is_idempotent_across_reruns(db_session):
                 "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
@@ -435,15 +482,14 @@ async def test_sync_fehlzeiten_keeps_short_subjectid_less_blocks_as_stunde_not_t
     db_session.add(schueler)
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
                 "subjectId": "", "absenceReason": "krank", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -466,8 +512,7 @@ async def test_sync_fehlzeiten_keeps_separate_short_verspaetungen_apart(db_sessi
     db_session.add_all([schueler, entschuldigt, nicht_entschuldigt])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 925, "endTime": 934, "studentId": "ext-1",
@@ -478,7 +523,7 @@ async def test_sync_fehlzeiten_keeps_separate_short_verspaetungen_apart(db_sessi
                 "subjectId": "", "absenceReason": "verspätet", "excuseStatus": "nicht entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -503,8 +548,7 @@ async def test_sync_fehlzeiten_writes_separate_entries_for_different_reasons_sam
     db_session.add_all([schueler, nicht_entschuldigt])
     await db_session.commit()
 
-    client = AsyncMock()
-    client.call.return_value = {
+    client = _make_client({
         "periodsWithAbsences": [
             {
                 "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
@@ -523,7 +567,7 @@ async def test_sync_fehlzeiten_writes_separate_entries_for_different_reasons_sam
                 "subjectId": "", "absenceReason": "krank", "excuseStatus": "nicht entsch.", "invalid": False,
             },
         ]
-    }
+    })
 
     await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 
@@ -533,3 +577,51 @@ async def test_sync_fehlzeiten_writes_separate_entries_for_different_reasons_sam
     assert rows["stunde"].start_zeit == 730 and rows["stunde"].end_zeit == 815
     assert rows["tag"].start_zeit == 0 and rows["tag"].end_zeit == 2359
     assert rows["tag"].grund_text == "krank"
+
+
+@pytest.mark.asyncio
+async def test_sync_fehlzeiten_resolves_fach_to_kurzname(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    client = _make_client(
+        {
+            "periodsWithAbsences": [
+                {
+                    "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                    "subjectId": "Deutsch", "absentTime": 45, "invalid": False,
+                },
+            ]
+        },
+        subjects=[{"id": 61, "name": "D", "longName": "Deutsch"}],
+    )
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    assert result.scalars().one().fach == "D"
+
+
+@pytest.mark.asyncio
+async def test_sync_fehlzeiten_keeps_langname_when_no_matching_subject(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.commit()
+
+    client = _make_client(
+        {
+            "periodsWithAbsences": [
+                {
+                    "date": 20260624, "startTime": 730, "endTime": 815, "studentId": "ext-1",
+                    "subjectId": "Bildende Kunst", "absentTime": 45, "invalid": False,
+                },
+            ]
+        },
+        subjects=[{"id": 61, "name": "D", "longName": "Deutsch"}],
+    )
+
+    await sync_fehlzeiten(client, db_session, datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
+
+    result = await db_session.execute(select(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id))
+    assert result.scalars().one().fach == "Bildende Kunst"
