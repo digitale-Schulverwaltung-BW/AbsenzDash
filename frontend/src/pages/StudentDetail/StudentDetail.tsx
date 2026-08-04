@@ -6,6 +6,7 @@ import { BenachrichtigungenTable } from "../../components/StudentDetail/Benachri
 import { FehlzeitenTable } from "../../components/StudentDetail/FehlzeitenTable";
 import { KlassenbuchTable } from "../../components/StudentDetail/KlassenbuchTable";
 import { MassnahmenSection } from "../../components/StudentDetail/MassnahmenSection";
+import { PdfExportSection } from "../../components/StudentDetail/PdfExportSection";
 import styles from "../../components/StudentDetail/StudentDetail.module.css";
 import { StatusBadge, stufeToTone } from "../../components/StatusBadge/StatusBadge";
 
@@ -65,6 +66,7 @@ export function StudentDetail() {
         <h3>Benachrichtigungen</h3>
         <BenachrichtigungenTable benachrichtigungen={student.benachrichtigungen} />
       </section>
+      <PdfExportSection studentId={studentId} schuljahrId={schuljahrId} />
     </div>
   );
 }

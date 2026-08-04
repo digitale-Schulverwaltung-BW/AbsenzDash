@@ -1,12 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { useNavOptions } from "../../api/hooks/useNavOptions";
 import { useStudentCatalog } from "../../api/hooks/useStudentCatalog";
 import { useStudentDetail } from "../../api/hooks/useStudentDetail";
 import { StudentDetail } from "./StudentDetail";
 
 vi.mock("../../api/hooks/useStudentDetail");
 vi.mock("../../api/hooks/useStudentCatalog");
+vi.mock("../../api/hooks/useNavOptions");
 vi.mock("../../api/hooks/useCreateMeasure", () => ({
   useCreateMeasure: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
@@ -19,6 +21,14 @@ vi.mock("../../api/hooks/useRevokeExemption", () => ({
 
 const mockUseStudentDetail = vi.mocked(useStudentDetail);
 const mockUseStudentCatalog = vi.mocked(useStudentCatalog);
+const mockUseNavOptions = vi.mocked(useNavOptions);
+
+mockUseNavOptions.mockReturnValue({
+  data: { bereiche: [], klassen: [], rolle: "klassenlehrkraft", schuljahre: [], aktuelles_schuljahr_id: null },
+  isLoading: false,
+  isError: false,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any);
 
 const CATALOG = { massnahmen_typen: [{ id: 1, name: "Gespräch" }], excuse_statuses: [], classreg_categories: [] };
 
@@ -57,8 +67,8 @@ describe("StudentDetail", () => {
 
     expect(screen.getByText("Muster, Max")).toBeInTheDocument();
     expect(screen.getByText("10a")).toBeInTheDocument();
-    expect(screen.getByText("Maßnahmen")).toBeInTheDocument();
-    expect(screen.getByText("Ausnahmen")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Maßnahmen" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ausnahmen" })).toBeInTheDocument();
   });
 
   it("shows an error message when the detail request fails", () => {
