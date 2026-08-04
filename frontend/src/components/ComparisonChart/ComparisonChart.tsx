@@ -29,7 +29,9 @@ export function ComparisonChart({ data, metric, onEntryClick }: ComparisonChartP
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="name" />
         <YAxis />
-        <Tooltip />
+        {/* isAnimationActive=false: recharts animiert sonst die Tooltip-Position bei jeder
+            Mausbewegung, was in Safari beim schnellen Hin-und-Her-Fahren sichtbar "zappelt". */}
+        <Tooltip isAnimationActive={false} />
         <Bar
           dataKey={metric}
           cursor={onEntryClick ? "pointer" : undefined}
