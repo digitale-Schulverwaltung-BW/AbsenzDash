@@ -8,8 +8,29 @@ class Absenzdash_Shortcode {
 
 	public function __construct() {
 		add_shortcode( 'absenzdash', array( $this, 'render' ) );
+		add_action( 'template_redirect', array( $this, 'redirect_ausgeloggte_nutzer_zum_login' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_filter( 'script_loader_tag', array( $this, 'add_module_type' ), 10, 3 );
+	}
+
+	private function ist_absenzdash_seite(): bool {
+		return is_singular() && has_shortcode( get_post()->post_content, 'absenzdash' );
+	}
+
+	/**
+	 * Redirect vor jeglicher Seitenausgabe (template_redirect, nicht erst im Shortcode-Callback
+	 * via render() -- da wurden von WordPress/dem Theme bereits Header/HTML gesendet, ein
+	 * wp_safe_redirect() dort waere zu spaet). Nach dem Login leitet WordPress-Core anhand des
+	 * redirect_to-Parameters automatisch zur AbsenzDash-Seite zurueck, keine weitere Anbindung
+	 * noetig.
+	 */
+	public function redirect_ausgeloggte_nutzer_zum_login(): void {
+		if ( is_user_logged_in() || ! $this->ist_absenzdash_seite() ) {
+			return;
+		}
+		$aktuelle_url = home_url( esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ?? '' ) ) );
+		wp_safe_redirect( wp_login_url( $aktuelle_url ) );
+		exit;
 	}
 
 	private function get_manifest_entry(): ?array {
@@ -22,7 +43,7 @@ class Absenzdash_Shortcode {
 	}
 
 	public function enqueue_assets(): void {
-		if ( ! is_singular() || ! has_shortcode( get_post()->post_content, 'absenzdash' ) ) {
+		if ( ! $this->ist_absenzdash_seite() ) {
 			return;
 		}
 
