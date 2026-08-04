@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "./client";
+import { ApiError, apiDelete, apiDownload, apiGet, apiPost, apiPut } from "./client";
 
 afterEach(() => {
   window.absenzdashConfig = undefined;
@@ -137,5 +137,58 @@ describe("apiDelete", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
 
     await expect(apiDelete("students/1/exemptions/2")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("apiDownload", () => {
+  it("sends the nonce header and returns the blob with a filename parsed from Content-Disposition", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(["%PDF-1.4"], { type: "application/pdf" }), {
+        status: 200,
+        headers: { "Content-Disposition": 'attachment; filename="Muster_Max_export.pdf"', "Content-Type": "application/pdf" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await apiDownload("students/1/export.pdf?sections=fehlzeiten");
+
+    expect(result.filename).toBe("Muster_Max_export.pdf");
+    expect(result.blob.type).toBe("application/pdf");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/wp-json/absenzdash/v1/api/students/1/export.pdf?sections=fehlzeiten",
+      { headers: { "X-WP-Nonce": "abc123" } },
+    );
+  });
+
+  it("falls back to a generic filename when Content-Disposition is missing", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new Blob(["%PDF-1.4"]), { status: 200 })),
+    );
+
+    const result = await apiDownload("students/1/export.pdf");
+
+    expect(result.filename).toBe("export.pdf");
+  });
+
+  it("throws an ApiError when the response is not ok", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
+
+    await expect(apiDownload("students/1/export.pdf")).rejects.toBeInstanceOf(ApiError);
   });
 });
