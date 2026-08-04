@@ -32,10 +32,14 @@ export function ComparisonChart({ data, metric, onEntryClick }: ComparisonChartP
         {/* isAnimationActive=false: recharts animiert sonst die Tooltip-Position bei jeder
             Mausbewegung, was in Safari beim schnellen Hin-und-Her-Fahren sichtbar "zappelt". */}
         <Tooltip isAnimationActive={false} />
+        {/* isAnimationActive=false: die Wachstums-Animation der Balken selbst nutzt eine
+            SVG-clipPath-Animation, die bei einem Hover-Redraw in Safari sichtbar reissen/
+            schraffiert rendern kann (Tearing), siehe die gleichartige Tooltip-Animation oben. */}
         <Bar
           dataKey={metric}
           cursor={onEntryClick ? "pointer" : undefined}
           onClick={onEntryClick ? (eintrag: StatsVergleichEintrag) => onEntryClick(eintrag.id) : undefined}
+          isAnimationActive={false}
         >
           {data.map((eintrag) => (
             <Cell key={eintrag.id} fill={eintrag.anzahl_schueler > 0 ? valueToColor(eintrag[metric], min, max) : NEUTRALGRAU} />
