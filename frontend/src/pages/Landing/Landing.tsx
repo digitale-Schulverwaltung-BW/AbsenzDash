@@ -2,7 +2,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStats } from "../../api/hooks/useStats";
 import { ComparisonChart } from "../../components/ComparisonChart/ComparisonChart";
 import { StatCard } from "../../components/StatCard/StatCard";
-import { resolveEntryClickTarget } from "./entryClickTarget";
+import { buildKlasseNavigationParams, resolveEntryClickTarget } from "./entryClickTarget";
 
 export function Landing() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -32,12 +32,7 @@ export function Landing() {
       setSearchParams(next);
       return;
     }
-    const zielParams = new URLSearchParams();
-    zielParams.set("klasse", String(ziel.id));
-    const schuljahr = searchParams.get("schuljahr");
-    if (schuljahr) {
-      zielParams.set("schuljahr", schuljahr);
-    }
+    const zielParams = buildKlasseNavigationParams(searchParams, ziel.id);
     navigate({ pathname: "/schueler", search: zielParams.toString() });
   };
 

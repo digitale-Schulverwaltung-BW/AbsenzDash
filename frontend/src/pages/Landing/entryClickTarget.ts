@@ -12,3 +12,24 @@ const BEREICH_EBENEN = new Set<StatsLevel>(["schule", "eigene_bereiche"]);
 export function resolveEntryClickTarget(level: StatsLevel, id: number): EntryClickTarget {
   return BEREICH_EBENEN.has(level) ? { typ: "bereich", id } : { typ: "klasse", id };
 }
+
+/**
+ * Baut die Such-Parameter fuer die Navigation von einem Balken-Klick auf eine Klasse zur
+ * Schuelerliste. Uebernimmt `bereich`/`schuljahr` aus den aktuellen Parametern, damit die
+ * Navigation (Tabs, Bereich-/Klassen-Dropdown) nach dem Wechsel weiterhin den Bereich kennt, aus
+ * dem die Klasse aufgerufen wurde -- sonst zeigen Uebersicht-Tab (liest nur `klasse`) und
+ * Navigation-Dropdowns (brauchen `bereich` UND `klasse`) inkonsistente Zustaende.
+ */
+export function buildKlasseNavigationParams(currentParams: URLSearchParams, klasseId: number): URLSearchParams {
+  const zielParams = new URLSearchParams();
+  zielParams.set("klasse", String(klasseId));
+  const bereich = currentParams.get("bereich");
+  if (bereich) {
+    zielParams.set("bereich", bereich);
+  }
+  const schuljahr = currentParams.get("schuljahr");
+  if (schuljahr) {
+    zielParams.set("schuljahr", schuljahr);
+  }
+  return zielParams;
+}
