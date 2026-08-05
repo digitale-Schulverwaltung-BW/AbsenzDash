@@ -40,6 +40,7 @@ def _patch_phases(monkeypatch):
     monkeypatch.setattr(sync_orchestrator, "WebUntisClient", _FakeWebUntisClient)
     monkeypatch.setattr(sync_orchestrator, "sync_abteilungen", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_klassen", AsyncMock())
+    monkeypatch.setattr(sync_orchestrator, "sync_bereiche", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_kategorien", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "import_schueler", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_fehlzeiten", AsyncMock())
@@ -63,6 +64,7 @@ async def test_run_full_sync_calls_phases_in_order(db_session):
     calls = []
     sync_orchestrator.sync_abteilungen.side_effect = lambda *a: calls.append("abteilungen")
     sync_orchestrator.sync_klassen.side_effect = lambda *a, **kw: calls.append("klassen")
+    sync_orchestrator.sync_bereiche.side_effect = lambda *a: calls.append("bereiche")
     sync_orchestrator.sync_kategorien.side_effect = lambda *a: calls.append("kategorien")
     sync_orchestrator.import_schueler.side_effect = lambda *a: calls.append("schueler")
     sync_orchestrator.sync_fehlzeiten.side_effect = lambda *a: calls.append("fehlzeiten")
@@ -71,7 +73,7 @@ async def test_run_full_sync_calls_phases_in_order(db_session):
 
     await sync_orchestrator.run_full_sync(async_session_factory)
 
-    assert calls == ["abteilungen", "klassen", "kategorien", "schueler", "fehlzeiten", "klassenbuch", "schwellwerte"]
+    assert calls == ["abteilungen", "klassen", "bereiche", "kategorien", "schueler", "fehlzeiten", "klassenbuch", "schwellwerte"]
 
 
 @pytest.mark.asyncio

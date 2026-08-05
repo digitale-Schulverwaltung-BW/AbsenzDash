@@ -14,6 +14,7 @@ from app.models.schuljahr import Schuljahr
 from app.services.asv_csv_import import import_schueler
 from app.services.eskalations_pruefung import pruefe_schwellwerte
 from app.services.webuntis_abteilung_sync import sync_abteilungen
+from app.services.webuntis_bereich_sync import sync_bereiche
 from app.services.webuntis_fehlzeit_sync import sync_fehlzeiten
 from app.services.webuntis_kategorie_sync import sync_kategorien
 from app.services.webuntis_klassen_sync import sync_klassen
@@ -122,6 +123,7 @@ async def run_sync_once(db: AsyncSession) -> None:
 
         await sync_abteilungen(client, db)
         await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
+        await sync_bereiche(db)
         await sync_kategorien(client, db)
         await import_schueler(db)
 
