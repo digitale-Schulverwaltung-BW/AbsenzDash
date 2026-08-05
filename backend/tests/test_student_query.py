@@ -1,5 +1,6 @@
 import datetime
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
@@ -319,7 +320,8 @@ async def test_load_schueler_rohzahlen_counts_within_range(db_session):
 
     db_session.add_all(
         [
-            # schueler_a: 2 Fehltage, 1 Fehlstunde within range, 1 Fehltag outside range
+            # schueler_a: 2 Fehltage, 1 Fehlstunde (730-815 = 45 Min. -> 1.00 Fehlstunde) within range,
+            # 1 Fehltag outside range
             Fehlzeit(schueler_id=schueler_a.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359),
             Fehlzeit(schueler_id=schueler_a.id, typ="tag", datum=date(2025, 11, 1), start_zeit=0, end_zeit=2359),
             Fehlzeit(schueler_id=schueler_a.id, typ="stunde", datum=date(2025, 10, 5), start_zeit=730, end_zeit=815),
@@ -337,8 +339,62 @@ async def test_load_schueler_rohzahlen_counts_within_range(db_session):
         db_session, [schueler_a.id, schueler_b.id], date(2025, 9, 15), date(2026, 7, 29)
     )
 
-    assert result[schueler_a.id] == {"fehltage": 2, "fehlstunden": 1, "klassenbuch_anzahl": 1}
-    assert result[schueler_b.id] == {"fehltage": 0, "fehlstunden": 0, "klassenbuch_anzahl": 0}
+    assert result[schueler_a.id]["fehltage"] == {"gesamt": 2, "entschuldigt": 0, "unentschuldigt": 2}
+    assert result[schueler_a.id]["fehlstunden"] == {
+        "gesamt": Decimal("1.00"), "entschuldigt": Decimal("0.00"), "unentschuldigt": Decimal("1.00"),
+    }
+    assert result[schueler_a.id]["klassenbuch_anzahl"] == 1
+    assert result[schueler_b.id]["fehltage"] == {"gesamt": 0, "entschuldigt": 0, "unentschuldigt": 0}
+    assert result[schueler_b.id]["fehlstunden"] == {
+        "gesamt": Decimal("0.00"), "entschuldigt": Decimal("0.00"), "unentschuldigt": Decimal("0.00"),
+    }
+    assert result[schueler_b.id]["klassenbuch_anzahl"] == 0
+
+
+@pytest.mark.asyncio
+async def test_load_schueler_rohzahlen_splits_by_excuse_status(db_session):
+    schueler = Schueler(externe_id="ext-a", vorname="A", nachname="A")
+    entschuldigt = ExcuseStatus(name="entsch.", zaehlt_als_entschuldigt=True)
+    nicht_entschuldigt = ExcuseStatus(name="nicht entsch.", zaehlt_als_entschuldigt=False)
+    db_session.add_all([schueler, entschuldigt, nicht_entschuldigt])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(
+                schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359,
+                excuse_status_id=entschuldigt.id,
+            ),
+            Fehlzeit(
+                schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 2), start_zeit=0, end_zeit=2359,
+                excuse_status_id=nicht_entschuldigt.id,
+            ),
+            # kein excuse_status_id gesetzt -> zaehlt als unentschuldigt
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 3), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+
+    result = await student_query.load_schueler_rohzahlen(db_session, [schueler.id], date(2025, 9, 15), date(2026, 7, 29))
+
+    assert result[schueler.id]["fehltage"] == {"gesamt": 3, "entschuldigt": 1, "unentschuldigt": 2}
+
+
+@pytest.mark.asyncio
+async def test_load_schueler_rohzahlen_without_date_range_counts_all_time(db_session):
+    schueler = Schueler(externe_id="ext-a", vorname="A", nachname="A")
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2020, 1, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 1, 1), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+
+    result = await student_query.load_schueler_rohzahlen(db_session, [schueler.id], None, None)
+
+    assert result[schueler.id]["fehltage"]["gesamt"] == 2
 
 
 @pytest.mark.asyncio

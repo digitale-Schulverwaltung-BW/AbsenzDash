@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -20,6 +21,7 @@ from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
+from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
 
 ZAEHLERSTAND_TYPEN = ("fehlzeiten", "klassenbuch")
 
@@ -201,30 +203,83 @@ async def load_overview_extras(db: AsyncSession, schueler_ids: list[int]) -> dic
     }
 
 
+def _fehlzeit_datum_filter(von: date | None, bis: date | None) -> list[Any]:
+    filters: list[Any] = []
+    if von is not None:
+        filters.append(Fehlzeit.datum >= von)
+    if bis is not None:
+        filters.append(Fehlzeit.datum <= bis)
+    return filters
+
+
+def _klassenbuch_datum_filter(von: date | None, bis: date | None) -> list[Any]:
+    filters: list[Any] = []
+    if von is not None:
+        filters.append(KlassenbuchEintrag.datum >= von)
+    if bis is not None:
+        filters.append(KlassenbuchEintrag.datum <= bis)
+    return filters
+
+
+def _leerer_fehltage_split() -> dict[str, int]:
+    return {"gesamt": 0, "entschuldigt": 0, "unentschuldigt": 0}
+
+
+def _leerer_fehlstunden_split() -> dict[str, Decimal]:
+    return {"gesamt": Decimal("0.00"), "entschuldigt": Decimal("0.00"), "unentschuldigt": Decimal("0.00")}
+
+
 async def load_schueler_rohzahlen(
-    db: AsyncSession, schueler_ids: list[int], von: date, bis: date
-) -> dict[int, dict[str, int]]:
-    """Rohzahlen (Fehltage/Fehlstunden/Klassenbuch-Anzahl) fuer den Historie-Modus:
-    zaehlt alle fehlzeit/klassenbuch_eintrag-Zeilen im Zeitraum, unabhaengig vom
-    Entschuldigungsstatus (bewusst anders als die Eskalations-Engine, siehe Task 5 Brief)."""
-    ergebnis = {sid: {"fehltage": 0, "fehlstunden": 0, "klassenbuch_anzahl": 0} for sid in schueler_ids}
+    db: AsyncSession, schueler_ids: list[int], von: date | None, bis: date | None
+) -> dict[int, dict[str, Any]]:
+    """Fehltage/Fehlstunden (je als {gesamt, entschuldigt, unentschuldigt}) plus
+    klassenbuch_anzahl fuer den angegebenen Zeitraum. von=None/bis=None heisst
+    unbegrenzt (all-time) - genutzt sowohl im Historie-Modus (vergangenes Schuljahr)
+    als auch im Normalmodus (aktuelles Schuljahr, oder all-time falls noch keines
+    konfiguriert ist). Entschuldigt/unentschuldigt-Split: Zeilen ohne excuse_status_id
+    zaehlen als unentschuldigt (sicherer Default, konsistent mit der Eskalations-Engine,
+    siehe eskalations_pruefung.py)."""
+    ergebnis: dict[int, dict[str, Any]] = {
+        sid: {
+            "fehltage": _leerer_fehltage_split(),
+            "fehlstunden": _leerer_fehlstunden_split(),
+            "klassenbuch_anzahl": 0,
+        }
+        for sid in schueler_ids
+    }
     if not schueler_ids:
         return ergebnis
 
+    entschuldigt_expr = func.coalesce(ExcuseStatus.zaehlt_als_entschuldigt, False).label("entschuldigt")
     fehlzeit_result = await db.execute(
-        select(Fehlzeit.schueler_id, Fehlzeit.typ, func.count())
-        .where(Fehlzeit.schueler_id.in_(schueler_ids), Fehlzeit.datum.between(von, bis))
-        .group_by(Fehlzeit.schueler_id, Fehlzeit.typ)
+        select(
+            Fehlzeit.schueler_id,
+            Fehlzeit.typ,
+            entschuldigt_expr,
+            func.count().label("anzahl"),
+            func.sum(fehlstunden_minuten_expr()).label("minuten"),
+        )
+        .outerjoin(ExcuseStatus, Fehlzeit.excuse_status_id == ExcuseStatus.id)
+        .where(
+            Fehlzeit.schueler_id.in_(schueler_ids),
+            Fehlzeit.invalid.is_(False),
+            *_fehlzeit_datum_filter(von, bis),
+        )
+        .group_by(Fehlzeit.schueler_id, Fehlzeit.typ, entschuldigt_expr)
     )
-    for schueler_id, typ, anzahl in fehlzeit_result.all():
+    for schueler_id, typ, entschuldigt, anzahl, minuten in fehlzeit_result.all():
+        split_key = "entschuldigt" if entschuldigt else "unentschuldigt"
         if typ == "tag":
-            ergebnis[schueler_id]["fehltage"] = anzahl
+            ergebnis[schueler_id]["fehltage"]["gesamt"] += anzahl
+            ergebnis[schueler_id]["fehltage"][split_key] += anzahl
         elif typ == "stunde":
-            ergebnis[schueler_id]["fehlstunden"] = anzahl
+            stunden = minuten_zu_fehlstunden(minuten)
+            ergebnis[schueler_id]["fehlstunden"]["gesamt"] += stunden
+            ergebnis[schueler_id]["fehlstunden"][split_key] += stunden
 
     klassenbuch_result = await db.execute(
         select(KlassenbuchEintrag.schueler_id, func.count())
-        .where(KlassenbuchEintrag.schueler_id.in_(schueler_ids), KlassenbuchEintrag.datum.between(von, bis))
+        .where(KlassenbuchEintrag.schueler_id.in_(schueler_ids), *_klassenbuch_datum_filter(von, bis))
         .group_by(KlassenbuchEintrag.schueler_id)
     )
     for schueler_id, anzahl in klassenbuch_result.all():

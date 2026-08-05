@@ -18,6 +18,12 @@ class ZaehlerstandOut(BaseModel):
     erreichte_stufe_nr: int | None
 
 
+class FehlzeitSplitOut(BaseModel):
+    gesamt: float
+    entschuldigt: float
+    unentschuldigt: float
+
+
 class BenachrichtigungOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,8 +46,8 @@ class StudentOverviewOut(BaseModel):
     zaehlerstand: dict[str, ZaehlerstandOut] | None = None
     letzte_benachrichtigung: BenachrichtigungOut | None = None
     ohne_massnahme_seit_benachrichtigung: bool | None = None
-    fehltage: int | None = None
-    fehlstunden: int | None = None
+    fehltage: FehlzeitSplitOut | None = None
+    fehlstunden: FehlzeitSplitOut | None = None
     klassenbuch_anzahl: int | None = None
 
 
