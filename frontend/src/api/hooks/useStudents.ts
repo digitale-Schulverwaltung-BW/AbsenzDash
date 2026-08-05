@@ -4,6 +4,9 @@ import type { StudentList } from "../types";
 
 export const STUDENT_LIST_LIMIT = 50;
 
+export type StudentSortField = "nachname" | "klasse" | "fehltage" | "fehlstunden" | "klassenbuch_anzahl";
+export type StudentSortDir = "asc" | "desc";
+
 export interface StudentListParams {
   bereichId: number | null;
   klasseId: number | null;
@@ -11,6 +14,8 @@ export interface StudentListParams {
   nurAuffaellige: boolean;
   offset: number;
   schuljahrId: number | null;
+  sortBy?: StudentSortField | null;
+  sortDir?: StudentSortDir;
 }
 
 function buildQuery(params: StudentListParams): string {
@@ -20,6 +25,10 @@ function buildQuery(params: StudentListParams): string {
   if (params.minStufe !== null) query.set("min_stufe", String(params.minStufe));
   if (params.nurAuffaellige) query.set("nur_auffaellige", "true");
   if (params.schuljahrId !== null) query.set("schuljahr_id", String(params.schuljahrId));
+  if (params.sortBy) {
+    query.set("sort_by", params.sortBy);
+    query.set("sort_dir", params.sortDir ?? "asc");
+  }
   query.set("offset", String(params.offset));
   return query.toString();
 }

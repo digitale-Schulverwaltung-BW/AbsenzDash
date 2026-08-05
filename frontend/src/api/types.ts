@@ -108,6 +108,12 @@ export interface Zaehlerstand {
   erreichte_stufe_nr: number | null;
 }
 
+export interface FehlzeitSplit {
+  gesamt: number;
+  entschuldigt: number;
+  unentschuldigt: number;
+}
+
 export interface BenachrichtigungEmpfaenger {
   rolle: string;
   name?: string;
@@ -132,8 +138,8 @@ export interface StudentOverview {
   zaehlerstand: Record<string, Zaehlerstand> | null;
   letzte_benachrichtigung: Benachrichtigung | null;
   ohne_massnahme_seit_benachrichtigung: boolean | null;
-  fehltage: number | null;
-  fehlstunden: number | null;
+  fehltage: FehlzeitSplit | null;
+  fehlstunden: FehlzeitSplit | null;
   klassenbuch_anzahl: number | null;
 }
 

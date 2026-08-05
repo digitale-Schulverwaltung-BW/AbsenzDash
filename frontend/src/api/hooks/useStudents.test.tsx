@@ -63,4 +63,48 @@ describe("useStudents", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(spy).toHaveBeenCalledWith("students?schuljahr_id=27&offset=0");
   });
+
+  it("includes sort_by and sort_dir in the query string when sortBy is set", async () => {
+    const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+
+    const { result } = renderHook(
+      () =>
+        useStudents({
+          bereichId: null,
+          klasseId: null,
+          minStufe: null,
+          nurAuffaellige: false,
+          offset: 0,
+          schuljahrId: null,
+          sortBy: "fehlstunden",
+          sortDir: "desc",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith("students?sort_by=fehlstunden&sort_dir=desc&offset=0");
+  });
+
+  it("omits sort_by/sort_dir from the query string when sortBy is null", async () => {
+    const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+
+    const { result } = renderHook(
+      () =>
+        useStudents({
+          bereichId: null,
+          klasseId: null,
+          minStufe: null,
+          nurAuffaellige: false,
+          offset: 0,
+          schuljahrId: null,
+          sortBy: null,
+          sortDir: "asc",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith("students?offset=0");
+  });
 });
