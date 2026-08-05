@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from decimal import Decimal
+
+from sqlalchemy import ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +17,6 @@ class SchwellwertStufe(Base, TimestampMixin):
     regel_id: Mapped[int] = mapped_column(ForeignKey("schwellwert_regel.id", ondelete="CASCADE"))
     stufe_nr: Mapped[int] = mapped_column(Integer)
     einheit: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "fehltage" | "fehlstunden"
-    schwellenwert: Mapped[int] = mapped_column(Integer)
+    schwellenwert: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     fehlzeiten_filter: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "nur_unentschuldigt" | "alle"
     empfaenger_rollen: Mapped[list[str]] = mapped_column(ARRAY(String(20)))

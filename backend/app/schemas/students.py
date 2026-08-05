@@ -14,7 +14,7 @@ class KlasseOut(BaseModel):
 
 
 class ZaehlerstandOut(BaseModel):
-    aktueller_stand: int
+    aktueller_stand: float
     erreichte_stufe_nr: int | None
 
 

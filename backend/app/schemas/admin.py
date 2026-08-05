@@ -9,7 +9,7 @@ class SchwellwertStufeIn(BaseModel):
     id: int | None = None
     stufe_nr: int
     einheit: str | None = None
-    schwellenwert: int
+    schwellenwert: float
     fehlzeiten_filter: str | None = None
     empfaenger_rollen: list[str]
 
@@ -18,7 +18,7 @@ class SchwellwertStufeOut(BaseModel):
     id: int
     stufe_nr: int
     einheit: str | None
-    schwellenwert: int
+    schwellenwert: float
     fehlzeiten_filter: str | None
     empfaenger_rollen: list[str]
 

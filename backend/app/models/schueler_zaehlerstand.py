@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -16,6 +17,6 @@ class SchuelerZaehlerstand(Base, TimestampMixin):
     schueler_id: Mapped[int] = mapped_column(ForeignKey("schueler.id", ondelete="CASCADE"))
     typ: Mapped[str] = mapped_column(String(20))  # "fehlzeiten" | "klassenbuch"
     regel_id: Mapped[int | None] = mapped_column(ForeignKey("schwellwert_regel.id", ondelete="SET NULL"), nullable=True)
-    aktueller_stand: Mapped[int] = mapped_column(Integer, default=0)
+    aktueller_stand: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0)
     erreichte_stufe_nr: Mapped[int | None] = mapped_column(Integer, nullable=True)
     letzter_reset_am: Mapped[date | None] = mapped_column(Date, nullable=True)
