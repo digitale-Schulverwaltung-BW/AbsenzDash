@@ -277,6 +277,64 @@ async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session):
 
 
 @pytest.mark.asyncio
+async def test_list_students_sorts_by_fehlstunden_descending(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler_wenig = Schueler(externe_id="ext-wenig", vorname="Wenig", nachname="Fehlstunden", klasse_id=klasse.id, aktiv=True)
+    schueler_viel = Schueler(externe_id="ext-viel", vorname="Viel", nachname="Fehlstunden", klasse_id=klasse.id, aktiv=True)
+    db_session.add_all([schueler_wenig, schueler_viel])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler_wenig.id, typ="stunde", datum=date(2025, 10, 1), start_zeit=800, end_zeit=815),
+            Fehlzeit(schueler_id=schueler_viel.id, typ="stunde", datum=date(2025, 10, 1), start_zeit=730, end_zeit=815),
+            Fehlzeit(schueler_id=schueler_viel.id, typ="stunde", datum=date(2025, 10, 2), start_zeit=730, end_zeit=815),
+        ]
+    )
+    await db_session.commit()
+
+    items, _ = await student_query.list_students(
+        db_session, scope=None, von=date(2025, 9, 1), bis=date(2026, 7, 30), sort_by="fehlstunden", sort_dir="desc"
+    )
+
+    assert [s.id for s in items] == [schueler_viel.id, schueler_wenig.id]
+
+
+@pytest.mark.asyncio
+async def test_list_students_sorts_by_fehltage_ascending(db_session):
+    schueler_null = Schueler(externe_id="ext-0", vorname="Null", nachname="A", aktiv=True)
+    schueler_zwei = Schueler(externe_id="ext-2", vorname="Zwei", nachname="B", aktiv=True)
+    db_session.add_all([schueler_null, schueler_zwei])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler_zwei.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler_zwei.id, typ="tag", datum=date(2025, 10, 2), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+
+    items, _ = await student_query.list_students(
+        db_session, scope=None, von=date(2025, 9, 1), bis=date(2026, 7, 30), sort_by="fehltage", sort_dir="asc"
+    )
+
+    assert [s.id for s in items] == [schueler_null.id, schueler_zwei.id]
+
+
+@pytest.mark.asyncio
+async def test_list_students_default_sort_is_unchanged_name_order(db_session):
+    schueler_z = Schueler(externe_id="ext-z", vorname="A", nachname="Zeta", aktiv=True)
+    schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="Anton", aktiv=True)
+    db_session.add_all([schueler_z, schueler_a])
+    await db_session.commit()
+
+    items, _ = await student_query.list_students(db_session, scope=None)
+
+    assert [s.id for s in items] == [schueler_a.id, schueler_z.id]
+
+
+@pytest.mark.asyncio
 async def test_load_excuse_status_map_returns_rows_by_id(db_session):
     status_a = ExcuseStatus(name="E", long_name="Entschuldigt", zaehlt_als_entschuldigt=True)
     status_b = ExcuseStatus(name="U", long_name="Unentschuldigt", zaehlt_als_entschuldigt=False)

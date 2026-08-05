@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ausnahme import Ausnahme
@@ -25,6 +25,8 @@ from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_z
 
 ZAEHLERSTAND_TYPEN = ("fehlzeiten", "klassenbuch")
 
+SORTIERBARE_FELDER = ("nachname", "klasse", "fehltage", "fehlstunden", "klassenbuch_anzahl")
+
 
 async def list_students(
     db: AsyncSession,
@@ -35,13 +37,20 @@ async def list_students(
     min_stufe: int | None = None,
     nur_auffaellige: bool = False,
     nur_aktive: bool = True,
+    von: date | None = None,
+    bis: date | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[Schueler], int]:
-    """Liefert die fuer den Scope sichtbaren Schueler (gefiltert, paginiert) sowie die
-    Gesamtzahl (nach Filtern, vor Pagination)."""
+    """Liefert die fuer den Scope sichtbaren Schueler (gefiltert, sortiert, paginiert) sowie
+    die Gesamtzahl (nach Filtern, vor Pagination). von/bis grenzen den Zeitraum fuer die
+    Fehltage/Fehlstunden/Einträge-Sortierung ein (None/None = unbegrenzt)."""
     if scope is not None and not scope:
         return [], 0
+    if sort_by is not None and sort_by not in SORTIERBARE_FELDER:
+        raise ValueError(f"Unbekanntes sort_by: {sort_by}")
 
     conditions = []
     if nur_aktive:
@@ -71,9 +80,46 @@ async def list_students(
         query = query.where(condition)
 
     total = (await db.execute(count_query)).scalar_one()
-    result = await db.execute(
-        query.order_by(Schueler.nachname, Schueler.vorname, Schueler.id).offset(offset).limit(limit)
-    )
+
+    richtung = desc if sort_dir == "desc" else asc
+    if sort_by is None or sort_by == "nachname":
+        query = query.order_by(Schueler.nachname, Schueler.vorname, Schueler.id)
+    elif sort_by == "klasse":
+        query = query.outerjoin(Klasse, Klasse.id == Schueler.klasse_id).order_by(
+            richtung(Klasse.name), Schueler.nachname, Schueler.id
+        )
+    elif sort_by == "klassenbuch_anzahl":
+        subq = (
+            select(KlassenbuchEintrag.schueler_id, func.count().label("anzahl"))
+            .where(*_klassenbuch_datum_filter(von, bis))
+            .group_by(KlassenbuchEintrag.schueler_id)
+            .subquery()
+        )
+        query = query.outerjoin(subq, subq.c.schueler_id == Schueler.id).order_by(
+            richtung(func.coalesce(subq.c.anzahl, 0)), Schueler.nachname, Schueler.id
+        )
+    elif sort_by == "fehltage":
+        subq = (
+            select(Fehlzeit.schueler_id, func.count().label("anzahl"))
+            .where(Fehlzeit.typ == "tag", Fehlzeit.invalid.is_(False), *_fehlzeit_datum_filter(von, bis))
+            .group_by(Fehlzeit.schueler_id)
+            .subquery()
+        )
+        query = query.outerjoin(subq, subq.c.schueler_id == Schueler.id).order_by(
+            richtung(func.coalesce(subq.c.anzahl, 0)), Schueler.nachname, Schueler.id
+        )
+    else:  # sort_by == "fehlstunden"
+        subq = (
+            select(Fehlzeit.schueler_id, func.sum(fehlstunden_minuten_expr()).label("minuten"))
+            .where(Fehlzeit.typ == "stunde", Fehlzeit.invalid.is_(False), *_fehlzeit_datum_filter(von, bis))
+            .group_by(Fehlzeit.schueler_id)
+            .subquery()
+        )
+        query = query.outerjoin(subq, subq.c.schueler_id == Schueler.id).order_by(
+            richtung(func.coalesce(subq.c.minuten, 0)), Schueler.nachname, Schueler.id
+        )
+
+    result = await db.execute(query.offset(offset).limit(limit))
     return list(result.scalars().all()), total
 
 
