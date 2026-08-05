@@ -35,7 +35,7 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
     if bereich_scope is not None and not bereich_scope:
         bereiche = []
     else:
-        query = select(Bereich).order_by(Bereich.name)
+        query = select(Bereich).where(Bereich.ausgeblendet.is_(False)).order_by(Bereich.name)
         if bereich_scope is not None:
             query = query.where(Bereich.id.in_(bereich_scope))
         bereiche = (await db.execute(query)).scalars().all()
@@ -48,22 +48,8 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
             query = query.where(Klasse.id.in_(klasse_scope))
         klassen = (await db.execute(query)).scalars().all()
 
-    # Deliberate simplification: NavKlasseOut.bereich_id is a single value, but bereich_klasse is m:n
-    # (a Klasse can in principle belong to more than one Bereich). We pick the lowest bereich_id via
-    # func.min() and assume in practice each Klasse belongs to exactly one Bereich at this school (see
-    # TECH-SPEC.md). If a Klasse ever legitimately belongs to >1 Bereich, this dropdown mapping will
-    # only show it under the lowest-numbered Bereich, while _stats_for_bereich's aggregation below
-    # correctly includes it in the totals of every Bereich it belongs to — i.e. the nav dropdown and
-    # the numbers can disagree for that edge case. See ROADMAP.md "Technical debt" for the accepted
-    # limitation; do not "fix" this by widening bereich_id to a list without reading that entry first.
     klasse_bereich_map = dict(
-        (
-            await db.execute(
-                select(bereich_klasse.c.klasse_id, func.min(bereich_klasse.c.bereich_id)).group_by(
-                    bereich_klasse.c.klasse_id
-                )
-            )
-        ).all()
+        (await db.execute(select(bereich_klasse.c.klasse_id, bereich_klasse.c.bereich_id))).all()
     )
 
     schuljahre_result = await db.execute(select(Schuljahr).order_by(Schuljahr.start_datum.desc()))
@@ -188,7 +174,9 @@ async def _stats_for_bereich(db: AsyncSession, bereich: Bereich, schuljahr_start
 
 async def _stats_schulweit(db: AsyncSession, schuljahr_start: date | None) -> StatsOut:
     own = await _aggregate(db, None, schuljahr_start)
-    bereiche = (await db.execute(select(Bereich).order_by(Bereich.name))).scalars().all()
+    bereiche = (
+        await db.execute(select(Bereich).where(Bereich.ausgeblendet.is_(False)).order_by(Bereich.name))
+    ).scalars().all()
     vergleich = []
     for bereich in bereiche:
         klasse_ids = (

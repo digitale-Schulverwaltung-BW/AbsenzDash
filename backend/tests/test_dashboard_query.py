@@ -351,3 +351,34 @@ async def test_get_dashboard_stats_404s_for_klasse_outside_scope(db_session):
     with pytest.raises(HTTPException) as exc_info:
         await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse_b.id)
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_excludes_ausgeblendete_bereiche(db_session):
+    bereich_sichtbar = Bereich(name="Ausbildung")
+    bereich_versteckt = Bereich(name="Historisch", ausgeblendet=True)
+    db_session.add_all([bereich_sichtbar, bereich_versteckt])
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    options = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert {b.name for b in options.bereiche} == {"Ausbildung"}
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_schulweit_excludes_ausgeblendete_bereiche(db_session):
+    bereich_sichtbar = Bereich(name="Ausbildung")
+    bereich_versteckt = Bereich(name="Historisch", ausgeblendet=True)
+    db_session.add_all([bereich_sichtbar, bereich_versteckt])
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, None)
+
+    namen = {v.name for v in stats.vergleich}
+    assert namen == {"Ausbildung"}
