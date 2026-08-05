@@ -16,10 +16,8 @@ from app.schemas.admin import (
     AbteilungOut,
     BereichIn,
     BereichOut,
-    BereichVorschlagOut,
     ExcuseStatusIn,
     ExcuseStatusOut,
-    KlasseOut,
     MeasureTypeIn,
     MeasureTypeOut,
     SyncNowOut,
@@ -44,11 +42,6 @@ from app.services.sync_orchestrator import run_sync_once
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_schulleitung)])
 
 
-@router.get("/klassen")
-async def get_klassen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[KlasseOut]:
-    return await bereich_service.list_klassen(db)
-
-
 @router.get("/abteilungen")
 async def get_abteilungen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[AbteilungOut]:
     return await bereich_service.list_abteilungen(db)
@@ -65,12 +58,7 @@ async def put_bereiche(
     db: Annotated[AsyncSession, Depends(get_db)],
     payload: list[BereichIn],
 ) -> list[BereichOut]:
-    return await bereich_service.replace_bereiche(db, payload, nutzer.id)
-
-
-@router.get("/bereiche/vorschlag-aus-abteilungen")
-async def get_bereiche_vorschlag(db: Annotated[AsyncSession, Depends(get_db)]) -> list[BereichVorschlagOut]:
-    return await bereich_service.vorschlag_aus_abteilungen(db)
+    return await bereich_service.update_bereiche(db, payload, nutzer.id)
 
 
 @router.get("/threshold-rules")
