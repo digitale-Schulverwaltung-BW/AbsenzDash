@@ -27,19 +27,24 @@ const BASE_STUDENT = {
   },
   letzte_benachrichtigung: null,
   ohne_massnahme_seit_benachrichtigung: false,
-  fehltage: null,
-  fehlstunden: null,
-  klassenbuch_anzahl: null,
+  fehltage: { gesamt: 3, entschuldigt: 2, unentschuldigt: 1 },
+  fehlstunden: { gesamt: 1.5, entschuldigt: 1.0, unentschuldigt: 0.5 },
+  klassenbuch_anzahl: 2,
 };
+
+function mockData(items: unknown[], overrides: Record<string, unknown> = {}) {
+  mockUseStudents.mockReturnValue({
+    data: { items, total: items.length, limit: 50, offset: 0 },
+    isLoading: false,
+    isError: false,
+    ...overrides,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+}
 
 describe("StudentList", () => {
   it("renders a row per student with a link to the detail page", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [BASE_STUDENT], total: 1, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([BASE_STUDENT]);
 
     renderList();
 
@@ -47,18 +52,30 @@ describe("StudentList", () => {
     expect(screen.getByText("10a")).toBeInTheDocument();
   });
 
+  it("shows Fehltage/Fehlstunden/Eintraege as their gesamt values, always (both modes)", () => {
+    mockData([BASE_STUDENT]);
+
+    renderList();
+
+    const row = screen.getByRole("row", { name: /Muster, Max/ });
+    expect(within(row).getByText("3")).toBeInTheDocument(); // Fehltage gesamt
+    expect(within(row).getByText("1.5")).toBeInTheDocument(); // Fehlstunden gesamt
+    expect(within(row).getByText("2")).toBeInTheDocument(); // Eintraege
+  });
+
+  it("shows the entschuldigt/unentschuldigt split as a title tooltip on the Fehltage cell", () => {
+    mockData([BASE_STUDENT]);
+
+    renderList();
+
+    const row = screen.getByRole("row", { name: /Muster, Max/ });
+    const fehltageCell = within(row).getByText("3");
+    expect(fehltageCell).toHaveAttribute("title", expect.stringContaining("2 entschuldigt"));
+    expect(fehltageCell).toHaveAttribute("title", expect.stringContaining("1 unentschuldigt"));
+  });
+
   it("highlights a row without a measure since the last notification", () => {
-    mockUseStudents.mockReturnValue({
-      data: {
-        items: [{ ...BASE_STUDENT, ohne_massnahme_seit_benachrichtigung: true }],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([{ ...BASE_STUDENT, ohne_massnahme_seit_benachrichtigung: true }]);
 
     renderList();
 
@@ -66,28 +83,16 @@ describe("StudentList", () => {
   });
 
   it("toggles the nur_auffaellige filter via the URL params", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [], total: 0, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([]);
 
     renderList();
     fireEvent.click(screen.getByLabelText("Nur auffällige"));
 
-    expect(mockUseStudents).toHaveBeenLastCalledWith(
-      expect.objectContaining({ nurAuffaellige: true }),
-    );
+    expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ nurAuffaellige: true }));
   });
 
   it("sets the min_stufe filter via the Mindeststufe select", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [], total: 0, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([]);
 
     renderList();
     fireEvent.change(screen.getByLabelText("Mindeststufe"), { target: { value: "2" } });
@@ -96,12 +101,7 @@ describe("StudentList", () => {
   });
 
   it("resets offset back to 0 when a filter changes while paginated", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [], total: 0, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([]);
 
     renderList(["/schueler?offset=50"]);
     fireEvent.click(screen.getByLabelText("Nur auffällige"));
@@ -110,12 +110,7 @@ describe("StudentList", () => {
   });
 
   it("disables the Weiter button on the last page", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [BASE_STUDENT], total: 1, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([BASE_STUDENT]);
 
     renderList();
 
@@ -124,12 +119,7 @@ describe("StudentList", () => {
   });
 
   it("shows an error message when the request fails", () => {
-    mockUseStudents.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([], { data: undefined, isError: true });
 
     renderList();
 
@@ -137,48 +127,35 @@ describe("StudentList", () => {
   });
 
   it("reads schuljahr from the URL and passes it to useStudents", () => {
-    mockUseStudents.mockReturnValue({
-      data: { items: [], total: 0, limit: 50, offset: 0 },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockData([]);
 
     renderList(["/schueler?schuljahr=27"]);
 
     expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ schuljahrId: 27 }));
   });
 
-  it("shows raw counts instead of Ampel-badges and no Benachrichtigt column in history mode", () => {
-    mockUseStudents.mockReturnValue({
-      data: {
-        items: [
-          {
-            ...BASE_STUDENT,
-            zaehlerstand: null,
-            letzte_benachrichtigung: null,
-            ohne_massnahme_seit_benachrichtigung: null,
-            fehltage: 4,
-            fehlstunden: 2,
-            klassenbuch_anzahl: 3,
-          },
-        ],
-        total: 1,
-        limit: 50,
-        offset: 0,
-      },
-      isLoading: false,
-      isError: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+  it("hides zaehlerstand-based columns (Eskalationsstufe, Benachrichtigt) in history mode", () => {
+    mockData([{ ...BASE_STUDENT, zaehlerstand: null, letzte_benachrichtigung: null }]);
 
     renderList(["/schueler?schuljahr=27"]);
 
-    const row = screen.getByRole("row", { name: /Muster, Max/ });
-    expect(within(row).getByText("4")).toBeInTheDocument();
-    expect(within(row).getByText("2")).toBeInTheDocument();
-    expect(within(row).getByText("3")).toBeInTheDocument();
-    expect(screen.queryByText("Fehlzeiten: –")).not.toBeInTheDocument();
     expect(screen.queryByText("Benachrichtigt")).not.toBeInTheDocument();
+  });
+
+  it("sorts by clicking a column header, toggling asc/desc, and persists it in the URL", () => {
+    mockData([]);
+
+    renderList();
+    fireEvent.click(screen.getByRole("columnheader", { name: /Fehlstunden/ }));
+
+    expect(mockUseStudents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: "fehlstunden", sortDir: "asc" }),
+    );
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /Fehlstunden/ }));
+
+    expect(mockUseStudents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: "fehlstunden", sortDir: "desc" }),
+    );
   });
 });
