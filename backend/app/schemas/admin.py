@@ -102,11 +102,6 @@ class WebUntisTeacherOut(BaseModel):
     kuerzel: str
 
 
-class KlasseOut(BaseModel):
-    id: int
-    name: str
-
-
 class AbteilungOut(BaseModel):
     id: int
     name: str
@@ -127,19 +122,14 @@ class BereichLeiterOut(BaseModel):
 
 
 class BereichIn(BaseModel):
-    id: int | None = None
-    name: str
-    klasse_ids: list[int] = []
+    id: int
+    ausgeblendet: bool = False
     leiter: list[BereichLeiterIn] = []
 
 
 class BereichOut(BaseModel):
     id: int
     name: str
-    klasse_ids: list[int]
+    klasse_namen: list[str]
+    ausgeblendet: bool
     leiter: list[BereichLeiterOut]
-
-
-class BereichVorschlagOut(BaseModel):
-    name: str
-    klasse_ids: list[int]
