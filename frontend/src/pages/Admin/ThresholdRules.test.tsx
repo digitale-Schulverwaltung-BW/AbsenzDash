@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useAbteilungen } from "../../api/hooks/useAbteilungen";
@@ -179,5 +179,32 @@ describe("ThresholdRules", () => {
 
     await userEvent.click(screen.getByText("Speichern"));
     expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a decimal Schwellenwert (e.g. 5.5) instead of collapsing to 0 (regression: step=1 stepMismatch)", async () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [
+        {
+          id: 1, typ: "fehlzeiten", geltungsbereich: "schulweit", abteilung_id: null,
+          stufen: [{ id: 1, stufe_nr: 1, einheit: "fehlstunden", schwellenwert: 4, fehlzeiten_filter: "nur_unentschuldigt", empfaenger_rollen: ["klassenlehrkraft"] }],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    } as any);
+    const mutate = vi.fn();
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate, isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+
+    render(<ThresholdRules />);
+
+    const schwellenwertInput = screen.getByLabelText("Schwellenwert Regel 1 Stufe 1");
+    fireEvent.change(schwellenwertInput, { target: { value: "5.5" } });
+
+    await userEvent.click(screen.getByText("Speichern"));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const rules = mutate.mock.calls[0][0];
+    expect(rules[0].stufen[0].schwellenwert).toBe(5.5);
   });
 });

@@ -214,9 +214,15 @@ export function ThresholdRules() {
                 <input
                   aria-label={`Schwellenwert Regel ${ruleIndex + 1} Stufe ${stufeIndex + 1}`}
                   type="number"
-                  min={1}
+                  min={0.01}
+                  step="0.01"
                   value={stufe.schwellenwert}
-                  onChange={(event) => updateStufe(ruleIndex, stufeIndex, { schwellenwert: Number(event.target.value) })}
+                  onChange={(event) => {
+                    if (event.target.value === "") {
+                      return;
+                    }
+                    updateStufe(ruleIndex, stufeIndex, { schwellenwert: Number(event.target.value) });
+                  }}
                 />
               </label>
               {rule.typ === "fehlzeiten" && (
