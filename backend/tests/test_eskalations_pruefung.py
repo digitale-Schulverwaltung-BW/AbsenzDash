@@ -1,6 +1,7 @@
 import datetime
 import logging
 from contextlib import contextmanager
+from decimal import Decimal
 from unittest import mock
 
 import pytest
@@ -438,7 +439,7 @@ async def test_pruefe_schwellwerte_fehlstunden_only_counts_stunde_typ(db_session
         select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler.id)
     )
     zaehlerstand = result.scalar_one()
-    assert zaehlerstand.aktueller_stand == 2
+    assert zaehlerstand.aktueller_stand == Decimal("2.00")  # 2 x 45 Min. = 90 Min. / 45 = 2.00 Fehlstunden
     assert zaehlerstand.erreichte_stufe_nr == 1
 
 

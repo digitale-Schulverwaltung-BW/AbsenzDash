@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -23,6 +24,7 @@ from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 from app.core.config import Settings
+from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
 from app.services.mailer import TEMPLATES_DIR, render_template, send_email
 
 logger = logging.getLogger(__name__)
@@ -88,20 +90,30 @@ async def get_or_create_zaehlerstand(
 
 async def _zaehle_fuer_stufe(
     db: AsyncSession, regel: SchwellwertRegel, stufe: SchwellwertStufe, schueler_id: int, fenster_start: date
-) -> int:
+) -> int | Decimal:
     if regel.typ == "fehlzeiten":
-        query = select(func.count()).select_from(Fehlzeit).where(
-            Fehlzeit.schueler_id == schueler_id,
-            Fehlzeit.datum >= fenster_start,
-            Fehlzeit.invalid.is_(False),
-            Fehlzeit.typ == ("tag" if stufe.einheit == "fehltage" else "stunde"),
-        )
+        ist_fehlstunden = stufe.einheit == "fehlstunden"
+        if ist_fehlstunden:
+            query = select(func.sum(fehlstunden_minuten_expr())).select_from(Fehlzeit).where(
+                Fehlzeit.schueler_id == schueler_id,
+                Fehlzeit.datum >= fenster_start,
+                Fehlzeit.invalid.is_(False),
+                Fehlzeit.typ == "stunde",
+            )
+        else:
+            query = select(func.count()).select_from(Fehlzeit).where(
+                Fehlzeit.schueler_id == schueler_id,
+                Fehlzeit.datum >= fenster_start,
+                Fehlzeit.invalid.is_(False),
+                Fehlzeit.typ == "tag",
+            )
         if stufe.fehlzeiten_filter == "nur_unentschuldigt":
             query = query.outerjoin(ExcuseStatus, Fehlzeit.excuse_status_id == ExcuseStatus.id).where(
                 or_(Fehlzeit.excuse_status_id.is_(None), ExcuseStatus.zaehlt_als_entschuldigt.is_(False))
             )
         result = await db.execute(query)
-        return result.scalar_one()
+        rohwert = result.scalar_one()
+        return minuten_zu_fehlstunden(rohwert) if ist_fehlstunden else rohwert
 
     result = await db.execute(
         select(func.count()).select_from(KlassenbuchEintrag).where(
@@ -113,7 +125,7 @@ async def _zaehle_fuer_stufe(
 
 async def _ermittle_erreichte_stufe(
     db: AsyncSession, regel: SchwellwertRegel, schueler_id: int, fenster_start: date
-) -> tuple[int | None, int]:
+) -> tuple[int | None, int | Decimal]:
     """Prueft Stufen absteigend; gibt (erreichte_stufe_nr, aktueller_stand) zurueck.
 
     aktueller_stand ist bei keiner erreichten Stufe der Zaehlwert nach Stufe-1-Definition
