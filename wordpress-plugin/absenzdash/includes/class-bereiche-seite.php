@@ -66,11 +66,8 @@ class Absenzdash_Bereiche_Seite {
 		?>
 		<div class="wrap">
 			<h1>AbsenzDash — Bereichsdefinition</h1>
+			<p>Bereiche werden automatisch aus den WebUntis-Abteilungen übernommen. Hier können Bereichsleiter zugewiesen und historische/leere Bereiche ausgeblendet werden.</p>
 			<div id="absenzdash-bereiche-fehler" style="color:#b32d2e;"></div>
-			<p>
-				<button type="button" id="absenzdash-vorbefuellen" class="button">Aus WebUntis-Abteilungen vorbefüllen</button>
-				<button type="button" id="absenzdash-bereich-hinzufuegen" class="button">Bereich hinzufügen</button>
-			</p>
 			<div id="absenzdash-bereiche-liste"></div>
 			<p><button type="button" id="absenzdash-bereiche-speichern" class="button button-primary">Speichern</button></p>
 		</div>

@@ -1,5 +1,5 @@
 (function () {
-	var zustand = { bereiche: [], klassen: [] };
+	var zustand = { bereiche: [] };
 
 	function element(tag, attrs, kinder) {
 		var el = document.createElement(tag);
@@ -32,41 +32,25 @@
 	}
 
 	function bereichZeileRendern(bereich) {
-		var nameInput = element('input', { type: 'text', class: 'absenzdash-bereich-name', value: bereich.name || '' });
-
-		var klassenAuswahl = mehrfachauswahl(
-			zustand.klassen, 'id', function (k) { return k.name; },
-			(bereich.klasse_ids || []).map(String), 'absenzdash-bereich-klassen'
-		);
 		var leiterAuswahl = mehrfachauswahl(
 			absenzdashBereicheConfig.wpNutzer, 'wp_user_id',
 			function (n) { return n.name + ' (' + (n.rolle || 'keine Rolle') + ')'; },
 			(bereich.leiter || []).map(function (l) { return l.wp_user_id; }),
 			'absenzdash-bereich-leiter'
 		);
-
-		var entfernenButton = element('button', { type: 'button', class: 'button absenzdash-bereich-entfernen', text: 'Entfernen' });
-		entfernenButton.addEventListener('click', function () {
-			var aktuelleZeilen = document.querySelectorAll('.absenzdash-bereich-zeile');
-			var index = Array.prototype.indexOf.call(aktuelleZeilen, zeile);
-			var alle = ausZeilenLesen();
-			if (index !== -1) {
-				alle.splice(index, 1);
-			}
-			zustand.bereiche = alle;
-			bereicheNeuRendern();
-		});
+		var ausblendenCheckbox = element('input', { type: 'checkbox', class: 'absenzdash-bereich-ausblenden' });
+		ausblendenCheckbox.checked = !!bereich.ausgeblendet;
 
 		var zeile = element('div', { class: 'absenzdash-bereich-zeile', style: 'border:1px solid #ccd0d4; padding:10px; margin-bottom:10px;' }, [
-			element('label', { text: 'Name: ' }), nameInput,
+			element('strong', { text: bereich.name || '' }),
 			element('br', {}),
-			element('label', { text: 'Klassen: ' }), klassenAuswahl,
+			element('span', { text: 'Klassen: ' + ((bereich.klasse_namen || []).join(', ') || '(keine)') }),
 			element('br', {}),
 			element('label', { text: 'Bereichsleiter: ' }), leiterAuswahl,
 			element('br', {}),
-			entfernenButton
+			element('label', {}, [ausblendenCheckbox, document.createTextNode(' Ausblenden (aus Dashboard/Diagrammen)')])
 		]);
-		zeile.dataset.bereichId = bereich.id != null ? String(bereich.id) : '';
+		zeile.dataset.bereichId = String(bereich.id);
 
 		return zeile;
 	}
@@ -83,8 +67,6 @@
 		var element = document.getElementById('absenzdash-bereiche-fehler');
 		element.textContent = nachricht;
 		if (nachricht) {
-			// Bei ~29 auto-generierten Zeilen (Vorbefüllen) reicht die rote Schrift allein nicht,
-			// damit ein Fehler auffällt — zusätzlich Hintergrund/Rahmen und ins Sichtfeld scrollen.
 			element.style.background = '#fbeaea';
 			element.style.border = '1px solid #b32d2e';
 			element.style.padding = '8px 12px';
@@ -97,63 +79,22 @@
 	}
 
 	function laden() {
-		Promise.all([
-			fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche', {
-				headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
-			}).then(function (r) {
-				if (!r.ok) { throw new Error('Bereiche laden fehlgeschlagen (HTTP ' + r.status + ')'); }
-				return r.json();
-			}),
-			fetch(absenzdashBereicheConfig.restUrl + '/admin/klassen', {
-				headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
-			}).then(function (r) {
-				if (!r.ok) { throw new Error('Klassenliste laden fehlgeschlagen (HTTP ' + r.status + ')'); }
-				return r.json();
-			})
-		]).then(function (ergebnisse) {
-			zustand.bereiche = ergebnisse[0];
-			zustand.klassen = ergebnisse[1];
+		fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche', {
+			headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
+		}).then(function (r) {
+			if (!r.ok) { throw new Error('Bereiche laden fehlgeschlagen (HTTP ' + r.status + ')'); }
+			return r.json();
+		}).then(function (bereiche) {
+			zustand.bereiche = bereiche;
 			bereicheNeuRendern();
 		}).catch(function (fehler) {
 			fehlerAnzeigen(fehler.message);
 		});
 	}
 
-	function vorbefuellen() {
-		fetch(absenzdashBereicheConfig.restUrl + '/admin/bereiche/vorschlag-aus-abteilungen', {
-			headers: { 'X-WP-Nonce': absenzdashBereicheConfig.nonce }
-		})
-			.then(function (r) {
-				if (!r.ok) { throw new Error('Vorschlag laden fehlgeschlagen (HTTP ' + r.status + ')'); }
-				return r.json();
-			})
-			.then(function (vorschlaege) {
-				// Erst unsaved DOM-Edits übernehmen, bevor neue Einträge angehängt werden —
-				// sonst gehen laufende Änderungen beim Neu-Rendern verloren.
-				zustand.bereiche = ausZeilenLesen();
-				vorschlaege.forEach(function (vorschlag) {
-					zustand.bereiche.push({ id: null, name: vorschlag.name, klasse_ids: vorschlag.klasse_ids, leiter: [] });
-				});
-				bereicheNeuRendern();
-			})
-			.catch(function (fehler) {
-				fehlerAnzeigen(fehler.message);
-			});
-	}
-
-	function bereichHinzufuegen() {
-		// Erst unsaved DOM-Edits übernehmen, bevor eine neue Zeile angehängt wird — sonst
-		// gehen laufende Änderungen in anderen Zeilen beim Neu-Rendern verloren.
-		zustand.bereiche = ausZeilenLesen();
-		zustand.bereiche.push({ id: null, name: '', klasse_ids: [], leiter: [] });
-		bereicheNeuRendern();
-	}
-
 	function ausZeilenLesen() {
 		var zeilen = document.querySelectorAll('.absenzdash-bereich-zeile');
 		return Array.prototype.map.call(zeilen, function (zeile) {
-			var name = zeile.querySelector('.absenzdash-bereich-name').value;
-			var klasseIds = ausgewaehlteWerte(zeile.querySelector('.absenzdash-bereich-klassen')).map(Number);
 			var leiterIds = ausgewaehlteWerte(zeile.querySelector('.absenzdash-bereich-leiter'));
 			var leiter = leiterIds.map(function (wpUserId) {
 				var nutzer = absenzdashBereicheConfig.wpNutzer.filter(function (n) { return n.wp_user_id === wpUserId; })[0];
@@ -164,10 +105,11 @@
 					rolle: nutzer.rolle || 'bereichsleiter'
 				};
 			});
-			var payload = { name: name, klasse_ids: klasseIds, leiter: leiter };
-			var id = zeile.dataset.bereichId;
-			if (id) { payload.id = Number(id); }
-			return payload;
+			return {
+				id: Number(zeile.dataset.bereichId),
+				ausgeblendet: zeile.querySelector('.absenzdash-bereich-ausblenden').checked,
+				leiter: leiter
+			};
 		});
 	}
 
@@ -195,8 +137,6 @@
 
 	document.addEventListener('DOMContentLoaded', function () {
 		laden();
-		document.getElementById('absenzdash-vorbefuellen').addEventListener('click', vorbefuellen);
-		document.getElementById('absenzdash-bereich-hinzufuegen').addEventListener('click', bereichHinzufuegen);
 		document.getElementById('absenzdash-bereiche-speichern').addEventListener('click', speichern);
 	});
 })();
