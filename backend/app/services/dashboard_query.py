@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import resolve_bereich_scope, resolve_scope
+from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.einstellung import Einstellung
 from app.models.fehlzeit import Fehlzeit
@@ -109,9 +110,9 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
             )
         )
     ).scalar_one()
-    fehlstunden = (
+    fehlstunden_minuten = (
         await db.execute(
-            select(func.count()).select_from(Fehlzeit).where(
+            select(func.sum(fehlstunden_minuten_expr())).select_from(Fehlzeit).where(
                 Fehlzeit.schueler_id.in_(schueler_ids),
                 Fehlzeit.typ == "stunde",
                 Fehlzeit.invalid.is_(False),
@@ -119,6 +120,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
             )
         )
     ).scalar_one()
+    fehlstunden = minuten_zu_fehlstunden(fehlstunden_minuten)
     klassenbuch = (
         await db.execute(
             select(func.count()).select_from(KlassenbuchEintrag).where(
@@ -139,7 +141,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
     return StatsOwn(
         anzahl_schueler=anzahl_schueler,
         avg_fehltage=round(fehltage / anzahl_schueler, 2),
-        avg_fehlstunden=round(fehlstunden / anzahl_schueler, 2),
+        avg_fehlstunden=round(float(fehlstunden) / anzahl_schueler, 2),
         avg_klassenbuch=round(klassenbuch / anzahl_schueler, 2),
         anzahl_klassenbuch=klassenbuch,
         anzahl_massnahmen=massnahmen,

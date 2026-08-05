@@ -185,6 +185,39 @@ async def test_get_dashboard_stats_for_single_klasse_averages_over_active_studen
 
 
 @pytest.mark.asyncio
+async def test_get_dashboard_stats_computes_avg_fehlstunden_from_minutes_not_row_count(db_session):
+    klasse = Klasse(webuntis_id=1, name="AME56")
+    db_session.add(klasse)
+    await db_session.flush()
+    schuljahr_start = datetime.date(2025, 9, 15)
+    db_session.add(Einstellung(schuljahr_start_cache=schuljahr_start))
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # 07:30-08:15 (Stundengrenze!) = 45 Min., 09:00-09:20 = 20 Min. -> 65 Min. gesamt
+            Fehlzeit(
+                schueler_id=schueler.id, typ="stunde",
+                datum=schuljahr_start + datetime.timedelta(days=1), start_zeit=730, end_zeit=815,
+            ),
+            Fehlzeit(
+                schueler_id=schueler.id, typ="stunde",
+                datum=schuljahr_start + datetime.timedelta(days=2), start_zeit=900, end_zeit=920,
+            ),
+        ]
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse.id)
+
+    assert stats.own.avg_fehlstunden == 1.44  # 65 Min. / 45 = 1.4444... gerundet
+
+
+@pytest.mark.asyncio
 async def test_get_dashboard_stats_excludes_fehlzeiten_before_schuljahr_start(db_session):
     klasse = Klasse(webuntis_id=1, name="AME56")
     db_session.add(klasse)
