@@ -23,6 +23,7 @@ from app.schemas.students import (
     ClassregCategoryCatalogOut,
     ExcuseStatusCatalogOut,
     ExemptionCreateIn,
+    FehlzeitSplitOut,
     MassnahmeOut,
     MassnahmenTypCatalogOut,
     MeasureCreateIn,
@@ -47,6 +48,19 @@ async def _resolve_schuljahr_zeitraum(db: AsyncSession, schuljahr_id: int | None
     schuljahr = await db.get(Schuljahr, schuljahr_id)
     if schuljahr is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekanntes Schuljahr")
+    return schuljahr.start_datum, schuljahr.end_datum
+
+
+async def _aktuelles_schuljahr_zeitraum(db: AsyncSession) -> tuple[date | None, date | None]:
+    """Zeitraum des aktuellen Schuljahres fuer die Fehltage/Fehlstunden/Eintraege-Rohzahlen
+    im Normalmodus (kein schuljahr_id-Query-Param). None/None (unbegrenzt) falls noch kein
+    aktuelles Schuljahr konfiguriert ist (z.B. vor dem ersten WebUntis-Sync)."""
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    if einstellung is None or einstellung.aktuelles_schuljahr_id is None:
+        return None, None
+    schuljahr = await db.get(Schuljahr, einstellung.aktuelles_schuljahr_id)
+    if schuljahr is None:
+        return None, None
     return schuljahr.start_datum, schuljahr.end_datum
 
 
@@ -77,12 +91,15 @@ async def get_students(
     nur_auffaellige: bool = False,
     nur_aktive: bool = True,
     schuljahr_id: int | None = None,
+    sort_by: Literal["nachname", "klasse", "fehltage", "fehlstunden", "klassenbuch_anzahl"] | None = None,
+    sort_dir: Literal["asc", "desc"] = "asc",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StudentListOut:
     scope = await resolve_scope(db, nutzer)
     von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
     ist_historie = von is not None
+    effektiv_von, effektiv_bis = (von, bis) if ist_historie else await _aktuelles_schuljahr_zeitraum(db)
 
     schueler_list, total = await student_query.list_students(
         db,
@@ -93,23 +110,27 @@ async def get_students(
         min_stufe=None if ist_historie else min_stufe,
         nur_auffaellige=False if ist_historie else nur_auffaellige,
         nur_aktive=False if ist_historie else nur_aktive,
+        von=effektiv_von,
+        bis=effektiv_bis,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
     schueler_ids = [schueler.id for schueler in schueler_list]
     klasse_ids = [schueler.klasse_id for schueler in schueler_list if schueler.klasse_id is not None]
     klasse_map = await student_query.load_klasse_map(db, klasse_ids)
+    rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, effektiv_von, effektiv_bis)
 
     if ist_historie:
-        rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, von, bis)
         items = [
             StudentOverviewOut(
                 id=schueler.id,
                 vorname=schueler.vorname,
                 nachname=schueler.nachname,
                 klasse=klasse_map.get(schueler.klasse_id) if schueler.klasse_id is not None else None,
-                fehltage=rohzahlen[schueler.id]["fehltage"],
-                fehlstunden=rohzahlen[schueler.id]["fehlstunden"],
+                fehltage=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehltage"]),
+                fehlstunden=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehlstunden"]),
                 klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
             )
             for schueler in schueler_list
@@ -134,6 +155,9 @@ async def get_students(
             zaehlerstand=extras[schueler.id]["zaehlerstand"],
             letzte_benachrichtigung=_benachrichtigung_out(extras[schueler.id]["letzte_benachrichtigung"], regel_typ_map),
             ohne_massnahme_seit_benachrichtigung=extras[schueler.id]["ohne_massnahme_seit_benachrichtigung"],
+            fehltage=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehltage"]),
+            fehlstunden=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehlstunden"]),
+            klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
         )
         for schueler in schueler_list
     ]

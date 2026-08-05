@@ -12,6 +12,7 @@ from app.models.audit_log import AuditLog
 from app.models.ausnahme import Ausnahme
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
+from app.models.einstellung import Einstellung
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
 from app.models.massnahme import Massnahme
@@ -569,8 +570,68 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
     ids = {item["id"] for item in body["items"]}
     assert schueler_inaktiv.id in ids  # inaktive Schueler erscheinen in der Historie
     inaktiv_item = next(item for item in body["items"] if item["id"] == schueler_inaktiv.id)
-    assert inaktiv_item["fehltage"] == 1
+    assert inaktiv_item["fehltage"] == {"gesamt": 1.0, "entschuldigt": 0.0, "unentschuldigt": 1.0}
     assert inaktiv_item["zaehlerstand"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_students_normal_mode_also_returns_fehltage_fehlstunden_split(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=30, name="2025/2026", start_datum=date(2025, 9, 8), end_datum=date(2026, 7, 30))
+    db_session.add_all([klasse, schuljahr])
+    await db_session.flush()
+    einstellung = Einstellung(aktuelles_schuljahr_id=schuljahr.id)
+    db_session.add(einstellung)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2025, 10, 1), start_zeit=0, end_zeit=2359)
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/students", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    item = next(item for item in response.json()["items"] if item["id"] == schueler.id)
+    assert item["fehltage"] == {"gesamt": 1.0, "entschuldigt": 0.0, "unentschuldigt": 1.0}
+    assert item["fehlstunden"] == {"gesamt": 0.0, "entschuldigt": 0.0, "unentschuldigt": 0.0}
+    assert item["zaehlerstand"] is not None  # normaler Modus behaelt Zaehlerstand/Benachrichtigung
+
+
+@pytest.mark.asyncio
+async def test_get_students_sort_by_fehlstunden_desc(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    schueler_wenig = Schueler(externe_id="ext-wenig", vorname="Wenig", nachname="A", klasse_id=klasse.id, aktiv=True)
+    schueler_viel = Schueler(externe_id="ext-viel", vorname="Viel", nachname="B", klasse_id=klasse.id, aktiv=True)
+    db_session.add_all([schueler_wenig, schueler_viel])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler_wenig.id, typ="stunde", datum=date(2025, 10, 1), start_zeit=800, end_zeit=815),
+            Fehlzeit(schueler_id=schueler_viel.id, typ="stunde", datum=date(2025, 10, 1), start_zeit=730, end_zeit=815),
+            Fehlzeit(schueler_id=schueler_viel.id, typ="stunde", datum=date(2025, 10, 2), start_zeit=730, end_zeit=815),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/students?sort_by=fehlstunden&sort_dir=desc", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["items"]]
+    assert ids.index(schueler_viel.id) < ids.index(schueler_wenig.id)
 
 
 @pytest.mark.asyncio
