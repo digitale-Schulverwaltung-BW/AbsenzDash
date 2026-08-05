@@ -277,6 +277,7 @@ async def export_student_pdf(
     nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
     db: Annotated[AsyncSession, Depends(get_db)],
     sections: str | None = None,
+    schuljahr_id: int | None = None,
 ) -> Response:
     if sections:
         requested = {s.strip().lower() for s in sections.split(",") if s.strip()}
@@ -289,12 +290,20 @@ async def export_student_pdf(
     else:
         requested = set(_EXPORT_SECTIONS)
 
+    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    schuljahr_name = None
+    if von is not None:
+        schuljahr = await db.get(Schuljahr, schuljahr_id)
+        schuljahr_name = schuljahr.name if schuljahr is not None else None
+
     klasse = None
     if schueler.klasse_id is not None:
         klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])
         klasse = klasse_map.get(schueler.klasse_id)
 
-    html = await export_service.render_student_export_html(db, schueler, klasse, requested)
+    html = await export_service.render_student_export_html(
+        db, schueler, klasse, requested, von=von, bis=bis, schuljahr_name=schuljahr_name
+    )
     pdf_bytes = export_service.html_to_pdf(html)
 
     db.add(

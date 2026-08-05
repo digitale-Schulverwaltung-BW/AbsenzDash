@@ -6,7 +6,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.integrations.webuntis_client import WebUntisClient
+from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.schueler import Schueler
@@ -26,6 +26,30 @@ def _hhmm_zu_minuten(value: int) -> int:
     """WebUntis-Uhrzeiten sind HMM/HHMM-Ganzzahlen (z.B. 730 = 7:30, 1055 = 10:55), keine
     Minuten seit Mitternacht -- fuer Luecken-/Dauer-Berechnung muss umgerechnet werden."""
     return (value // 100) * 60 + (value % 100)
+
+
+def _build_kurzname_by_longname(subjects: list[dict]) -> dict[str, str]:
+    """Baut longName -> Kuerzel aus getSubjects(). Bei Kollision (mehrere Faecher mit
+    identischem Langnamen, live bestaetigt fuer 'Betriebliche Kommunikation' -> BK/BKOM,
+    siehe TECH-SPEC.md Abschnitt 1.2 Nachtrag 5) gewinnt das erste Vorkommen in
+    Antwortreihenfolge -- bewusst keine weitere Disambiguierung, siehe Design-Dok."""
+    mapping: dict[str, str] = {}
+    for subject in subjects:
+        long_name = subject.get("longName")
+        kurzname = subject.get("name")
+        if long_name and kurzname and long_name not in mapping:
+            mapping[long_name] = kurzname
+    return mapping
+
+
+def _resolve_fach_kurzname(langname: str | None, kurzname_by_longname: dict[str, str]) -> str | None:
+    """WebUntis' Fehlzeiten-'subjectId'-Feld ist trotz des Namens bereits der Fach-Langname
+    (kein numerischer Identifier, siehe TECH-SPEC.md Abschnitt 1.2 Nachtrag 5). Aufloesung
+    auf das Kuerzel nur best-effort: unbekannte/veraltete Langnamen (z.B. umbenannte Faecher)
+    fallen unveraendert auf den Langnamen zurueck statt auf ein leeres Feld."""
+    if not langname:
+        return None
+    return kurzname_by_longname.get(langname, langname)
 
 
 TAG_MINDESTDAUER_MINUTEN = 90
@@ -115,6 +139,13 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
         {"options": {"startDate": _to_webuntis_date(von), "endDate": _to_webuntis_date(bis)}},
     )
     entries = result.get("periodsWithAbsences", []) if isinstance(result, dict) else result
+
+    try:
+        subjects_result = await client.call("getSubjects", {})
+    except WebUntisError as exc:
+        logger.warning("getSubjects fehlgeschlagen, fach bleibt Langname: %s", exc)
+        subjects_result = []
+    kurzname_by_longname = _build_kurzname_by_longname(subjects_result or [])
 
     schueler_id_by_externe_id = dict((await db.execute(select(Schueler.externe_id, Schueler.id))).all())
     excuse_status_id_by_name = dict((await db.execute(select(ExcuseStatus.name, ExcuseStatus.id))).all())
@@ -224,7 +255,7 @@ async def sync_fehlzeiten(client: WebUntisClient, db: AsyncSession, von: date, b
             for row in gruppe:
                 if row.get("subjectId"):
                     fehlzeit = _upsert(schueler_id, datum, row["startTime"], row["endTime"], "stunde")
-                    fehlzeit.fach = row.get("subjectId") or None
+                    fehlzeit.fach = _resolve_fach_kurzname(row.get("subjectId"), kurzname_by_longname)
                     fehlzeit.grund_text = row.get("absenceReason") or None
                     fehlzeit.excuse_status_id = excuse_status_id_by_name.get(row.get("excuseStatus"))
                     fehlzeit.invalid = False

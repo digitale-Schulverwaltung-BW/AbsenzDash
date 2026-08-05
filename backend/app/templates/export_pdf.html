@@ -25,6 +25,7 @@
   <h1>Fehlzeiten- und Maßnahmenübersicht</h1>
   <div class="meta">
     {{ schueler.nachname }}, {{ schueler.vorname }}{% if klasse %} &middot; Klasse {{ klasse.name }}{% endif %}
+    &middot; {% if schuljahr_name %}Schuljahr {{ schuljahr_name }}{% else %}gesamte Historie{% endif %}
   </div>
 
   {% if "fehlzeiten" in sections %}

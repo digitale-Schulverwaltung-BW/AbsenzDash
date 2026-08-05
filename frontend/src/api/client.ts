@@ -63,3 +63,24 @@ export async function apiDelete(path: string): Promise<void> {
     throw new ApiError(response.status, `DELETE ${path} failed with status ${response.status}`);
   }
 }
+
+function filenameFromContentDisposition(header: string | null): string {
+  if (!header) {
+    return "export.pdf";
+  }
+  const match = /filename="?([^";]+)"?/.exec(header);
+  return match ? match[1] : "export.pdf";
+}
+
+export async function apiDownload(path: string): Promise<{ blob: Blob; filename: string }> {
+  const config = getConfig();
+  const response = await fetch(`${config.restUrl}/${path}`, {
+    headers: { "X-WP-Nonce": config.nonce },
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, `GET ${path} failed with status ${response.status}`);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"));
+  return { blob, filename };
+}
