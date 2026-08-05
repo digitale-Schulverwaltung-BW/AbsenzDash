@@ -123,7 +123,7 @@ class BereichLeiterOut(BaseModel):
 
 class BereichIn(BaseModel):
     id: int
-    ausgeblendet: bool = False
+    ausgeblendet: bool
     leiter: list[BereichLeiterIn] = []
 
 

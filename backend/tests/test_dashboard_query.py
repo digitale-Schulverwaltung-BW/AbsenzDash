@@ -382,3 +382,27 @@ async def test_get_dashboard_stats_schulweit_excludes_ausgeblendete_bereiche(db_
 
     namen = {v.name for v in stats.vergleich}
     assert namen == {"Ausbildung"}
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_eigene_bereiche_excludes_ausgeblendete_bereiche(db_session):
+    bereich_sichtbar = Bereich(name="Ausbildung")
+    bereich_versteckt = Bereich(name="Historisch", ausgeblendet=True)
+    db_session.add_all([bereich_sichtbar, bereich_versteckt])
+    await db_session.flush()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="bereichsleiter")
+    db_session.add(nutzer)
+    await db_session.flush()
+    await db_session.execute(
+        nutzer_bereich.insert().values(nutzer_id=nutzer.id, bereich_id=bereich_sichtbar.id)
+    )
+    await db_session.execute(
+        nutzer_bereich.insert().values(nutzer_id=nutzer.id, bereich_id=bereich_versteckt.id)
+    )
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, None)
+
+    assert stats.level == "eigene_bereiche"
+    namen = {v.name for v in stats.vergleich}
+    assert namen == {"Ausbildung"}

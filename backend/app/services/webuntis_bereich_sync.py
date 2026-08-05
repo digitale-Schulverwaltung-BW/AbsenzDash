@@ -35,18 +35,26 @@ async def sync_bereiche(db: AsyncSession) -> None:
     # "Betriebstechnik"); bereich.name ist unique, kollidierende Namen muessen also
     # disambiguiert werden. Nicht-kollidierende Namen bleiben unveraendert.
     namen_anzahl = Counter(namen)
-
+    resolved_names: dict[int, str] = {}
     for abteilung, name in zip(abteilungen, namen):
-        if namen_anzahl[name] > 1:
-            name = f"{name} ({abteilung.name})"
+        resolved_names[abteilung.id] = f"{name} ({abteilung.name})" if namen_anzahl[name] > 1 else name
 
+    # Erst alle Umbenennungen bestehender Bereiche flushen, bevor neue Bereiche angelegt werden --
+    # sonst kann ein neu angelegter Bereich mit dem noch nicht weggeschriebenen alten Namen eines
+    # umzubenennenden Bereichs kollidieren (unique constraint auf bereich.name).
+    for abteilung in abteilungen:
+        bereich = bereich_by_abteilung_id.get(abteilung.id)
+        if bereich is not None:
+            bereich.name = resolved_names[abteilung.id]
+    await db.flush()
+
+    for abteilung in abteilungen:
         bereich = bereich_by_abteilung_id.get(abteilung.id)
         if bereich is None:
-            bereich = Bereich(abteilung_id=abteilung.id, name=name)
+            bereich = Bereich(abteilung_id=abteilung.id, name=resolved_names[abteilung.id])
             db.add(bereich)
             await db.flush()
-        else:
-            bereich.name = name
+            bereich_by_abteilung_id[abteilung.id] = bereich
 
         await db.execute(delete(bereich_klasse).where(bereich_klasse.c.bereich_id == bereich.id))
         for klasse_id in klassen_by_abteilung.get(abteilung.id, []):

@@ -36,6 +36,16 @@ docker exec absenzdash-db psql -U absenzdash -d absenzdash -c "UPDATE einstellun
 Danach holt der nächste geplante oder manuell ausgelöste Sync (`POST /admin/sync-now`) den vollständigen
 Zeitraum ab `einstellung.schuljahr_start_cache` erneut ab.
 
+### Bundle D: Bereichsleiter-Zuordnungen nach der Migration neu erfassen
+
+Die Bundle-D-Migration (`docs/superpowers/specs/2026-08-05-bundle-d-bereiche-entschlacken-design.md`)
+leert dabei absichtlich die Tabellen `bereich`, `bereich_klasse` und `nutzer_bereich`. Die Bereiche
+selbst füllen sich beim nächsten WebUntis-Sync automatisch wieder (1:1 aus den WebUntis-Abteilungen
+abgeleitet, `webuntis_bereich_sync.sync_bereiche`) — die zuvor auf der WP-Backend-Seite
+**Einstellungen → AbsenzDash-Bereiche** gepflegten Bereichsleiter-Zuordnungen (`nutzer_bereich`)
+werden dabei jedoch **nicht** wiederhergestellt. Nach dem Deployment dieser Migration müssen alle
+Bereichsleiter dort einmalig manuell neu zugewiesen werden.
+
 ### Default-Schwellwert-Regeln und Maßnahmen-Katalog
 
 Migration `ecbb0df17a38` seedet bei jedem `alembic upgrade head` (idempotent, `ON CONFLICT`/`NOT EXISTS`-

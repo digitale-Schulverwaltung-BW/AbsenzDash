@@ -189,7 +189,11 @@ async def _stats_schulweit(db: AsyncSession, schuljahr_start: date | None) -> St
 
 async def _stats_eigene_bereiche(db: AsyncSession, bereich_ids: set[int], schuljahr_start: date | None) -> StatsOut:
     bereiche = (
-        await db.execute(select(Bereich).where(Bereich.id.in_(bereich_ids)).order_by(Bereich.name))
+        await db.execute(
+            select(Bereich)
+            .where(Bereich.id.in_(bereich_ids), Bereich.ausgeblendet.is_(False))
+            .order_by(Bereich.name)
+        )
     ).scalars().all()
     alle_klasse_ids: list[int] = []
     vergleich = []

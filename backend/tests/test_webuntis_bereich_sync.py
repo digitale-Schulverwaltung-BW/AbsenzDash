@@ -117,6 +117,30 @@ async def test_sync_bereiche_rebuilds_bereich_klasse_when_klasse_moves_abteilung
 
 
 @pytest.mark.asyncio
+async def test_sync_bereiche_handles_rename_new_abteilung_name_collision(db_session):
+    # Abteilung A's Bereich is currently named "Foo". In the same sync run, A gets renamed away
+    # from "Foo" AND a brand-new Abteilung B is created whose computed name is "Foo". Without the
+    # rename-before-create ordering, inserting B's new Bereich ("Foo") would collide with A's
+    # not-yet-renamed-away Bereich ("Foo") and raise IntegrityError.
+    abteilung_a = Abteilung(webuntis_id=51, name="A", long_name="Foo")
+    db_session.add(abteilung_a)
+    await db_session.commit()
+    await sync_bereiche(db_session)
+
+    abteilung_a.long_name = "Foo Neu"
+    abteilung_b = Abteilung(webuntis_id=52, name="B", long_name="Foo")
+    db_session.add(abteilung_b)
+    await db_session.commit()
+
+    await sync_bereiche(db_session)
+
+    bereich_a = (await db_session.execute(select(Bereich).where(Bereich.abteilung_id == abteilung_a.id))).scalar_one()
+    bereich_b = (await db_session.execute(select(Bereich).where(Bereich.abteilung_id == abteilung_b.id))).scalar_one()
+    assert bereich_a.name == "Foo Neu"
+    assert bereich_b.name == "Foo"
+
+
+@pytest.mark.asyncio
 async def test_sync_bereiche_never_touches_ausgeblendet_or_leiter(db_session):
     abteilung = Abteilung(webuntis_id=51, name="B-ME", long_name="Mechatronik")
     db_session.add(abteilung)
