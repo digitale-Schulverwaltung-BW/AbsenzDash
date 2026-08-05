@@ -438,6 +438,42 @@ async def test_load_schueler_rohzahlen_splits_by_excuse_status(db_session):
 
 
 @pytest.mark.asyncio
+async def test_load_schueler_rohzahlen_fehlstunden_gesamt_rounds_combined_minutes_once(db_session):
+    """Regression: 'gesamt' muss aus der Summe der Roh-Minuten beider Buckets EINMAL gerundet
+    werden, nicht aus der Summe zweier bereits (je fuer sich) gerundeter Bucket-Werte. 25 Min.
+    entschuldigt + 25 Min. unentschuldigt = 50 Min. gesamt -> round(50/45, 2) = 1.11. Die alte,
+    fehlerhafte Implementierung haette stattdessen round(25/45,2) + round(25/45,2) = 0.56 + 0.56
+    = 1.12 geliefert - ein 0.01-Diskrepanz gegenueber eskalations_pruefung.py/dashboard_query.py,
+    die beide einmalig ueber die Gesamt-Minuten runden."""
+    schueler = Schueler(externe_id="ext-a", vorname="A", nachname="A")
+    entschuldigt = ExcuseStatus(name="entsch.", zaehlt_als_entschuldigt=True)
+    nicht_entschuldigt = ExcuseStatus(name="nicht entsch.", zaehlt_als_entschuldigt=False)
+    db_session.add_all([schueler, entschuldigt, nicht_entschuldigt])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # 800-825 = 25 Minuten, entschuldigt
+            Fehlzeit(
+                schueler_id=schueler.id, typ="stunde", datum=date(2025, 10, 1), start_zeit=800, end_zeit=825,
+                excuse_status_id=entschuldigt.id,
+            ),
+            # 900-925 = 25 Minuten, unentschuldigt
+            Fehlzeit(
+                schueler_id=schueler.id, typ="stunde", datum=date(2025, 10, 2), start_zeit=900, end_zeit=925,
+                excuse_status_id=nicht_entschuldigt.id,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await student_query.load_schueler_rohzahlen(db_session, [schueler.id], date(2025, 9, 15), date(2026, 7, 29))
+
+    assert result[schueler.id]["fehlstunden"] == {
+        "gesamt": Decimal("1.11"), "entschuldigt": Decimal("0.56"), "unentschuldigt": Decimal("0.56"),
+    }
+
+
+@pytest.mark.asyncio
 async def test_load_schueler_rohzahlen_without_date_range_counts_all_time(db_session):
     schueler = Schueler(externe_id="ext-a", vorname="A", nachname="A")
     db_session.add(schueler)

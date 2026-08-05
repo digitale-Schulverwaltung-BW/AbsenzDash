@@ -284,7 +284,12 @@ async def load_schueler_rohzahlen(
     als auch im Normalmodus (aktuelles Schuljahr, oder all-time falls noch keines
     konfiguriert ist). Entschuldigt/unentschuldigt-Split: Zeilen ohne excuse_status_id
     zaehlen als unentschuldigt (sicherer Default, konsistent mit der Eskalations-Engine,
-    siehe eskalations_pruefung.py)."""
+    siehe eskalations_pruefung.py). Rundung: Fehlstunden werden erst am Ende aus den
+    aufsummierten Roh-Minuten gerundet (einmal fuer gesamt, einmal je fuer entschuldigt/
+    unentschuldigt) - nicht aus der Summe zweier bereits gerundeter Werte. Dadurch stimmt
+    "gesamt" mit dem ueberein, was eskalations_pruefung.py/dashboard_query.py fuer denselben
+    Zeitraum berechnen (einmalige Rundung der Gesamt-Minuten); "entschuldigt + unentschuldigt"
+    kann davon aufgrund unabhaengiger Rundung der beiden Teilwerte um 0.01 abweichen."""
     ergebnis: dict[int, dict[str, Any]] = {
         sid: {
             "fehltage": _leerer_fehltage_split(),
@@ -295,6 +300,10 @@ async def load_schueler_rohzahlen(
     }
     if not schueler_ids:
         return ergebnis
+
+    fehlstunden_minuten: dict[int, dict[str, int]] = {
+        sid: {"gesamt": 0, "entschuldigt": 0, "unentschuldigt": 0} for sid in schueler_ids
+    }
 
     entschuldigt_expr = func.coalesce(ExcuseStatus.zaehlt_als_entschuldigt, False).label("entschuldigt")
     fehlzeit_result = await db.execute(
@@ -319,9 +328,15 @@ async def load_schueler_rohzahlen(
             ergebnis[schueler_id]["fehltage"]["gesamt"] += anzahl
             ergebnis[schueler_id]["fehltage"][split_key] += anzahl
         elif typ == "stunde":
-            stunden = minuten_zu_fehlstunden(minuten)
-            ergebnis[schueler_id]["fehlstunden"]["gesamt"] += stunden
-            ergebnis[schueler_id]["fehlstunden"][split_key] += stunden
+            fehlstunden_minuten[schueler_id]["gesamt"] += minuten
+            fehlstunden_minuten[schueler_id][split_key] += minuten
+
+    for schueler_id, minuten_split in fehlstunden_minuten.items():
+        ergebnis[schueler_id]["fehlstunden"] = {
+            "gesamt": minuten_zu_fehlstunden(minuten_split["gesamt"]),
+            "entschuldigt": minuten_zu_fehlstunden(minuten_split["entschuldigt"]),
+            "unentschuldigt": minuten_zu_fehlstunden(minuten_split["unentschuldigt"]),
+        }
 
     klassenbuch_result = await db.execute(
         select(KlassenbuchEintrag.schueler_id, func.count())
