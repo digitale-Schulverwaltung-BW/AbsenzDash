@@ -3,7 +3,8 @@ backend/.env
 __pycache__/
 *.pyc
 .obsidian/
-data/
+backend/data/*
+!backend/data/.gitkeep
 backend/app/templates/email_benachrichtigung.txt
 .worktrees/
 wordpress-plugin/absenzdash/assets/spa/
