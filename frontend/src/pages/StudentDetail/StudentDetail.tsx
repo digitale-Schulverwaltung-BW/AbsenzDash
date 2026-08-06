@@ -38,6 +38,30 @@ export function StudentDetail() {
           {student.nachname}, {student.vorname}
         </h2>
         <p>{student.klasse?.name ?? "—"}</p>
+        <div className={styles.metrics}>
+          <div className={styles.metric}>
+            <span className={styles.metricLabel}>Fehltage</span>
+            <span
+              className={styles.metricValue}
+              title={`${student.fehltage.entschuldigt} entschuldigt, ${student.fehltage.unentschuldigt} unentschuldigt`}
+            >
+              {student.fehltage.gesamt}
+            </span>
+          </div>
+          <div className={styles.metric}>
+            <span className={styles.metricLabel}>Fehlstunden</span>
+            <span
+              className={styles.metricValue}
+              title={`${student.fehlstunden.entschuldigt} entschuldigt, ${student.fehlstunden.unentschuldigt} unentschuldigt`}
+            >
+              {student.fehlstunden.gesamt}
+            </span>
+          </div>
+          <div className={styles.metric}>
+            <span className={styles.metricLabel}>Klassenbuch-Einträge</span>
+            <span className={styles.metricValue}>{student.klassenbuch_anzahl}</span>
+          </div>
+        </div>
         <div>
           {Object.entries(student.zaehlerstand).map(([typ, stand]) => (
             <StatusBadge

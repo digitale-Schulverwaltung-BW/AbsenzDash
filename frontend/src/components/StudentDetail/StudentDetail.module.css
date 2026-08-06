@@ -3,6 +3,28 @@
   border-bottom: 1px solid #eee;
 }
 
+.metrics {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem 0 0.75rem;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.metricLabel {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.metricValue {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

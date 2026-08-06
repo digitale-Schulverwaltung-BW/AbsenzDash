@@ -193,6 +193,9 @@ export interface StudentDetail {
   nachname: string;
   klasse: Klasse | null;
   zaehlerstand: Record<string, Zaehlerstand>;
+  fehltage: FehlzeitSplit;
+  fehlstunden: FehlzeitSplit;
+  klassenbuch_anzahl: number;
   fehlzeiten: Fehlzeit[];
   klassenbuch: KlassenbuchEintrag[];
   massnahmen: Massnahme[];

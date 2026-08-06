@@ -41,6 +41,9 @@ const DETAIL = {
     fehlzeiten: { aktueller_stand: 4, erreichte_stufe_nr: 1 },
     klassenbuch: { aktueller_stand: 0, erreichte_stufe_nr: null },
   },
+  fehltage: { gesamt: 3, entschuldigt: 2, unentschuldigt: 1 },
+  fehlstunden: { gesamt: 1.5, entschuldigt: 1, unentschuldigt: 0.5 },
+  klassenbuch_anzahl: 2,
   fehlzeiten: [],
   klassenbuch: [],
   massnahmen: [],
@@ -69,6 +72,9 @@ describe("StudentDetail", () => {
     expect(screen.getByText("10a")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Maßnahmen" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ausnahmen" })).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument(); // Fehltage gesamt
+    expect(screen.getByText("1.5")).toBeInTheDocument(); // Fehlstunden gesamt
+    expect(screen.getByText("2")).toBeInTheDocument(); // Klassenbuch-Einträge
   });
 
   it("shows an error message when the detail request fails", () => {

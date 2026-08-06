@@ -402,6 +402,8 @@ async def load_student_detail(
     if von is None and bis is None:
         zaehlerstand = (await load_zaehlerstand_map(db, [schueler_id]))[schueler_id]
 
+    rohzahlen = (await load_schueler_rohzahlen(db, [schueler_id], von, bis))[schueler_id]
+
     return {
         "fehlzeiten": list(fehlzeiten),
         "klassenbuch": list(klassenbuch),
@@ -409,4 +411,7 @@ async def load_student_detail(
         "ausnahmen": list(ausnahmen),
         "benachrichtigungen": list(benachrichtigungen),
         "zaehlerstand": zaehlerstand,
+        "fehltage": rohzahlen["fehltage"],
+        "fehlstunden": rohzahlen["fehlstunden"],
+        "klassenbuch_anzahl": rohzahlen["klassenbuch_anzahl"],
     }

@@ -107,6 +107,9 @@ class StudentDetailOut(BaseModel):
     nachname: str
     klasse: KlasseOut | None
     zaehlerstand: dict[str, ZaehlerstandOut]
+    fehltage: FehlzeitSplitOut
+    fehlstunden: FehlzeitSplitOut
+    klassenbuch_anzahl: int
     fehlzeiten: list[FehlzeitOut]
     klassenbuch: list[KlassenbuchEintragOut]
     massnahmen: list[MassnahmeOut]
