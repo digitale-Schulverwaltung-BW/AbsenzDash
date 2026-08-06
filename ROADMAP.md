@@ -51,11 +51,7 @@ Für spätere Version, falls nötig, evtl. V1.5:
 
 ## Dokumentation
 
-Noch zu schreiben: drei rollenspezifische Nutzer-Dokus (Klassenlehrkraft, Bereichsleiter, Schulleitung) — bisher existiert nur technische/Admin-Dokumentation (`docs/`), keine Anleitung für die eigentlichen Dashboard-Nutzer.
-
-- **Klassenlehrkraft-Doku:** muss den Hinweis aus der Fehlzeiten-Erkennung-Session vom 2026-08-03 enthalten — wenn an einem Tag durch Stundenausfall/Entfall faktisch der ganze restliche Schultag wegfällt (Beispiel: Schüler mit einzelnen erfassten Fehlstunden am Vormittag, danach entfallen die restlichen Stunden der Klasse), erkennt AbsenzDash das **nicht automatisch** als Ganztages-Fehlzeit — das lässt sich aus den WebUntis-Fehlzeiten-Daten allein nicht zuverlässig ableiten (keine Stundenplan-/Entfall-Daten in unserer Sync-Quelle, siehe TECH-SPEC.md Abschnitt 1.2). Empfehlung an die Klassenlehrkraft: solche Fälle bewusst als zusammenhängenden Eintrag im WebUntis-Klassenbuch-Modul festhalten, damit sie über den bestehenden Klassenbuch-Sync korrekt in AbsenzDash gezählt werden.
-- **Bereichsleiter-Doku:** Inhalt noch offen.
-- **Schulleitung-Doku:** Inhalt noch offen.
+✅ **Erledigt 2026-08-06:** Vier rollenspezifische Anleitungen erstellt, bebildert mit den Screenshots aus `docs/Screenshots/`: [docs/KL.md](docs/KL.md) (Klassenlehrkraft, inkl. des Hinweises aus der Fehlzeiten-Erkennung-Session vom 2026-08-03 zur nicht automatisch erkannten Ganztages-Fehlzeit bei Stundenausfall/Entfall), [docs/BL.md](docs/BL.md) (Bereichsleitung), [docs/SL.md](docs/SL.md) (Schulleitung, inkl. Admin-Bereich im Dashboard und der organisatorischen WP-Backend-Pflege Rollen-Zuweisung/Bereichsdefinition) und [docs/ADMIN.md](docs/ADMIN.md) (IT-Administrator, Bündelung/Cross-Referenzierung der bestehenden technischen Dokumentation). Aus README.md verlinkt.
 
 ## Technical debt
 

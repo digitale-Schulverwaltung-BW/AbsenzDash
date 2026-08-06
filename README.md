@@ -86,6 +86,7 @@ Details zur CI/CD-Pipeline: [docs/ci-cd-setup.md](docs/ci-cd-setup.md).
 - [docs/backend-setup.md](docs/backend-setup.md) — Backend-Setup im Detail
 - [docs/deployment.md](docs/deployment.md) — Deployment & lokale Entwicklung (Backend, Frontend, WordPress-Plugin)
 - [docs/ci-cd-setup.md](docs/ci-cd-setup.md) — CI/CD-Pipeline
+- Nutzer-Handreichungen: [docs/KL.md](docs/KL.md) (Klassenlehrkraft), [docs/BL.md](docs/BL.md) (Bereichsleitung), [docs/SL.md](docs/SL.md) (Schulleitung), [docs/ADMIN.md](docs/ADMIN.md) (IT-Administrator)
 
 ## Status
 
