@@ -103,6 +103,19 @@ describe("StudentList", () => {
     expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ nurAuffaellige: true }));
   });
 
+  it("toggles anonymization via the URL params without a full page navigation", () => {
+    mockData([BASE_STUDENT]);
+
+    renderList();
+    expect(screen.getByText("Muster, Max")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Anonymisieren"));
+
+    const fakeName = anonymisiereName(BASE_STUDENT.id);
+    expect(screen.queryByText("Muster, Max")).not.toBeInTheDocument();
+    expect(screen.getByText(`${fakeName.nachname}, ${fakeName.vorname}`)).toBeInTheDocument();
+  });
+
   it("sets the min_stufe filter via the Mindeststufe select", () => {
     mockData([]);
 

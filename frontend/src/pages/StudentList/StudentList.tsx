@@ -128,6 +128,15 @@ export function StudentList() {
           />{" "}
           Nur auffällige
         </label>
+        <label>
+          <input
+            type="checkbox"
+            aria-label="Anonymisieren"
+            checked={anonymisieren}
+            onChange={(event) => updateParam("a", event.target.checked ? "1" : "")}
+          />{" "}
+          Anonymisieren
+        </label>
       </div>
       <table className={styles.table}>
         <thead>
