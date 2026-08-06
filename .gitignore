@@ -10,3 +10,4 @@ backend/data/*
 backend/app/templates/email_benachrichtigung.txt
 .worktrees/
 wordpress-plugin/absenzdash/assets/spa/
+.DS_Store
