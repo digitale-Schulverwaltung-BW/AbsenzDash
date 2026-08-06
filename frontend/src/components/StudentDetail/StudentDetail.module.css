@@ -25,6 +25,11 @@
   font-weight: 600;
 }
 
+.metricSplit {
+  font-size: 0.75rem;
+  color: #666;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

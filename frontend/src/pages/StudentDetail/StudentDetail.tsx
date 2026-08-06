@@ -41,20 +41,16 @@ export function StudentDetail() {
         <div className={styles.metrics}>
           <div className={styles.metric}>
             <span className={styles.metricLabel}>Fehltage</span>
-            <span
-              className={styles.metricValue}
-              title={`${student.fehltage.entschuldigt} entschuldigt, ${student.fehltage.unentschuldigt} unentschuldigt`}
-            >
-              {student.fehltage.gesamt}
+            <span className={styles.metricValue}>{student.fehltage.gesamt}</span>
+            <span className={styles.metricSplit}>
+              {student.fehltage.entschuldigt} entschuldigt, {student.fehltage.unentschuldigt} unentschuldigt
             </span>
           </div>
           <div className={styles.metric}>
             <span className={styles.metricLabel}>Fehlstunden</span>
-            <span
-              className={styles.metricValue}
-              title={`${student.fehlstunden.entschuldigt} entschuldigt, ${student.fehlstunden.unentschuldigt} unentschuldigt`}
-            >
-              {student.fehlstunden.gesamt}
+            <span className={styles.metricValue}>{student.fehlstunden.gesamt}</span>
+            <span className={styles.metricSplit}>
+              {student.fehlstunden.entschuldigt} entschuldigt, {student.fehlstunden.unentschuldigt} unentschuldigt
             </span>
           </div>
           <div className={styles.metric}>
@@ -63,6 +59,7 @@ export function StudentDetail() {
           </div>
         </div>
         <div>
+          <span className={styles.metricLabel}>Eskalations-Stufen: </span>
           {Object.entries(student.zaehlerstand).map(([typ, stand]) => (
             <StatusBadge
               key={typ}
