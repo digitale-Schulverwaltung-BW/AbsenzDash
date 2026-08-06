@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { useStudents } from "../../api/hooks/useStudents";
+import { anonymisiereName } from "../../utils/anonymize";
 import { StudentList } from "./StudentList";
 
 vi.mock("../../api/hooks/useStudents");
@@ -50,6 +51,17 @@ describe("StudentList", () => {
 
     expect(screen.getByRole("link", { name: /Muster, Max/ })).toHaveAttribute("href", "/schueler/1");
     expect(screen.getByText("10a")).toBeInTheDocument();
+  });
+
+  it("replaces the student name with an anonymized one when ?a=1 is set, and carries the param into the detail link", () => {
+    mockData([BASE_STUDENT]);
+
+    renderList(["/schueler?a=1"]);
+
+    const fakeName = anonymisiereName(BASE_STUDENT.id);
+    expect(screen.queryByText(/Muster, Max/)).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: new RegExp(`${fakeName.nachname}, ${fakeName.vorname}`) });
+    expect(link).toHaveAttribute("href", "/schueler/1?a=1");
   });
 
   it("shows Fehltage/Fehlstunden/Eintraege as their gesamt values, always (both modes)", () => {

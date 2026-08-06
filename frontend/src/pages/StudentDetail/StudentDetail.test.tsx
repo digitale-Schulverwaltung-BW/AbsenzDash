@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useNavOptions } from "../../api/hooks/useNavOptions";
 import { useStudentCatalog } from "../../api/hooks/useStudentCatalog";
 import { useStudentDetail } from "../../api/hooks/useStudentDetail";
+import { anonymisiereName } from "../../utils/anonymize";
 import { StudentDetail } from "./StudentDetail";
 
 vi.mock("../../api/hooks/useStudentDetail");
@@ -104,5 +105,22 @@ describe("StudentDetail", () => {
 
     expect(mockUseStudentDetail).toHaveBeenLastCalledWith(7, 27);
     expect(screen.queryByText(/Fehlzeiten: /)).not.toBeInTheDocument();
+  });
+
+  it("replaces the student name with an anonymized one when ?a=1 is set", () => {
+    mockUseStudentDetail.mockReturnValue({ data: DETAIL, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    render(
+      <MemoryRouter initialEntries={["/schueler/7?a=1"]}>
+        <Routes>
+          <Route path="/schueler/:id" element={<StudentDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const fakeName = anonymisiereName(DETAIL.id);
+    expect(screen.queryByText("Muster, Max")).not.toBeInTheDocument();
+    expect(screen.getByText(`${fakeName.nachname}, ${fakeName.vorname}`)).toBeInTheDocument();
   });
 });

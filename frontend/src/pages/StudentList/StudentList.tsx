@@ -4,6 +4,7 @@ import { useStudents } from "../../api/hooks/useStudents";
 import type { FehlzeitSplit, StudentOverview } from "../../api/types";
 import { EskalationsBadge } from "../../components/EskalationsBadge/EskalationsBadge";
 import { NotificationFlyout } from "../../components/NotificationFlyout/NotificationFlyout";
+import { anonymisiereName, istAnonymisierungAktiv } from "../../utils/anonymize";
 import { valueToColor } from "../../utils/colorScale";
 import styles from "./StudentList.module.css";
 
@@ -43,6 +44,7 @@ export function StudentList() {
   const isHistoryMode = schuljahrId !== null;
   const sortByParam = searchParams.get("sort_by") as StudentSortField | null;
   const sortDirParam = searchParams.get("sort_dir") === "desc" ? "desc" : "asc";
+  const anonymisieren = istAnonymisierungAktiv(searchParams);
 
   const { data, isLoading, isError } = useStudents({
     bereichId: bereichParam ? Number(bereichParam) : null,
@@ -147,51 +149,56 @@ export function StudentList() {
           </tr>
         </thead>
         <tbody>
-          {data.items.map((student) => (
-            <tr
-              key={student.id}
-              data-highlighted={student.ohne_massnahme_seit_benachrichtigung}
-              className={student.ohne_massnahme_seit_benachrichtigung ? styles.highlighted : undefined}
-            >
-              <td>
-                <Link to={`/schueler/${student.id}`}>
-                  {student.nachname}, {student.vorname}
-                </Link>
-              </td>
-              <td>{student.klasse?.name ?? "—"}</td>
-              <td
-                title={student.fehltage ? splitTitle(student.fehltage) : undefined}
-                style={{ color: student.fehltage ? valueToColor(student.fehltage.gesamt, fehltageMin, fehltageMax) : undefined }}
+          {data.items.map((student) => {
+            const name = anonymisieren ? anonymisiereName(student.id) : student;
+            return (
+              <tr
+                key={student.id}
+                data-highlighted={student.ohne_massnahme_seit_benachrichtigung}
+                className={student.ohne_massnahme_seit_benachrichtigung ? styles.highlighted : undefined}
               >
-                {student.fehltage?.gesamt ?? "—"}
-              </td>
-              <td
-                title={student.fehlstunden ? splitTitle(student.fehlstunden) : undefined}
-                style={{
-                  color: student.fehlstunden
-                    ? valueToColor(student.fehlstunden.gesamt, fehlstundenMin, fehlstundenMax)
-                    : undefined,
-                }}
-              >
-                {student.fehlstunden?.gesamt ?? "—"}
-              </td>
-              <td>{student.klassenbuch_anzahl ?? "—"}</td>
-              {isHistoryMode ? null : (
-                <>
-                  <td>
-                    <div className={styles.badges}>
-                      {Object.entries(student.zaehlerstand ?? {}).map(([typ, stand]) => (
-                        <EskalationsBadge key={typ} stufeNr={stand.erreichte_stufe_nr} maxStufeNr={maxStufeNr} />
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <NotificationFlyout benachrichtigung={student.letzte_benachrichtigung} />
-                  </td>
-                </>
-              )}
-            </tr>
-          ))}
+                <td>
+                  <Link to={`/schueler/${student.id}${anonymisieren ? "?a=1" : ""}`}>
+                    {name.nachname}, {name.vorname}
+                  </Link>
+                </td>
+                <td>{student.klasse?.name ?? "—"}</td>
+                <td
+                  title={student.fehltage ? splitTitle(student.fehltage) : undefined}
+                  style={{
+                    color: student.fehltage ? valueToColor(student.fehltage.gesamt, fehltageMin, fehltageMax) : undefined,
+                  }}
+                >
+                  {student.fehltage?.gesamt ?? "—"}
+                </td>
+                <td
+                  title={student.fehlstunden ? splitTitle(student.fehlstunden) : undefined}
+                  style={{
+                    color: student.fehlstunden
+                      ? valueToColor(student.fehlstunden.gesamt, fehlstundenMin, fehlstundenMax)
+                      : undefined,
+                  }}
+                >
+                  {student.fehlstunden?.gesamt ?? "—"}
+                </td>
+                <td>{student.klassenbuch_anzahl ?? "—"}</td>
+                {isHistoryMode ? null : (
+                  <>
+                    <td>
+                      <div className={styles.badges}>
+                        {Object.entries(student.zaehlerstand ?? {}).map(([typ, stand]) => (
+                          <EskalationsBadge key={typ} stufeNr={stand.erreichte_stufe_nr} maxStufeNr={maxStufeNr} />
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <NotificationFlyout benachrichtigung={student.letzte_benachrichtigung} />
+                    </td>
+                  </>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <div className={styles.pagination}>
