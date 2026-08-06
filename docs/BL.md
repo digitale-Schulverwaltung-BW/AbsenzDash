@@ -19,13 +19,17 @@ Wie bei allen Rollen kann rechts oben zwischen aktuellem und vergangenem Schulja
 
 ## Übersicht
 
-![Bereichs-Dashboard](Screenshots/01-Dashboard-Bereich.png)
+![Bereichs-Dashboard](Screenshots/BL/01-Dashboard-Bereich.png)
 
 Zeigt die durchschnittlichen Fehltage/Fehlstunden über alle Klassen Ihres Bereichs, je Klasse als eigener Balken, farblich codiert im Vergleich zu den anderen Klassen des Bereichs. Ein Klick auf einen Klassen-Balken springt in die Schülerliste dieser Klasse; ein Klick auf **Schülerliste** ohne vorherige Klassenwahl zeigt alle Schüler des gesamten Bereichs.
 
 Klassen ohne aktive Schüler werden neutral grau dargestellt und fließen nicht in die Farbskala der übrigen Klassen ein.
 
 ## Schülerliste und Schüler-Detail
+
+![Schülerliste](Screenshots/BL/02-Schuelerliste.png)
+
+![Schüler-Detail](Screenshots/BL/03-Schueler-Details.png)
 
 Funktional identisch zur Klassenlehrkraft-Ansicht (siehe [KL.md](KL.md), Abschnitte "Schülerliste" und "Schüler-Detail") — nur eben bereichsweit statt auf eine Klasse beschränkt. Über die Filter (Klasse-Dropdown, Mindeststufe, "Nur auffällige") behalten Sie auch bei mehreren Klassen den Überblick.
 

@@ -21,13 +21,19 @@ Rechts oben können Sie zwischen dem aktuellen und vergangenen Schuljahren wechs
 
 ## Übersicht
 
-![Dashboard](Screenshots/00-Dashboard-Schule.png)
+Die Übersicht sieht unterschiedlich aus, je nachdem wie viele Klassen Sie als Klassenlehrkraft betreuen:
 
-Zeigt Ihnen die durchschnittlichen Fehltage und Fehlstunden Ihrer Klasse(n) im laufenden Schuljahr, farblich codiert (grün = unauffällig, gelb/orange/rot = auffälliger im Vergleich). Haben Sie mehrere Klassen, sehen Sie einen Balken je Klasse; ein Klick auf einen Balken springt direkt in die Schülerliste dieser Klasse.
+**Nur eine Klasse:** Sie sehen die Kennzahlen direkt als Zahlen (Ø Fehltage, Ø Fehlstunden, Klassenbuch-Einträge, Maßnahmen) — ein Balkendiagramm entfällt, da es bei einer einzelnen Klasse nichts zu vergleichen gibt.
+
+![Dashboard bei einer Klasse](Screenshots/KL/01-Dashboard-1-Klasse.png)
+
+**Mehrere Klassen:** Sie sehen zusätzlich ein Balkendiagramm mit einem Balken je Klasse (Ø Fehltage und Ø Fehlstunden), farblich codiert im Vergleich Ihrer Klassen untereinander. Ein Klick auf einen Balken springt direkt in die Schülerliste dieser Klasse.
+
+![Dashboard bei mehreren Klassen](Screenshots/KL/01-Dashboard-Klassen.png)
 
 ## Schülerliste
 
-![Schülerliste](Screenshots/02-Schuelerliste.png)
+![Schülerliste](Screenshots/KL/02-Schuelerliste.png)
 
 Zeigt jeden Schüler Ihrer Klasse mit:
 
