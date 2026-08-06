@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useStudents } from "../../api/hooks/useStudents";
 import { anonymisiereName } from "../../utils/anonymize";
 import { StudentList } from "./StudentList";
@@ -44,6 +44,19 @@ function mockData(items: unknown[], overrides: Record<string, unknown> = {}) {
 }
 
 describe("StudentList", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("hides the Anonymisieren toggle and ignores ?a=1 when VITE_ANONYMISIERUNG_AKTIV is unset", () => {
+    mockData([BASE_STUDENT]);
+
+    renderList(["/schueler?a=1"]);
+
+    expect(screen.queryByLabelText("Anonymisieren")).not.toBeInTheDocument();
+    expect(screen.getByText("Muster, Max")).toBeInTheDocument();
+  });
+
   it("renders a row per student with a link to the detail page", () => {
     mockData([BASE_STUDENT]);
 
@@ -54,6 +67,7 @@ describe("StudentList", () => {
   });
 
   it("replaces the student name with an anonymized one when ?a=1 is set, and carries the param into the detail link", () => {
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "true");
     mockData([BASE_STUDENT]);
 
     renderList(["/schueler?a=1"]);
@@ -104,6 +118,7 @@ describe("StudentList", () => {
   });
 
   it("toggles anonymization via the URL params without a full page navigation", () => {
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "true");
     mockData([BASE_STUDENT]);
 
     renderList();

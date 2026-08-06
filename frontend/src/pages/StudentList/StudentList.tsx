@@ -4,7 +4,7 @@ import { useStudents } from "../../api/hooks/useStudents";
 import type { FehlzeitSplit, StudentOverview } from "../../api/types";
 import { EskalationsBadge } from "../../components/EskalationsBadge/EskalationsBadge";
 import { NotificationFlyout } from "../../components/NotificationFlyout/NotificationFlyout";
-import { anonymisiereName, istAnonymisierungAktiv } from "../../utils/anonymize";
+import { anonymisiereName, istAnonymisierungAktiv, istAnonymisierungErlaubt } from "../../utils/anonymize";
 import { valueToColor } from "../../utils/colorScale";
 import styles from "./StudentList.module.css";
 
@@ -44,7 +44,8 @@ export function StudentList() {
   const isHistoryMode = schuljahrId !== null;
   const sortByParam = searchParams.get("sort_by") as StudentSortField | null;
   const sortDirParam = searchParams.get("sort_dir") === "desc" ? "desc" : "asc";
-  const anonymisieren = istAnonymisierungAktiv(searchParams);
+  const anonymisierungErlaubt = istAnonymisierungErlaubt();
+  const anonymisieren = anonymisierungErlaubt && istAnonymisierungAktiv(searchParams);
 
   const { data, isLoading, isError } = useStudents({
     bereichId: bereichParam ? Number(bereichParam) : null,
@@ -127,15 +128,6 @@ export function StudentList() {
             onChange={(event) => updateParam("nur_auffaellige", event.target.checked ? "true" : "")}
           />{" "}
           Nur auffällige
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            aria-label="Anonymisieren"
-            checked={anonymisieren}
-            onChange={(event) => updateParam("a", event.target.checked ? "1" : "")}
-          />{" "}
-          Anonymisieren
         </label>
       </div>
       <table className={styles.table}>
@@ -220,6 +212,17 @@ export function StudentList() {
         <button type="button" disabled={!hasNext} onClick={() => goToOffset(offset + data.limit)}>
           Weiter
         </button>
+        {anonymisierungErlaubt ? (
+          <label className={styles.anonymisierenToggle}>
+            <input
+              type="checkbox"
+              aria-label="Anonymisieren"
+              checked={anonymisieren}
+              onChange={(event) => updateParam("a", event.target.checked ? "1" : "")}
+            />{" "}
+            Anonymisieren
+          </label>
+        ) : null}
       </div>
     </div>
   );

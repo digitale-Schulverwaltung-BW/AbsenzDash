@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useNavOptions } from "../../api/hooks/useNavOptions";
 import { useStudentCatalog } from "../../api/hooks/useStudentCatalog";
 import { useStudentDetail } from "../../api/hooks/useStudentDetail";
@@ -63,6 +63,10 @@ function renderDetail() {
 }
 
 describe("StudentDetail", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("renders the student header and all sections", () => {
     mockUseStudentDetail.mockReturnValue({ data: DETAIL, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
     mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -108,6 +112,7 @@ describe("StudentDetail", () => {
   });
 
   it("replaces the student name with an anonymized one when ?a=1 is set", () => {
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "true");
     mockUseStudentDetail.mockReturnValue({ data: DETAIL, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
     mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -122,5 +127,20 @@ describe("StudentDetail", () => {
     const fakeName = anonymisiereName(DETAIL.id);
     expect(screen.queryByText("Muster, Max")).not.toBeInTheDocument();
     expect(screen.getByText(`${fakeName.nachname}, ${fakeName.vorname}`)).toBeInTheDocument();
+  });
+
+  it("ignores ?a=1 and shows the real name when VITE_ANONYMISIERUNG_AKTIV is unset", () => {
+    mockUseStudentDetail.mockReturnValue({ data: DETAIL, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    render(
+      <MemoryRouter initialEntries={["/schueler/7?a=1"]}>
+        <Routes>
+          <Route path="/schueler/:id" element={<StudentDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Muster, Max")).toBeInTheDocument();
   });
 });

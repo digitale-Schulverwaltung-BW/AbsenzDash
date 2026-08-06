@@ -32,6 +32,16 @@ export function anonymisiereName(schuelerId: number): AnonymerName {
   return NAMEN[index];
 }
 
+/**
+ * Build-Time-Schalter (VITE_ANONYMISIERUNG_AKTIV, siehe .env.example) - deaktiviert
+ * per Default, damit das Feature nicht ungewollt in einem echten Deployment auftaucht.
+ * Muss pro Deployment im Build gesetzt werden, da die SPA als statisches Bundle ins
+ * WordPress-Plugin gebaut wird (kein Server-seitiges Runtime-Config-Ausliefern hierfuer).
+ */
+export function istAnonymisierungErlaubt(): boolean {
+  return import.meta.env.VITE_ANONYMISIERUNG_AKTIV === "true";
+}
+
 export function istAnonymisierungAktiv(searchParams: URLSearchParams): boolean {
   return searchParams.get("a") === "1";
 }

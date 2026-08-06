@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { anonymisiereName, istAnonymisierungAktiv } from "./anonymize";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { anonymisiereName, istAnonymisierungAktiv, istAnonymisierungErlaubt } from "./anonymize";
 
 describe("anonymisiereName", () => {
   it("returns the same name for the same id on repeated calls", () => {
@@ -15,6 +15,28 @@ describe("anonymisiereName", () => {
   it("cycles through the name pool for ids beyond the pool size", () => {
     const poolGroesse = 12; // Anzahl der Eintraege in der festen Namensliste
     expect(anonymisiereName(0)).toEqual(anonymisiereName(poolGroesse));
+  });
+});
+
+describe("istAnonymisierungErlaubt", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is false when VITE_ANONYMISIERUNG_AKTIV is unset (safe default)", () => {
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", undefined);
+    expect(istAnonymisierungErlaubt()).toBe(false);
+  });
+
+  it("is true only when VITE_ANONYMISIERUNG_AKTIV is exactly 'true'", () => {
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "true");
+    expect(istAnonymisierungErlaubt()).toBe(true);
+
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "false");
+    expect(istAnonymisierungErlaubt()).toBe(false);
+
+    vi.stubEnv("VITE_ANONYMISIERUNG_AKTIV", "1");
+    expect(istAnonymisierungErlaubt()).toBe(false);
   });
 });
 

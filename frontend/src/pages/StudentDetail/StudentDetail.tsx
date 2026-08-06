@@ -9,7 +9,7 @@ import { MassnahmenSection } from "../../components/StudentDetail/MassnahmenSect
 import { PdfExportSection } from "../../components/StudentDetail/PdfExportSection";
 import styles from "../../components/StudentDetail/StudentDetail.module.css";
 import { StatusBadge, stufeToTone } from "../../components/StatusBadge/StatusBadge";
-import { anonymisiereName, istAnonymisierungAktiv } from "../../utils/anonymize";
+import { anonymisiereName, istAnonymisierungAktiv, istAnonymisierungErlaubt } from "../../utils/anonymize";
 
 const ZAEHLERSTAND_LABEL: Record<string, string> = {
   fehlzeiten: "Fehlzeiten",
@@ -32,7 +32,7 @@ export function StudentDetail() {
     return <p>Fehler beim Laden des Schülers.</p>;
   }
 
-  const anonymisieren = istAnonymisierungAktiv(searchParams);
+  const anonymisieren = istAnonymisierungErlaubt() && istAnonymisierungAktiv(searchParams);
   const name = anonymisieren ? anonymisiereName(student.id) : student;
 
   return (
