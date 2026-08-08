@@ -19,6 +19,7 @@ from app.services.webuntis_fehlzeit_sync import sync_fehlzeiten
 from app.services.webuntis_kategorie_sync import sync_kategorien
 from app.services.webuntis_klassen_sync import sync_klassen
 from app.services.webuntis_klassenbuch_sync import sync_klassenbuch
+from app.services.webuntis_stundenraster_sync import sync_stundenraster
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ async def run_sync_once(db: AsyncSession) -> None:
         await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
         await sync_bereiche(db)
         await sync_kategorien(client, db)
+        await sync_stundenraster(client, db)
         await import_schueler(db)
 
         heute = datetime.now(timezone.utc).date()
