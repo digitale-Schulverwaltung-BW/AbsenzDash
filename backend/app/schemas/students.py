@@ -69,6 +69,7 @@ class FehlzeitOut(BaseModel):
     fach: str | None
     excuse_status_id: int | None
     grund_text: str | None
+    dauer_anzeige: str
 
 
 class KlassenbuchEintragOut(BaseModel):

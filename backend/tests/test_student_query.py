@@ -18,6 +18,7 @@ from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.stundenraster_periode import StundenrasterPeriode
 from app.services import student_query
 
 
@@ -533,3 +534,37 @@ async def test_load_student_detail_filters_by_range_except_massnahmen(db_session
     assert len(detail["ausnahmen"]) == 1  # unbefristet, created vor dem Zeitraum, gilt trotzdem als ueberlappend
     assert len(detail["massnahmen"]) == 1  # Massnahmen NIE gefiltert, auch die von 2024 bleibt sichtbar
     assert detail["zaehlerstand"] == {}
+
+
+@pytest.mark.asyncio
+async def test_load_student_detail_computes_dauer_anzeige_for_fehlzeiten(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 2, 2), start_zeit=0, end_zeit=2359),
+            Fehlzeit(schueler_id=schueler.id, typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=745),
+        ]
+    )
+    await db_session.commit()
+
+    detail = await student_query.load_student_detail(db_session, schueler.id)
+
+    by_typ = {f.typ: f for f in detail["fehlzeiten"]}
+    assert by_typ["tag"].dauer_anzeige == "ganztägig"
+    assert by_typ["stunde"].dauer_anzeige == "15 Minuten (7:30–7:45)"
+
+
+@pytest.mark.asyncio
+async def test_load_student_detail_uses_stundenraster_when_available(db_session):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(Fehlzeit(schueler_id=schueler.id, typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=745))
+    db_session.add(StundenrasterPeriode(wochentag=1, stunde_nr=1, start_zeit=730, end_zeit=815))
+    await db_session.commit()
+
+    detail = await student_query.load_student_detail(db_session, schueler.id)
+
+    assert detail["fehlzeiten"][0].dauer_anzeige == "15 Minuten (Stunde 1)"

@@ -21,7 +21,8 @@ from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
-from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
+from app.models.stundenraster_periode import StundenrasterPeriode
+from app.services.fehlzeit_berechnung import dauer_anzeige, fehlstunden_minuten_expr, minuten_zu_fehlstunden
 
 ZAEHLERSTAND_TYPEN = ("fehlzeiten", "klassenbuch")
 
@@ -157,6 +158,16 @@ async def load_classreg_category_map(db: AsyncSession, kategorie_ids: list[int])
         return {}
     result = await db.execute(select(ClassregCategory).where(ClassregCategory.id.in_(kategorie_ids)))
     return {kategorie.id: kategorie for kategorie in result.scalars().all()}
+
+
+async def load_stundenraster_by_wochentag(db: AsyncSession) -> dict[int, list[StundenrasterPeriode]]:
+    """Alle Stundenraster-Perioden, gruppiert nach ISO-Wochentag (1=Montag...7=Sonntag) -
+    fuer fehlzeit_berechnung.dauer_anzeige, siehe load_student_detail."""
+    result = await db.execute(select(StundenrasterPeriode))
+    perioden_by_wochentag: dict[int, list[StundenrasterPeriode]] = {}
+    for periode in result.scalars().all():
+        perioden_by_wochentag.setdefault(periode.wochentag, []).append(periode)
+    return perioden_by_wochentag
 
 
 async def load_all_excuse_statuses(db: AsyncSession) -> list[ExcuseStatus]:
@@ -382,6 +393,9 @@ async def load_student_detail(
         )
 
     fehlzeiten = (await db.execute(fehlzeiten_query.order_by(Fehlzeit.datum.desc()))).scalars().all()
+    perioden_by_wochentag = await load_stundenraster_by_wochentag(db)
+    for f in fehlzeiten:
+        f.dauer_anzeige = dauer_anzeige(f, perioden_by_wochentag)
     klassenbuch = (await db.execute(klassenbuch_query.order_by(KlassenbuchEintrag.datum.desc()))).scalars().all()
     ausnahmen = (await db.execute(ausnahmen_query)).scalars().all()
     benachrichtigungen = (
