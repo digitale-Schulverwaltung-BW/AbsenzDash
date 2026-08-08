@@ -29,11 +29,11 @@ Neue Tabelle `stundenraster_periode`:
 
 Neuer Service `backend/app/services/webuntis_stundenraster_sync.py`, Funktion `sync_stundenraster(db, client) -> None`:
 
-- Ruft `client.call("getTimegridUnits", {})` auf (schulweiter Aufruf ohne `elementType`/`elementId`, folgt dem bestehenden `WebUntisClient`-Muster aus `webuntis_client.py`).
-- Antwortformat (laut `python-webuntis`-Referenz): Liste pro Wochentag mit `day` (Integer) und `timeUnits[]` (`{startTime, endTime}`, in Reihenfolge = Periodennummer).
+- Ruft `client.call("getTimegridUnits", {})` auf — **live verifiziert (2026-08-08, siehe TECH-SPEC.md Abschnitt 1.4): akzeptiert ausschließlich einen leeren Parameter-Body**, jeder zusätzliche Parameter (auch `schoolyearId`) führt zu `Method not found`. Es gibt kein klassenspezifisches Raster über JSON-RPC.
+- Antwortformat (bestätigt über `python-webuntis`-Quellcode, siehe TECH-SPEC.md Abschnitt 1.4): Liste pro Wochentag mit `day` (Integer, **WebUntis-Konvention 1=Sonntag…7=Samstag**, nicht Pythons `isoweekday()`) und `timeUnits[]` (`{name, startTime, endTime}`, Reihenfolge im Array = Periodenreihenfolge — kein explizites Nummernfeld, `stunde_nr` wird daher als 1-basierter Index innerhalb des sortierten `timeUnits`-Arrays vergeben, nicht aus `name` geparst, da `name` frei konfigurierbarer Text ohne garantiertes Zahlenformat ist).
 - Schreibt die Tabelle komplett neu (`DELETE FROM stundenraster_periode` + Bulk-Insert), da die Tabelle klein ist (Größenordnung: Wochentage × Perioden pro Tag) und Diffing keinen Mehrwert bringt — gleiches Muster wie `sync_bereiche` in [Bundle-D-Design](2026-08-05-bundle-d-bereiche-entschlacken-design.md) Abschnitt 2, Schritt 2.
 - Wird im Orchestrator (`sync_orchestrator.py::run_sync_once`) bei jedem regulären Sync-Lauf aufgerufen, vor `sync_fehlzeiten` (das Anzeige-Label wird beim Lesen berechnet, siehe unten — die Reihenfolge ist daher nicht hart erforderlich, aber folgt der bestehenden "Stammdaten vor Bewegungsdaten"-Konvention).
-- Schlägt `getTimegridUnits` fehl oder liefert eine leere Antwort: Sync-Lauf bricht **nicht** ab (kein kritischer Pfad), Tabelle bleibt beim alten Stand, Warnung geloggt. Nachgelagert greift ohnehin der Uhrzeit-Fallback aus Abschnitt 3.
+- Schlägt `getTimegridUnits` fehl oder liefert eine leere/null Antwort: Sync-Lauf bricht **nicht** ab (kein kritischer Pfad), Tabelle bleibt beim alten Stand, Warnung geloggt. Nachgelagert greift ohnehin der Uhrzeit-Fallback aus Abschnitt 3. **Bekannter aktueller Zustand (2026-08-08):** an der Live-Instanz liefert der Aufruf gerade `-8998`/"getTimegrid() is null", vermutlich weil WebUntis sich in der bekannten Schuljahres-Übergangslücke befindet (TECH-SPEC.md Abschnitt 1.3a) — `getCurrentSchoolyear` schlägt zeitgleich mit demselben Fehlercode fehl. Erwartung: löst sich von selbst, sobald die Schule das nächste Schuljahr aktiviert; bis dahin zeigt das Feature durchgängig den Uhrzeit-Fallback.
 
 ## 3. Label-Berechnung
 
