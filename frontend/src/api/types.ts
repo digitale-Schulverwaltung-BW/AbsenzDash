@@ -156,6 +156,7 @@ export interface Fehlzeit {
   datum: string;
   start_zeit: number;
   end_zeit: number;
+  dauer_anzeige: string;
   fach: string | null;
   excuse_status_id: number | null;
   grund_text: string | null;

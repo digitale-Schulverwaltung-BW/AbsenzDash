@@ -9,10 +9,11 @@ describe("FehlzeitenTable", () => {
         fehlzeiten={[
           {
             id: 1,
-            typ: "verspaetung",
+            typ: "stunde",
             datum: "2026-02-01",
             start_zeit: 1,
             end_zeit: 1,
+            dauer_anzeige: "15 Minuten (Stunde 1)",
             fach: "Mathe",
             excuse_status_id: 5,
             grund_text: null,
@@ -24,9 +25,10 @@ describe("FehlzeitenTable", () => {
 
     expect(screen.getByText("Entschuldigt")).toBeInTheDocument();
     expect(screen.getByText("Mathe")).toBeInTheDocument();
+    expect(screen.getByText("15 Minuten (Stunde 1)")).toBeInTheDocument();
   });
 
-  it("shows 'ganztägig' for typ='tag' instead of the start_zeit/end_zeit range", () => {
+  it("shows the backend-provided dauer_anzeige label as-is", () => {
     render(
       <FehlzeitenTable
         fehlzeiten={[
@@ -36,6 +38,7 @@ describe("FehlzeitenTable", () => {
             datum: "2026-02-01",
             start_zeit: 0,
             end_zeit: 2359,
+            dauer_anzeige: "ganztägig",
             fach: null,
             excuse_status_id: null,
             grund_text: null,
@@ -55,10 +58,11 @@ describe("FehlzeitenTable", () => {
         fehlzeiten={[
           {
             id: 1,
-            typ: "verspaetung",
+            typ: "stunde",
             datum: "2026-02-01",
             start_zeit: 1,
             end_zeit: 1,
+            dauer_anzeige: "0 Minuten (Stunde 1)",
             fach: null,
             excuse_status_id: null,
             grund_text: null,

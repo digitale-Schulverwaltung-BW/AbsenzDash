@@ -15,7 +15,7 @@ export function FehlzeitenTable({ fehlzeiten, excuseStatuses }: FehlzeitenTableP
         <tr>
           <th>Datum</th>
           <th>Typ</th>
-          <th>Zeit</th>
+          <th>Dauer</th>
           <th>Fach</th>
           <th>Entschuldigungsstatus</th>
           <th>Grund</th>
@@ -26,9 +26,7 @@ export function FehlzeitenTable({ fehlzeiten, excuseStatuses }: FehlzeitenTableP
           <tr key={fehlzeit.id}>
             <td>{fehlzeit.datum}</td>
             <td>{fehlzeit.typ}</td>
-            <td>
-              {fehlzeit.typ === "tag" ? "ganztägig" : `${fehlzeit.start_zeit}–${fehlzeit.end_zeit}`}
-            </td>
+            <td>{fehlzeit.dauer_anzeige}</td>
             <td>{fehlzeit.fach ?? "—"}</td>
             <td>{fehlzeit.excuse_status_id !== null ? statusMap.get(fehlzeit.excuse_status_id) ?? "—" : "—"}</td>
             <td>{fehlzeit.grund_text ?? "—"}</td>
