@@ -91,3 +91,51 @@ async def test_sync_stundenraster_skips_unknown_weekday_value(db_session):
 
     result = await db_session.execute(select(StundenrasterPeriode))
     assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_sync_stundenraster_skips_malformed_timeunit_but_keeps_valid_days(db_session):
+    client = AsyncMock()
+    client.call.return_value = [
+        {
+            "day": 2,  # WebUntis: 2 = Montag -> ISO 1
+            "timeUnits": [
+                {"name": "1", "endTime": 815},  # fehlt startTime -> uebersprungen
+                {"name": "2", "startTime": 815, "endTime": 900},
+            ],
+        },
+        {
+            "day": 3,  # WebUntis: 3 = Dienstag -> ISO 2
+            "timeUnits": [{"name": "1", "startTime": 730, "endTime": 815}],
+        },
+    ]
+
+    await sync_stundenraster(client, db_session)
+
+    result = await db_session.execute(
+        select(StundenrasterPeriode).order_by(StundenrasterPeriode.wochentag, StundenrasterPeriode.stunde_nr)
+    )
+    perioden = result.scalars().all()
+    assert [(p.wochentag, p.stunde_nr, p.start_zeit, p.end_zeit) for p in perioden] == [
+        (1, 1, 815, 900),
+        (2, 1, 730, 815),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_stundenraster_keeps_old_data_when_every_day_unusable(db_session):
+    db_session.add(StundenrasterPeriode(wochentag=1, stunde_nr=1, start_zeit=730, end_zeit=815))
+    await db_session.commit()
+
+    client = AsyncMock()
+    client.call.return_value = [
+        {"day": 99, "timeUnits": [{"name": "1", "startTime": 730, "endTime": 815}]},
+        {"day": 2, "timeUnits": [{"name": "1", "endTime": 815}]},  # fehlt startTime
+    ]
+
+    await sync_stundenraster(client, db_session)
+
+    result = await db_session.execute(select(StundenrasterPeriode))
+    perioden = result.scalars().all()
+    assert len(perioden) == 1
+    assert perioden[0].start_zeit == 730

@@ -36,23 +36,70 @@ async def sync_stundenraster(client: WebUntisClient, db: AsyncSession) -> None:
         logger.warning("getTimegridUnits lieferte keine Daten, stundenraster_periode bleibt unveraendert")
         return
 
-    await db.execute(delete(StundenrasterPeriode))
+    neue_perioden: list[StundenrasterPeriode] = []
 
     for tag in tage:
-        wochentag = _WEBUNTIS_TAG_ZU_ISO.get(tag.get("day"))
-        if wochentag is None:
-            logger.warning("getTimegridUnits: unbekannter Wochentag-Wert %s, uebersprungen", tag.get("day"))
+        try:
+            tag_day = tag.get("day")
+        except AttributeError:
+            logger.warning("getTimegridUnits: Tag-Eintrag ist kein Objekt (%r), uebersprungen", tag)
             continue
 
-        time_units = sorted(tag.get("timeUnits", []), key=lambda unit: unit["startTime"])
-        for stunde_nr, unit in enumerate(time_units, start=1):
-            db.add(
+        wochentag = _WEBUNTIS_TAG_ZU_ISO.get(tag_day)
+        if wochentag is None:
+            logger.warning("getTimegridUnits: unbekannter Wochentag-Wert %s, uebersprungen", tag_day)
+            continue
+
+        try:
+            roh_time_units = tag.get("timeUnits", []) or []
+        except (TypeError, AttributeError) as exc:
+            logger.warning(
+                "getTimegridUnits: timeUnits fuer Wochentag %s nicht lesbar (%s), uebersprungen",
+                wochentag,
+                exc,
+            )
+            continue
+
+        gueltige_units = []
+        for unit in roh_time_units:
+            try:
+                start_zeit = unit["startTime"]
+                end_zeit = unit["endTime"]
+            except (TypeError, KeyError) as exc:
+                logger.warning(
+                    "getTimegridUnits: timeUnit fuer Wochentag %s fehlerhaft (%s), uebersprungen",
+                    wochentag,
+                    exc,
+                )
+                continue
+            gueltige_units.append((start_zeit, end_zeit))
+
+        try:
+            gueltige_units.sort(key=lambda zeiten: zeiten[0])
+        except TypeError as exc:
+            logger.warning(
+                "getTimegridUnits: timeUnits fuer Wochentag %s nicht sortierbar (%s), uebersprungen",
+                wochentag,
+                exc,
+            )
+            continue
+
+        for stunde_nr, (start_zeit, end_zeit) in enumerate(gueltige_units, start=1):
+            neue_perioden.append(
                 StundenrasterPeriode(
                     wochentag=wochentag,
                     stunde_nr=stunde_nr,
-                    start_zeit=unit["startTime"],
-                    end_zeit=unit["endTime"],
+                    start_zeit=start_zeit,
+                    end_zeit=end_zeit,
                 )
             )
 
+    if not neue_perioden:
+        logger.warning(
+            "getTimegridUnits lieferte keine verwertbaren Perioden, stundenraster_periode bleibt unveraendert"
+        )
+        return
+
+    await db.execute(delete(StundenrasterPeriode))
+    db.add_all(neue_perioden)
     await db.commit()
