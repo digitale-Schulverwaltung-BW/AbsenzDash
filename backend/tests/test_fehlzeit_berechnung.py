@@ -6,7 +6,8 @@ from sqlalchemy import func, select
 
 from app.models.fehlzeit import Fehlzeit
 from app.models.schueler import Schueler
-from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
+from app.models.stundenraster_periode import StundenrasterPeriode
+from app.services.fehlzeit_berechnung import dauer_anzeige, fehlstunden_minuten_expr, minuten_zu_fehlstunden
 
 
 def test_minuten_zu_fehlstunden_rounds_to_two_decimals():
@@ -57,3 +58,42 @@ async def test_fehlstunden_minuten_expr_sums_multiple_rows_within_same_hour(db_s
         select(func.sum(fehlstunden_minuten_expr())).select_from(Fehlzeit).where(Fehlzeit.schueler_id == schueler.id)
     )
     assert result.scalar_one() == 30  # 20 + 10
+
+
+def test_dauer_anzeige_gibt_ganztaegig_zurueck_fuer_typ_tag():
+    fehlzeit = Fehlzeit(typ="tag", datum=date(2026, 2, 2), start_zeit=0, end_zeit=2359)
+    assert dauer_anzeige(fehlzeit, {}) == "ganztägig"
+
+
+def test_dauer_anzeige_matches_single_periode():
+    # 2026-02-02 ist ein Montag (isoweekday() == 1)
+    fehlzeit = Fehlzeit(typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=745)
+    perioden_by_wochentag = {
+        1: [StundenrasterPeriode(wochentag=1, stunde_nr=1, start_zeit=730, end_zeit=815)],
+    }
+    assert dauer_anzeige(fehlzeit, perioden_by_wochentag) == "15 Minuten (Stunde 1)"
+
+
+def test_dauer_anzeige_matches_multiple_aufeinanderfolgende_perioden():
+    fehlzeit = Fehlzeit(typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=900)
+    perioden_by_wochentag = {
+        1: [
+            StundenrasterPeriode(wochentag=1, stunde_nr=1, start_zeit=730, end_zeit=815),
+            StundenrasterPeriode(wochentag=1, stunde_nr=2, start_zeit=820, end_zeit=905),
+        ],
+    }
+    assert dauer_anzeige(fehlzeit, perioden_by_wochentag) == "90 Minuten (Stunde 1-2)"
+
+
+def test_dauer_anzeige_falls_back_to_formatted_time_when_no_periode_matches():
+    fehlzeit = Fehlzeit(typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=745)
+    assert dauer_anzeige(fehlzeit, {}) == "15 Minuten (7:30–7:45)"
+
+
+def test_dauer_anzeige_ignores_perioden_of_other_weekdays():
+    # Fehlzeit ist Montag (isoweekday 1), Perioden nur fuer Dienstag (2) hinterlegt.
+    fehlzeit = Fehlzeit(typ="stunde", datum=date(2026, 2, 2), start_zeit=730, end_zeit=745)
+    perioden_by_wochentag = {
+        2: [StundenrasterPeriode(wochentag=2, stunde_nr=1, start_zeit=730, end_zeit=815)],
+    }
+    assert dauer_anzeige(fehlzeit, perioden_by_wochentag) == "15 Minuten (7:30–7:45)"
