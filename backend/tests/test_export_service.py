@@ -212,3 +212,21 @@ async def test_render_student_export_html_shows_gesamte_historie_when_no_schulja
     )
 
     assert "gesamte Historie" in html
+
+
+@pytest.mark.asyncio
+async def test_render_student_export_html_shows_dauer_anzeige_for_fehlzeiten(db_session):
+    klasse = Klasse(webuntis_id=1, name="10a")
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="stunde", datum=datetime.date(2026, 2, 2), start_zeit=730, end_zeit=745)
+    )
+    await db_session.commit()
+
+    html = await export_service.render_student_export_html(db_session, schueler, klasse, sections={"fehlzeiten"})
+
+    assert "15 Minuten (7:30–7:45)" in html

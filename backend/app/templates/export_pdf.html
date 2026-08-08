@@ -32,13 +32,14 @@
   <h2>Fehlzeiten</h2>
   <table>
     <thead>
-      <tr><th>Datum</th><th>Typ</th><th>Fach</th><th>Entschuldigungsstatus</th><th>Grund</th></tr>
+      <tr><th>Datum</th><th>Typ</th><th>Dauer</th><th>Fach</th><th>Entschuldigungsstatus</th><th>Grund</th></tr>
     </thead>
     <tbody>
       {% for f in fehlzeiten %}
       <tr>
         <td>{{ f.datum }}</td>
         <td>{{ f.typ }}</td>
+        <td>{{ f.dauer_anzeige }}</td>
         <td>{{ f.fach or "" }}</td>
         <td>{{ f.excuse_status_name or "" }}</td>
         <td>{{ f.grund_text or "" }}</td>

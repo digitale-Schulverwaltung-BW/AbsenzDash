@@ -59,6 +59,7 @@ async def render_student_export_html(
                 {
                     "datum": f.datum.strftime("%d.%m.%Y"),
                     "typ": f.typ,
+                    "dauer_anzeige": f.dauer_anzeige,
                     "fach": f.fach,
                     "excuse_status_name": (status.long_name or status.name) if status else None,
                     "grund_text": f.grund_text,
