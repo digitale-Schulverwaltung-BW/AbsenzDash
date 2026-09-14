@@ -17,11 +17,17 @@ class Absenzdash_Optionen {
 	}
 
 	public static function get_backend_url(): string {
+		if ( defined( 'ABSENZDASH_BACKEND_URL' ) && ABSENZDASH_BACKEND_URL ) {
+			return rtrim( ABSENZDASH_BACKEND_URL, '/' );
+		}
 		$optionen = get_option( self::OPTION_KEY, array() );
 		return isset( $optionen['backend_url'] ) ? rtrim( $optionen['backend_url'], '/' ) : '';
 	}
 
 	public static function get_shared_secret(): string {
+		if ( defined( 'ABSENZDASH_SHARED_SECRET' ) && ABSENZDASH_SHARED_SECRET ) {
+			return ABSENZDASH_SHARED_SECRET;
+		}
 		$optionen = get_option( self::OPTION_KEY, array() );
 		return isset( $optionen['shared_secret'] ) ? $optionen['shared_secret'] : '';
 	}
@@ -99,13 +105,19 @@ class Absenzdash_Optionen {
 							<input type="url" id="absenzdash_backend_url" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[backend_url]"
 								value="<?php echo esc_attr( $optionen['backend_url'] ?? '' ); ?>" class="regular-text"
 								placeholder="http://absenzdash-backend:8000" />
+							<?php if ( defined( 'ABSENZDASH_BACKEND_URL' ) && ABSENZDASH_BACKEND_URL ) : ?>
+								<p class="description">Wird aktuell durch die wp-config.php-Konstante <code>ABSENZDASH_BACKEND_URL</code> überschrieben.</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="absenzdash_shared_secret">Shared Secret</label></th>
 						<td>
-							<input type="text" id="absenzdash_shared_secret" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[shared_secret]"
+							<input type="password" id="absenzdash_shared_secret" name="<?php echo esc_attr( self::OPTION_KEY ); ?>[shared_secret]"
 								value="<?php echo esc_attr( $optionen['shared_secret'] ?? '' ); ?>" class="regular-text" />
+							<?php if ( defined( 'ABSENZDASH_SHARED_SECRET' ) && ABSENZDASH_SHARED_SECRET ) : ?>
+								<p class="description">Wird aktuell durch die wp-config.php-Konstante <code>ABSENZDASH_SHARED_SECRET</code> überschrieben.</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 				</table>

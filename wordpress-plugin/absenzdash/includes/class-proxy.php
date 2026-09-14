@@ -8,6 +8,13 @@ class Absenzdash_Proxy {
 
 	const NAMESPACE_ = 'absenzdash/v1';
 
+	/**
+	 * Content-Types, die im Non-JSON-Passthrough unveraendert an den Client
+	 * durchgereicht werden duerfen (z.B. PDF-Exporte). Alles andere wird
+	 * abgelehnt statt roh durchgereicht (Audit M-7).
+	 */
+	const ERLAUBTE_ROHANTWORT_TYPEN = array( 'application/pdf' );
+
 	private ?string $roh_body        = null;
 	private ?string $roh_content_typ = null;
 
@@ -37,7 +44,7 @@ class Absenzdash_Proxy {
 		$user  = wp_get_current_user();
 		$rolle = get_user_meta( $user->ID, 'absenzdash_role', true );
 
-		$pfad = '/' . ltrim( $request->get_param( 'pfad' ), '/' );
+		$pfad = '/' . ltrim( $request->get_url_params()['pfad'] ?? '', '/' );
 
 		// Admins duerfen sich nie aus den eigenen Einstellungsseiten aussperren.
 		if ( $user->has_cap( 'manage_options' ) && 0 === strpos( $pfad, '/admin/' ) ) {
@@ -85,18 +92,25 @@ class Absenzdash_Proxy {
 		$antwort = wp_remote_request( $ziel_url, $argumente );
 
 		if ( is_wp_error( $antwort ) ) {
-			return new WP_Error( 'absenzdash_backend_nicht_erreichbar', $antwort->get_error_message(), array( 'status' => 502 ) );
+			error_log( 'AbsenzDash Proxy: Backend nicht erreichbar - ' . $antwort->get_error_message() );
+			return new WP_Error( 'absenzdash_backend_nicht_erreichbar', 'Backend derzeit nicht erreichbar.', array( 'status' => 502 ) );
 		}
 
 		$status          = wp_remote_retrieve_response_code( $antwort );
 		$antwort_body    = wp_remote_retrieve_body( $antwort );
 		$antwort_content = wp_remote_retrieve_header( $antwort, 'content-type' );
+		$basis_content_typ = trim( strtok( (string) $antwort_content, ';' ) );
 
-		if ( ! empty( $antwort_content ) && false === strpos( $antwort_content, 'application/json' ) ) {
+		if ( ! empty( $antwort_content ) && 'application/json' !== $basis_content_typ ) {
+			if ( ! in_array( $basis_content_typ, self::ERLAUBTE_ROHANTWORT_TYPEN, true ) ) {
+				error_log( 'AbsenzDash Proxy: unerwarteter Content-Type vom Backend abgelehnt - ' . $antwort_content );
+				return new WP_Error( 'absenzdash_unerwarteter_content_typ', 'Backend derzeit nicht erreichbar.', array( 'status' => 502 ) );
+			}
 			$this->roh_body        = $antwort_body;
 			$this->roh_content_typ = $antwort_content;
 			$response = new WP_REST_Response( null, $status );
 			$response->header( 'Content-Type', $antwort_content );
+			$response->header( 'X-Content-Type-Options', 'nosniff' );
 			return $response;
 		}
 
@@ -108,6 +122,7 @@ class Absenzdash_Proxy {
 			return $serviert;
 		}
 		header( 'Content-Type: ' . $this->roh_content_typ );
+		header( 'X-Content-Type-Options: nosniff' );
 		echo $this->roh_body;
 		return true;
 	}
