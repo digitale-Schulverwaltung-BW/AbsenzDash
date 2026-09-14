@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.api.routes.students import router as students_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.dashboard import router as dashboard_router
+from app.core.config import settings
 from app.core.scheduler import create_scheduler, start_scheduler
 from app.core import scheduler as scheduler_module
 
@@ -36,7 +37,13 @@ async def lifespan(app: FastAPI):
             await asyncio.gather(*pending, return_exceptions=True)
 
 
-app = FastAPI(title="AbsenzDash Backend", lifespan=lifespan)
+app = FastAPI(
+    title="AbsenzDash Backend",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
+)
 app.include_router(students_router)
 app.include_router(admin_router)
 app.include_router(dashboard_router)

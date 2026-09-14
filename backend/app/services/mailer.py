@@ -7,11 +7,24 @@ from email.message import EmailMessage
 from pathlib import Path
 from string import Template
 
+from pydantic import EmailStr, TypeAdapter
+
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+_email_adapter = TypeAdapter(EmailStr)
+
+
+def _validate_recipient_addresses(to_addresses: list[str]) -> None:
+    """Wirft ValueError, falls eine Empfaengeradresse kein gueltiges E-Mail-Format hat."""
+    for adresse in to_addresses:
+        try:
+            _email_adapter.validate_python(adresse)
+        except Exception as exc:
+            raise ValueError(f"Ungueltige Empfaengeradresse: {adresse!r}") from exc
 
 
 def _send_sync(settings: Settings, to_addresses: list[str], subject: str, body: str) -> None:
@@ -31,6 +44,7 @@ def _send_sync(settings: Settings, to_addresses: list[str], subject: str, body: 
 
 async def send_email(settings: Settings, to_addresses: list[str], subject: str, body: str) -> None:
     """Blockierender SMTP-Versand in Thread-Pool-Executor (Sync-Job laeuft im selben Event-Loop wie die API)."""
+    _validate_recipient_addresses(to_addresses)
     await asyncio.to_thread(_send_sync, settings, to_addresses, subject, body)
 
 
@@ -46,6 +60,10 @@ def render_template(templates_dir: Path, **werte: str) -> tuple[str, str]:
     content = path.read_text(encoding="utf-8")
     subject_template, body_template = content.split("\n\n", 1)
 
-    subject = Template(subject_template).substitute(**werte)
-    body = Template(body_template).substitute(**werte)
+    # CR/LF aus eingesetzten Werten entfernen: verhindert Header-/Content-Manipulation
+    # ueber z.B. Schuelernamen oder Klassenbezeichnungen mit eingebetteten Zeilenumbruechen.
+    bereinigte_werte = {schluessel: wert.replace("\r", "").replace("\n", "") for schluessel, wert in werte.items()}
+
+    subject = Template(subject_template).substitute(**bereinigte_werte)
+    body = Template(body_template).substitute(**bereinigte_werte)
     return subject, body

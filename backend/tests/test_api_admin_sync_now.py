@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisError
 from app.main import app
 from app.models.audit_log import AuditLog
+from app.services.sync_orchestrator import SyncAlreadyRunningError
 
 HEADERS_SCHULLEITUNG = {
     "X-WordPress-Secret": "test-secret",
@@ -49,6 +50,21 @@ async def test_post_sync_now_returns_ok_and_logs_audit_entry(db_session, monkeyp
     audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "admin_sync_now_triggered"))
     audit_row = audit_result.scalar_one()
     assert audit_row.details == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_post_sync_now_returns_409_when_sync_already_running(db_session, monkeypatch):
+    import app.api.routes.admin as admin_module
+
+    mock_run_once = AsyncMock(side_effect=SyncAlreadyRunningError("bereits aktiv"))
+    monkeypatch.setattr(admin_module, "run_sync_once", mock_run_once)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/admin/sync-now", headers=HEADERS_SCHULLEITUNG)
+
+    assert response.status_code == 409
+    mock_run_once.assert_awaited_once()
 
 
 @pytest.mark.asyncio

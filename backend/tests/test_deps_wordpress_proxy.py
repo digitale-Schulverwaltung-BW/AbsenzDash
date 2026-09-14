@@ -85,6 +85,31 @@ async def test_updates_existing_nutzer_on_repeat_request(db_session):
 
 
 @pytest.mark.asyncio
+async def test_identical_repeat_request_does_not_create_second_audit_entry(db_session):
+    """M-3: ein unveraendertes Repeat-Request darf keinen zweiten AuditLog-Eintrag erzeugen."""
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.get("/whoami", headers=HEADERS_BASE)
+        response = await client.get("/whoami", headers=HEADERS_BASE)
+
+    assert response.status_code == 200
+
+    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.resource_typ == "nutzer"))
+    audit_entries = audit_result.scalars().all()
+    assert len(audit_entries) == 1
+    assert audit_entries[0].aktion == "wordpress_proxy_created"
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_numeric_webuntis_code():
+    transport = ASGITransport(app=test_app)
+    headers = {**HEADERS_BASE, "X-WordPress-WebUntis-Code": "abc"}
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/whoami", headers=headers)
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_decodes_utf8_name_header_without_mojibake(db_session):
     """A UTF-8-sending WordPress proxy must not corrupt umlauts in Nutzer.name.
 

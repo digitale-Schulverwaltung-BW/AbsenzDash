@@ -54,6 +54,39 @@ async def test_send_email_skips_starttls_and_login_when_disabled(monkeypatch):
     smtp_instance.send_message.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_send_email_rejects_invalid_recipient_address(monkeypatch):
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_from_address", "absenzdash@example.test")
+
+    smtp_cls = MagicMock()
+    monkeypatch.setattr(mailer.smtplib, "SMTP", smtp_cls)
+
+    with pytest.raises(ValueError):
+        await mailer.send_email(settings, ["not-an-email-address"], "Betreff", "Text")
+
+    smtp_cls.assert_not_called()
+
+
+def test_render_template_strips_cr_lf_from_values(tmp_path):
+    (tmp_path / "email_benachrichtigung.txt.default").write_text(
+        "Betreff $schueler_vorname\n\nHallo $schueler_vorname, Klasse $klasse.",
+        encoding="utf-8",
+    )
+
+    subject, body = mailer.render_template(
+        tmp_path,
+        schueler_vorname="Max\r\nBcc: angreifer@example.com",
+        klasse="10a\ninjected",
+    )
+
+    assert "\r" not in subject
+    assert "\n" not in subject
+    assert "\r" not in body
+    assert "\n" not in body
+    assert subject == "Betreff MaxBcc: angreifer@example.com"
+
+
 def test_render_template_uses_default_when_no_override(tmp_path):
     (tmp_path / "email_benachrichtigung.txt.default").write_text(
         "AbsenzDash: Stufe $stufe_nr erreicht\n\nHallo $schueler_vorname, Klasse $klasse.",

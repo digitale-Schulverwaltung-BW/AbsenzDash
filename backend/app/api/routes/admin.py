@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -37,7 +38,9 @@ from app.services import (
     threshold_rule_service,
     webuntis_teacher_service,
 )
-from app.services.sync_orchestrator import run_sync_once
+from app.services.sync_orchestrator import SyncAlreadyRunningError, run_sync_once
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_schulleitung)])
 
@@ -142,7 +145,10 @@ async def post_sync_now(
     nutzer_id = nutzer.id
     try:
         await run_sync_once(db)
-    except (WebUntisError, OSError) as exc:
+    except SyncAlreadyRunningError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ein Sync-Lauf ist bereits aktiv, bitte spaeter erneut versuchen.")
+    except (WebUntisError, OSError, ValueError) as exc:
+        logger.exception("Sync fehlgeschlagen")
         await db.rollback()
         db.add(
             AuditLog(
@@ -153,7 +159,7 @@ async def post_sync_now(
             )
         )
         await db.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Sync fehlgeschlagen: {exc}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Sync fehlgeschlagen. Details siehe Server-Log.")
 
     abgeschlossen_am = datetime.now(timezone.utc)
     db.add(
@@ -183,7 +189,8 @@ async def post_test_email(
             "AbsenzDash Test-E-Mail",
             "Diese Test-E-Mail bestaetigt, dass die SMTP-Konfiguration von AbsenzDash funktioniert.",
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        logger.exception("Versand der Test-E-Mail fehlgeschlagen")
         db.add(
             AuditLog(
                 user_id=nutzer.id,
@@ -193,7 +200,7 @@ async def post_test_email(
             )
         )
         await db.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Versand fehlgeschlagen: {exc}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Versand fehlgeschlagen. Details siehe Server-Log.")
 
     db.add(
         AuditLog(

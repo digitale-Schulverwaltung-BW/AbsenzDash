@@ -23,6 +23,12 @@ from app.services.webuntis_stundenraster_sync import sync_stundenraster
 
 logger = logging.getLogger(__name__)
 
+_sync_lock = asyncio.Lock()
+
+
+class SyncAlreadyRunningError(RuntimeError):
+    """Wird geworfen, wenn ein Sync-Lauf angestossen wird, waehrend bereits einer laeuft."""
+
 
 async def get_or_create_einstellung(db: AsyncSession) -> Einstellung:
     einstellung = (await db.execute(select(Einstellung))).scalars().first()
@@ -114,6 +120,13 @@ async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) 
 
 
 async def run_sync_once(db: AsyncSession) -> None:
+    if _sync_lock.locked():
+        raise SyncAlreadyRunningError("Ein Sync-Lauf ist bereits aktiv.")
+    async with _sync_lock:
+        await _run_sync_once_impl(db)
+
+
+async def _run_sync_once_impl(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
         einstellung = await get_or_create_einstellung(db)
 
@@ -156,7 +169,7 @@ async def run_full_sync(session_factory: async_sessionmaker[AsyncSession]) -> No
             async with session_factory() as db:
                 await run_sync_once(db)
             return
-        except (WebUntisError, OSError) as exc:
+        except (WebUntisError, OSError, ValueError) as exc:
             logger.warning("Sync-Lauf fehlgeschlagen (Versuch %d/%d): %s", attempt, max_attempts, exc)
             if attempt == max_attempts:
                 logger.error("Sync-Lauf endgueltig abgebrochen nach %d Versuchen", max_attempts)

@@ -50,7 +50,16 @@ async def get_wordpress_proxy_nutzer(
     if x_wordpress_role not in ROLLEN:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown role: {x_wordpress_role}")
 
-    webuntis_teacher_id = int(x_wordpress_webuntis_code) if x_wordpress_webuntis_code else None
+    if x_wordpress_webuntis_code:
+        try:
+            webuntis_teacher_id = int(x_wordpress_webuntis_code)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid WebUntis code: {x_wordpress_webuntis_code!r} is not numeric",
+            )
+    else:
+        webuntis_teacher_id = None
     nutzer_name = _decode_header_value(x_wordpress_name)
 
     result = await db.execute(select(Nutzer).where(Nutzer.wp_user_id == x_wordpress_user))
@@ -66,7 +75,14 @@ async def get_wordpress_proxy_nutzer(
         )
         db.add(nutzer)
         aktion = "wordpress_proxy_created"
+        hat_sich_geaendert = True
     else:
+        hat_sich_geaendert = (
+            nutzer.email != x_wordpress_email
+            or nutzer.name != nutzer_name
+            or nutzer.rolle != x_wordpress_role
+            or nutzer.webuntis_teacher_id != webuntis_teacher_id
+        )
         nutzer.email = x_wordpress_email
         nutzer.name = nutzer_name
         nutzer.rolle = x_wordpress_role
@@ -75,15 +91,16 @@ async def get_wordpress_proxy_nutzer(
 
     await db.flush()
 
-    db.add(
-        AuditLog(
-            user_id=nutzer.id,
-            aktion=aktion,
-            resource_typ="nutzer",
-            resource_id=str(nutzer.id),
-            details={"quelle": "wordpress_proxy"},
+    if hat_sich_geaendert:
+        db.add(
+            AuditLog(
+                user_id=nutzer.id,
+                aktion=aktion,
+                resource_typ="nutzer",
+                resource_id=str(nutzer.id),
+                details={"quelle": "wordpress_proxy"},
+            )
         )
-    )
     await db.commit()
     await db.refresh(nutzer)
     return nutzer
