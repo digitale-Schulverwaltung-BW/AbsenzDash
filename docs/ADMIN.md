@@ -64,9 +64,97 @@ Der Sync-Ablauf (Klassen/Kategorien → ASV-BW-CSV-Import → Fehlzeiten/Klassen
 - **PDF-Export-Abhängigkeit:** WeasyPrint benötigt Pango/Cairo/GDK-Pixbuf, bereits im mitgelieferten `Dockerfile` installiert — nach einem Image-Rebuild ist nichts weiter zu tun.
 - **Deep Links auf `/schueler` und `/schueler/:id`:** funktionieren nur bei In-App-Navigation. Ein direkter Aufruf, Reload oder weitergegebener Link auf diese Pfade liefert aktuell ein WordPress-404, da keine passende Rewrite-Regel existiert (siehe [deployment.md](deployment.md)).
 
+## Netzwerk & Absicherung
+
+### Accepted Risk: Klartext-HTTP zwischen Plugin und Backend (Audit-Finding H-2)
+
+**Status (2026-09-14): akzeptiertes Risiko, kein offenes TODO.** Die Kommunikation zwischen dem
+WordPress-Plugin und dem Backend läuft aktuell unverschlüsselt über HTTP — sowohl innerhalb des
+Docker-Netzwerks `absenzflow-shared` als auch, je nach Aufstellung, über das Schul-Intranet zwischen
+den zwei vorgelagerten Firewalls. Dies ist eine bewusste Entscheidung und keine offene Baustelle.
+
+- **Begründung:** Der Aufwand für eine TLS-Terminierung (Reverse-Proxy-Sidecar, Zertifikatsverwaltung
+  und -erneuerung, zusätzlicher Betriebsaufwand) steht im aktuellen Deployment-Kontext in keinem
+  angemessenen Verhältnis zu den bereits vorhandenen kompensierenden Kontrollen.
+- **Kompensierende Kontrollen:**
+  - Zwei vorgelagerte Firewalls zwischen dem Backend und dem übrigen Netzwerk.
+  - Seit dem H-4-Fix (siehe [deployment.md](deployment.md), Abschnitt "Netzwerk") ist der
+    Backend-Port nicht mehr auf dem Docker-Host published — kein direkter Host-Zugriff von außen.
+  - Kein Internet-Zugriff auf das Backend (siehe Abschnitt "Datenschutz & Betrieb" unten).
+- **Trigger für Neubewertung:** Diese Einschätzung muss neu geprüft werden, sobald sich die
+  Netzwerktopologie ändert — z.B. bei einem Umzug auf Cloud-Hosting, einem Multi-Tenant-Docker-Host
+  (auf dem `absenzflow-shared` nicht mehr ausschließlich von vertrauenswürdigen Containern genutzt
+  wird) oder einer sonstigen Aufweichung der beiden vorgelagerten Firewalls.
+- Details siehe `Audit.md`, Finding H-2.
+
+### Secret-Rotation: `WORDPRESS_PROXY_SECRET`
+
+Bei Verdacht auf Kompromittierung oder routinemäßig:
+
+1. Neues Secret generieren: `openssl rand -hex 32`.
+2. In `backend/.env` bei `WORDPRESS_PROXY_SECRET` eintragen.
+3. Backend neu starten: `docker compose restart backend`.
+4. Neues Secret im WP-Backend eintragen — entweder unter **Einstellungen → AbsenzDash** im
+   Secret-Feld, oder (bevorzugt, seit der WordPress-Plugin-Härtung) über die versionierbare
+   `wp-config.php`-Konstante `ABSENZDASH_SHARED_SECRET` (siehe unten).
+
+Zwischen dem Backend-Neustart (Schritt 3) und der Aktualisierung auf der WP-Seite (Schritt 4) ist ein
+kurzer Zeitraum mit fehlschlagenden Proxy-Requests normal, da beide Seiten für diesen Moment
+unterschiedliche Secrets verwenden.
+
+### Passwort-Rotation: `POSTGRES_PASSWORD`
+
+`POSTGRES_PASSWORD` in `backend/.env` zu ändern reicht **allein nicht aus**: Das offizielle
+Postgres-Image liest diese Variable nur beim allerersten Init eines leeren Datenverzeichnisses
+(Docker-Volume). Bei einem bereits initialisierten Volume — also im Regelbetrieb praktisch immer —
+muss das Passwort zusätzlich direkt in der laufenden Datenbank geändert werden:
+
+1. Neues Passwort festlegen (z.B. wieder mit `openssl rand -hex 32`).
+2. Passwort in der laufenden Datenbank setzen:
+   ```bash
+   docker exec -it absenzdash-db psql -U absenzdash -d absenzdash -c "ALTER USER absenzdash WITH PASSWORD '...'"
+   ```
+3. `POSTGRES_PASSWORD` **und** `DATABASE_URL` in `backend/.env` auf denselben neuen Wert
+   aktualisieren — beide Werte müssen übereinstimmen. Ein Auseinanderlaufen der beiden ist in der
+   Praxis eine häufige Fehlerquelle.
+4. Backend neu starten: `docker compose restart backend`.
+
+Wird nur `POSTGRES_PASSWORD` (oder nur `DATABASE_URL`) geändert, aber nicht Schritt 2 durchgeführt
+bzw. beide Werte nicht synchron gehalten, startet das Backend nach dem Neustart wegen
+Passwort-Mismatch nicht mehr.
+
+### Netzwerk-Isolation von `absenzflow-shared` (Audit-Finding M-1)
+
+Das externe Docker-Netzwerk `absenzflow-shared` sollte ausschließlich den WordPress-Container und
+`absenzdash-backend` enthalten. Jeder weitere Container in diesem Netzwerk kann potenziell den
+Backend-Port erreichen und — sofern er das `WORDPRESS_PROXY_SECRET` kennt oder errät — die
+Rollen-/Auth-Header fälschen.
+
+Dieses Netzwerk wird von einem separaten Projekt/Repo verwaltet (nicht Teil von AbsenzDash) — die
+vollständige Kontrolle darüber liegt damit teilweise außerhalb dieses Repos. Die Betreiber des
+Netzwerks sollten diesen Umstand kennen und `absenzflow-shared` entsprechend schlank halten. Details
+siehe `Audit.md`, Finding M-1.
+
+### Konfiguration per `wp-config.php`-Konstanten
+
+Seit der WordPress-Plugin-Härtung lassen sich Backend-URL und Shared Secret alternativ zur
+Eingabe über **Einstellungen → AbsenzDash** als Konstanten in `wp-config.php` setzen — das ist die
+bevorzugte, versionierbare Konfigurationsmethode gegenüber der Eingabe in der WP-Datenbank
+(analog zum bereits in [deployment.md](deployment.md) dokumentierten `ABSENZDASH_VITE_DEV_SERVER`-Muster
+für die Frontend-Entwicklung):
+
+```php
+define( 'ABSENZDASH_BACKEND_URL', 'http://absenzdash-backend:8000' );
+define( 'ABSENZDASH_SHARED_SECRET', 'DAS-ECHTE-SECRET-HIER' );
+```
+
+Ist eine der Konstanten gesetzt, wird das entsprechende Feld auf der Einstellungsseite als
+schreibgeschützt mit Hinweistext angezeigt.
+
 ## Datenschutz & Betrieb
 
-- Kein Internet-Zugriff auf das Backend — Kommunikation ausschließlich innerhalb des Schul-Intranets.
+- Kein Internet-Zugriff auf das Backend — Kommunikation ausschließlich innerhalb des Schul-Intranets
+  (siehe auch Abschnitt "Netzwerk & Absicherung" oben zum Accepted Risk bei unverschlüsseltem HTTP).
 - Aufbewahrung der Daten mindestens bis Schuljahresende bzw. bis Schulabschluss des Schülers; danach Löschung/Archivierung möglich.
 - Jede Änderung an Maßnahmen und Ausnahmen sowie jeder PDF-Export wird im Audit-Log protokolliert.
 - Die Einführung der automatisierten Verarbeitung sollte organisatorisch (nicht technisch) in das Verfahrensverzeichnis der Schule (Art. 30 DSGVO) aufgenommen werden — Zuständigkeit liegt bei der Schulleitung (siehe [SL.md](SL.md)).

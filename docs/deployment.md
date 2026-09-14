@@ -177,3 +177,17 @@ Das Backend tritt dem externen Docker-Netzwerk `absenzflow-shared` bei (siehe
 `absenzdash-backend` erreicht. Das Netzwerk wird von der WordPress-Staging-`docker-compose.yml`
 erzeugt; falls das Backend zuerst gestartet wird, einmalig `docker network create
 absenzflow-shared` ausführen.
+
+Die Kommunikation zwischen Plugin und Backend läuft dabei weiterhin über unverschlüsseltes HTTP
+(netzwerk-intern, `http://absenzdash-backend:8000` in der obigen Plugin-Konfiguration bleibt
+technisch korrekt) — das ist ein bewusst akzeptiertes Risiko, kein offener Punkt; Details siehe
+[ADMIN.md](ADMIN.md), Abschnitt "Netzwerk & Absicherung".
+
+Seit der Security-Remediation ist der Backend-Port **nicht mehr** auf dem Docker-Host published
+(`ports:` wurde aus `backend/docker-compose.yml` entfernt) — das Backend ist ausschließlich über das
+`absenzflow-shared`-Netzwerk unter dem Service-/Containernamen `absenzdash-backend` erreichbar, ein
+`curl localhost:8000` auf dem Host schlägt absichtlich fehl. Außerdem müssen die sicherheitsrelevanten
+`.env`-Werte — insbesondere `WORDPRESS_PROXY_SECRET` und `POSTGRES_PASSWORD` — jetzt zwingend gesetzt
+sein: Der Container startet sonst nicht mehr (Fail-Fast durch `${VAR:?...}`-Syntax in der
+Compose-Datei bzw. den Pydantic-Validator in `backend/app/core/config.py`), statt stillschweigend mit
+unsicheren Platzhaltern hochzufahren.
