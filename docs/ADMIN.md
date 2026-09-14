@@ -148,8 +148,11 @@ define( 'ABSENZDASH_BACKEND_URL', 'http://absenzdash-backend:8000' );
 define( 'ABSENZDASH_SHARED_SECRET', 'DAS-ECHTE-SECRET-HIER' );
 ```
 
-Ist eine der Konstanten gesetzt, wird das entsprechende Feld auf der Einstellungsseite als
-schreibgeschützt mit Hinweistext angezeigt.
+Ist eine der Konstanten gesetzt, wird auf der Einstellungsseite ein Hinweistext beim jeweiligen Feld
+angezeigt, dass die Konstante aktuell greift. Das Feld selbst bleibt bewusst editierbar (kein
+`readonly`/`disabled`) — ein Speichern der Einstellungsseite darf die DB-Option nicht versehentlich
+leeren, da sie beim späteren Entfernen der Konstante wieder als Fallback dient. Solange die Konstante
+gesetzt ist, hat sie in jedem Fall Vorrang vor dem gespeicherten Wert.
 
 ## Datenschutz & Betrieb
 
