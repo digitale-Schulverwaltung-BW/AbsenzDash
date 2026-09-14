@@ -2,9 +2,10 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: absenzdash-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: absenzdash
-      POSTGRES_PASSWORD: absenzdash
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in .env gesetzt sein}
       POSTGRES_DB: absenzdash
     ports:
       - "127.0.0.1:5432:5432"
@@ -20,13 +21,17 @@ services:
     build: .
     container_name: absenzdash-backend
     env_file: .env
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
-      - .:/app
       - ./data/schueler.csv:/tmp/schueler.csv:ro
     networks:
       - default
@@ -37,5 +42,9 @@ volumes:
 
 networks:
   default:
+  # Idealerweise sollte dieses Netzwerk ausschliesslich den WordPress-Container
+  # und absenzdash-backend enthalten. Es wird vom Schwesterprojekt (wp-test)
+  # verwaltet und ist von hier aus nicht vollstaendig kontrollierbar
+  # (Audit M-1) - ausfuehrliche Doku folgt in einer spaeteren Phase in docs/.
   absenzflow-shared:
     external: true
