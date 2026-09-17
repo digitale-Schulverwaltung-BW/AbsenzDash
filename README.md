@@ -33,7 +33,7 @@ Details zum Datenmodell, API-Vertrag und WebUntis-Feldmapping: [TECH-SPEC.md](TE
 ## Voraussetzungen
 
 - **Docker** für das Backend (Python 3.11 läuft ausschließlich containerisiert — lokal muss kein Python installiert sein)
-- **Node.js** (getestet mit v24) + npm für den Frontend-Build
+- **Node.js** ≥ 22.12 (getestet mit v26) + npm für den Frontend-Build — seit dem Vite-8-/Vitest-5-Upgrade reicht Node 18 nicht mehr aus (siehe [docs/deployment.md](docs/deployment.md))
 - Eine bestehende **WordPress-Instanz** (≥ 5.6, PHP ≥ 7.4) mit Volume-Mount-Möglichkeit für Plugin-Verzeichnisse
 - **WebUntis-Service-Account**-Zugangsdaten
 - Ein lesbar gemountetes Verzeichnis mit dem aktuellen **ASV-BW-CSV-Export** (Schüler-Stammdaten)

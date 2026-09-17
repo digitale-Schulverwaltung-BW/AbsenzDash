@@ -15,7 +15,8 @@ The GitLab CI/CD pipeline runs all tests automatically on every push to ensure c
 
 ### frontend-tests
 - **Stage:** test
-- **Environment:** Node.js 18
+- **Environment:** Node.js 24 (seit dem Vite-8-/Vitest-5-Upgrade, September 2026 — Node 18 erfüllt
+  deren Mindestanforderung nicht mehr, siehe [deployment.md](deployment.md))
 - **Command:** `npm test` (Vitest)
 - **Dependencies:** All files in `frontend/` directory
 - **What it tests:** React components, UI logic, routing

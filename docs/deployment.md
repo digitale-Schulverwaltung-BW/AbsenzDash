@@ -131,7 +131,9 @@ mit HTTP 400 ("Keine Rolle zugewiesen") ab.
 
 ## Frontend (React/TS-SPA)
 
-Voraussetzung: Node.js (getestet mit v24) und npm.
+Voraussetzung: Node.js ≥ 22.12 (getestet mit v26) und npm. Seit dem Vite-8-/Vitest-5-Upgrade
+(Security-Fix für nanoid/react-router/vite/vitest, September 2026) ist Node 18 nicht mehr
+ausreichend — `npm run build`/`npm test` benötigen mindestens Node 20.19 (Vite) bzw. 22.12 (Vitest).
 
 **Produktions-Build** (schreibt direkt nach `wordpress-plugin/absenzdash/assets/spa/`):
 

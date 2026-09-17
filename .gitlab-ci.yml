@@ -48,7 +48,8 @@ backend-tests:
 # Frontend tests using Node.js + Vitest
 frontend-tests:
   stage: test
-  image: node:18-slim
+  # Vite 8 / Vitest 5 (security fix, September 2026) require Node >= 20.19/22.12 - Node 18 no longer works.
+  image: node:24-slim
   before_script:
     - cd frontend
     - npm install
