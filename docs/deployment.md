@@ -262,3 +262,21 @@ server {
 Empfehlenswert als zusätzliche Tiefenverteidigung (das Backend authentifiziert Aufrufer nur über ein
 statisches Shared Secret, siehe `backend/app/api/deps.py`): im nginx-vHost per `allow`/`deny` nur die
 IP des WordPress-Hosts zulassen, statt sich allein auf Firewall und private DNS-Auflösung zu verlassen.
+
+**Troubleshooting: `docker compose up -d` reicht nach einer Config-Änderung oft nicht.** Sowohl bei
+`backend/docker-compose.yml` (neues Netzwerk) als auch bei der nginx-vHost-Datei (bind-gemountet) hat
+sich gezeigt: Compose erkennt reine *Inhaltsänderungen* an bind-gemounteten Dateien nicht als Grund
+für eine Neuerstellung — nur Änderungen an der Service-Definition selbst (Image, Netzwerke,
+Volumes-Liste, Umgebungsvariablen in der Compose-Datei) lösen das aus. Ein bereits laufender
+Container bekommt eine geänderte `.conf`/`.env`-Datei über den Bind-Mount zwar sofort zu sehen, liest
+sie aber nicht automatisch neu ein — `nginx -t`/`nginx -T` täuschen hier, da sie bei jedem Aufruf einen
+neuen, temporären Prozess starten, der frisch von der Platte liest, während der eigentlich laufende
+Master-Prozess weiter mit dem alten Stand arbeitet. Nach jeder Config-Änderung im laufenden Betrieb
+sicherheitshalber explizit erzwingen:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+(bei nginx alternativ ein gezieltes `docker exec nginx-proxy nginx -s reload`, sobald sichergestellt
+ist, dass die neue Config auch tatsächlich fehlerfrei ist).
