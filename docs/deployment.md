@@ -231,12 +231,31 @@ networks:
 ```
 
 ```nginx
-location / {
-    proxy_pass http://absenzdash-backend:8000;
-    proxy_set_header Host              $host;
-    proxy_set_header X-Real-IP         $remote_addr;
-    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+server {
+    listen 443 ssl;
+    server_name verwaltung-absenzdash.hhs.karlsruhe.de;
+
+    include /etc/nginx/conf.d/ssl_params.conf;
+
+    # 127.0.0.11 ist Docker's eingebauter DNS-Server, in jedem Container auf einem
+    # user-defined Netzwerk erreichbar. Ohne diese resolver+$variable-Kombination
+    # loest nginx den Hostnamen nur EINMAL beim Start auf ("proxy_pass http://absenzdash-backend:8000"
+    # mit festem Hostnamen) - ist die Docker-DNS-Aufloesung in diesem Moment noch nicht bereit
+    # (z.B. direkt nach dem Erstellen des Netzwerks/Containers), scheitert der Start komplett
+    # ("host not found in upstream"), obwohl ein spaeterer "nginx -t" klaglos durchlaeuft.
+    # Mit der Variable wird pro Request neu aufgeloest - robust gegen Start-Reihenfolge und
+    # gegen IP-Wechsel bei einem Neustart des Backend-Containers.
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $backend_upstream absenzdash-backend:8000;
+        proxy_pass http://$backend_upstream;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
