@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "WebFetch(domain:github.com)",
+      "Bash(docker exec *)",
+      "Bash(grep -E \"\\\\.py$|requirements|pyproject\")",
+      "Bash(npm install *)",
+      "Bash(npm test *)",
+      "Bash(npm --prefix frontend test)"
+    ]
+  }
+}
