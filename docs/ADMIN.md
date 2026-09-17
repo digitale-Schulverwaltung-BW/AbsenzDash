@@ -86,6 +86,12 @@ den zwei vorgelagerten Firewalls. Dies ist eine bewusste Entscheidung und keine 
   (auf dem `absenzflow-shared` nicht mehr ausschließlich von vertrauenswürdigen Containern genutzt
   wird) oder einer sonstigen Aufweichung der beiden vorgelagerten Firewalls.
 - Details siehe `Audit.md`, Finding H-2.
+- **Update (2026-09-17):** Für die Produktions-Topologie (WordPress- und Backend-Host durch eine
+  Firewall getrennt) terminiert seit diesem Datum ein `nginx-proxy` auf dem Backend-Host TLS für genau
+  diesen Intranet-Hop (siehe [deployment.md](deployment.md), Abschnitt "TLS-Terminierung vor dem
+  Backend") — der zuvor hier beschriebene Klartext-Transport über das Schul-Intranet entfällt damit für
+  diese Aufstellung. Die formale Neubewertung/Teilschließung dieses Findings (Audit.md) steht noch aus
+  und obliegt der Projektleitung.
 
 ### Secret-Rotation: `WORDPRESS_PROXY_SECRET`
 

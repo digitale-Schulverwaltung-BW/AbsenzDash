@@ -193,3 +193,53 @@ Seit der Security-Remediation ist der Backend-Port **nicht mehr** auf dem Docker
 sein: Der Container startet sonst nicht mehr (Fail-Fast durch `${VAR:?...}`-Syntax in der
 Compose-Datei bzw. den Pydantic-Validator in `backend/app/core/config.py`), statt stillschweigend mit
 unsicheren Platzhaltern hochzufahren.
+
+### TLS-Terminierung vor dem Backend (Produktions-Topologie)
+
+Im Produktivbetrieb laufen WordPress und AbsenzDash-Backend auf getrennten Netzsegmenten, dazwischen
+liegt eine Firewall: `intranet.hhs.karlsruhe.de` (WordPress, öffentlich) → Firewall →
+`verwaltung-absenzdash.hhs.karlsruhe.de` (Backend-Segment). Diese zweite Domain löst auf eine
+RFC1918-Adresse auf und ist ausschließlich vom WordPress-Webserver aus erreichbar. `absenzflow-shared`
+(ein einzelnes Docker-Bridge-Netzwerk) kann diesen Host-/Segment-Sprung nicht abbilden — dafür
+terminiert ein separat betriebener `nginx-proxy` auf dem Backend-Host TLS (Wildcard-Zertifikat für
+`*.hhs.karlsruhe.de`) und reicht die Verbindung intern an `absenzdash-backend:8000` weiter. Das ersetzt
+für diese Strecke den bislang als Accepted Risk (H-2, siehe [ADMIN.md](ADMIN.md)) dokumentierten
+Klartext-HTTP-Transport durch TLS; die WordPress-Options-Seite bzw. `ABSENZDASH_BACKEND_URL` zeigt in
+dieser Topologie auf `https://verwaltung-absenzdash.hhs.karlsruhe.de` statt auf den Containernamen.
+
+Dazu tritt das Backend zusätzlich dem externen Docker-Netzwerk `absenzdash-proxy` bei (siehe
+`backend/docker-compose.yml`) — getrennt von `absenzflow-shared`, weil letzteres vom
+Schwesterprojekt verwaltet wird. Einmalig auf dem Backend-Host anlegen, falls noch nicht vorhanden:
+
+```bash
+docker network create absenzdash-proxy
+```
+
+Der `nginx-proxy`-Dienst (eigenes, nicht in diesem Repo verwaltetes Compose-Projekt) muss demselben
+Netzwerk beitreten und im vHost auf den tatsächlichen Containernamen/Port zeigen:
+
+```yaml
+services:
+  nginx:
+    networks:
+      - proxy-net
+      - absenzdash-proxy
+
+networks:
+  absenzdash-proxy:
+    external: true
+```
+
+```nginx
+location / {
+    proxy_pass http://absenzdash-backend:8000;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Empfehlenswert als zusätzliche Tiefenverteidigung (das Backend authentifiziert Aufrufer nur über ein
+statisches Shared Secret, siehe `backend/app/api/deps.py`): im nginx-vHost per `allow`/`deny` nur die
+IP des WordPress-Hosts zulassen, statt sich allein auf Firewall und private DNS-Auflösung zu verlassen.

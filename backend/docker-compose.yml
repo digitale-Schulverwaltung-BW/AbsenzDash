@@ -36,6 +36,7 @@ services:
     networks:
       - default
       - absenzflow-shared
+      - absenzdash-proxy
 
 volumes:
   absenzdash-db-data:
@@ -47,4 +48,11 @@ networks:
   # verwaltet und ist von hier aus nicht vollstaendig kontrollierbar
   # (Audit M-1) - ausfuehrliche Doku folgt in einer spaeteren Phase in docs/.
   absenzflow-shared:
+    external: true
+  # Verbindet das Backend mit dem vorgelagerten nginx-Reverse-Proxy auf demselben
+  # Host (TLS-Terminierung fuer den Sprung uebers Schul-Intranet, siehe
+  # docs/deployment.md Abschnitt "Netzwerk"). Getrennt von absenzflow-shared,
+  # da dieses Netzwerk vom Schwesterprojekt verwaltet wird und nicht mit
+  # produktionsseitigem Proxy-Zugriff vermischt werden soll.
+  absenzdash-proxy:
     external: true
