@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.einstellung import Einstellung
 from app.models.klasse import Klasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,10 @@ async def import_schueler(db: AsyncSession) -> None:
     """ASV-BW-CSV -> schueler (Upsert nach externe_id), TECH-SPEC.md Abschnitt 1.3.
 
     Überspringt Parsen+Upsert, wenn die Datei-mtime seit dem letzten Lauf unverändert ist.
+
+    Pflegt zusätzlich zu schueler.klasse_id einen schueler_klasse_historie-Snapshot für das
+    aktuelle Schuljahr (einstellung.aktuelles_schuljahr_id) - siehe
+    docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md.
     """
     mtime = datetime.fromtimestamp(os.path.getmtime(settings.asv_csv_path), tz=timezone.utc)
 
@@ -39,9 +44,26 @@ async def import_schueler(db: AsyncSession) -> None:
     if einstellung.asv_csv_zuletzt_importiert_mtime is not None and mtime <= einstellung.asv_csv_zuletzt_importiert_mtime:
         return
 
-    klasse_id_by_name = dict((await db.execute(select(Klasse.name, Klasse.id))).all())
+    klasse_id_by_name = dict(
+        (
+            await db.execute(
+                select(Klasse.name, Klasse.id).where(Klasse.schuljahr_id == einstellung.aktuelles_schuljahr_id)
+            )
+        ).all()
+    )
     existing = (await db.execute(select(Schueler))).scalars().all()
     by_externe_id = {schueler.externe_id: schueler for schueler in existing}
+
+    historie_by_schueler_id: dict[int, SchuelerKlasseHistorie] = {}
+    if einstellung.aktuelles_schuljahr_id is not None:
+        historie_rows = (
+            await db.execute(
+                select(SchuelerKlasseHistorie).where(
+                    SchuelerKlasseHistorie.schuljahr_id == einstellung.aktuelles_schuljahr_id
+                )
+            )
+        ).scalars().all()
+        historie_by_schueler_id = {h.schueler_id: h for h in historie_rows}
 
     heute = datetime.now(timezone.utc).date()
 
@@ -89,6 +111,23 @@ async def import_schueler(db: AsyncSession) -> None:
                         and (austrittsdatum is None or austrittsdatum >= heute)
                     )
                     schueler.klassenzuordnung_aktualisiert_am = datetime.now(timezone.utc)
+
+                    if einstellung.aktuelles_schuljahr_id is not None and schueler.id is None:
+                        # neue schueler.id wird fuer schueler_klasse_historie benoetigt
+                        await db.flush()
+
+                    if einstellung.aktuelles_schuljahr_id is not None:
+                        historie = historie_by_schueler_id.get(schueler.id)
+                        if historie is None:
+                            historie = SchuelerKlasseHistorie(
+                                schueler_id=schueler.id,
+                                schuljahr_id=einstellung.aktuelles_schuljahr_id,
+                                klasse_id=klasse_id,
+                            )
+                            db.add(historie)
+                            historie_by_schueler_id[schueler.id] = historie
+                        else:
+                            historie.klasse_id = klasse_id
                 except (KeyError, ValueError) as exc:
                     uebersprungene_zeilen += 1
                     logger.warning("ASV-CSV: Zeile %d übersprungen (%s)", zeilen_nr, exc)

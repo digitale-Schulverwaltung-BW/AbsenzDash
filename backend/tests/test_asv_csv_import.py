@@ -1,11 +1,15 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.models.einstellung import Einstellung
 from app.models.klasse import Klasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
+from app.models.schuljahr import Schuljahr
 from app.services.asv_csv_import import import_schueler
 
 HEADER = "login;shortname;idnumber;lastname;firstname;email;Klasse;birthday;Austrittsdatum;Eintrittsdatum;volljaehrig"
@@ -22,9 +26,19 @@ def _set_csv_path(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "asv_csv_path", str(tmp_path / "schueler.csv"))
 
 
+async def _seed_aktuelles_schuljahr(db_session, schuljahr_id: int = 30) -> Schuljahr:
+    schuljahr = Schuljahr(id=schuljahr_id, name="2025/2026", start_datum=date(2025, 9, 8), end_datum=date(2026, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_id))
+    await db_session.commit()
+    return schuljahr
+
+
 @pytest.mark.asyncio
 async def test_import_creates_schueler_with_matching_klasse(db_session, tmp_path):
-    db_session.add(Klasse(webuntis_id=1, name="AME56"))
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    db_session.add(Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id))
     await db_session.commit()
 
     _write_csv(
@@ -41,6 +55,78 @@ async def test_import_creates_schueler_with_matching_klasse(db_session, tmp_path
     assert schueler.aktiv is True
     klasse_result = await db_session.execute(select(Klasse).where(Klasse.id == schueler.klasse_id))
     assert klasse_result.scalar_one().name == "AME56"
+
+
+@pytest.mark.asyncio
+async def test_import_upserts_schueler_klasse_historie_for_aktuelles_schuljahr(db_session, tmp_path):
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    db_session.add(Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id))
+    await db_session.commit()
+
+    _write_csv(
+        tmp_path,
+        ['"x";"x";"ext-uuid-hist";"Name";"Vor";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"'],
+    )
+
+    await import_schueler(db_session)
+
+    schueler = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-hist"))).scalar_one()
+    historie = (
+        await db_session.execute(
+            select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schueler_id == schueler.id)
+        )
+    ).scalar_one()
+    assert historie.schuljahr_id == schuljahr.id
+    assert historie.klasse_id == schueler.klasse_id
+
+
+@pytest.mark.asyncio
+async def test_import_updates_existing_historie_row_on_reimport(db_session, tmp_path):
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    klasse_alt = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_neu = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-uuid-hist2", vorname="A", nachname="B", klasse_id=klasse_alt.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse_alt.id))
+    await db_session.commit()
+
+    _write_csv(
+        tmp_path,
+        ['"x";"x";"ext-uuid-hist2";"B";"A";"";"BME12";"01.01.1990";"";"17.03.2020";"ja"'],
+    )
+
+    await import_schueler(db_session)
+
+    historie = (
+        await db_session.execute(
+            select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schueler_id == schueler.id)
+        )
+    ).scalar_one()
+    assert historie.klasse_id == klasse_neu.id
+
+
+@pytest.mark.asyncio
+async def test_import_skips_historie_write_when_no_aktuelles_schuljahr(db_session, tmp_path):
+    """Bootstrap-Edge-Case (in Produktion nicht erreichbar, da import_schueler ausschliesslich
+    aus run_sync_once NACH resolve_aktuelles_schuljahr aufgerufen wird, siehe sync_orchestrator.py)
+    - import_schueler darf trotzdem nicht crashen, wenn direkt ohne Einstellung aufgerufen."""
+    _write_csv(
+        tmp_path,
+        ['"x";"x";"ext-uuid-nohist";"Name";"Vor";"";"";"01.01.1990";"";"17.03.2020";"ja"'],
+    )
+
+    await import_schueler(db_session)
+
+    schueler = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-nohist"))).scalar_one()
+    historie = (
+        await db_session.execute(
+            select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schueler_id == schueler.id)
+        )
+    ).scalar_one_or_none()
+    assert historie is None
 
 
 @pytest.mark.asyncio

@@ -1128,7 +1128,7 @@ git commit -m "feat: add schueler_klasse_historie table and model"
 **Interfaces:**
 - `import_schueler(db)` — Signatur unverändert. Zusätzlich zum bestehenden `schueler.klasse_id`-Schreiben wird `schueler_klasse_historie(schueler_id, schuljahr_id=einstellung.aktuelles_schuljahr_id, klasse_id=<ermittelte klasse_id>)` upserted, sofern `aktuelles_schuljahr_id` gesetzt ist. Der `klasse_id_by_name`-Lookup wird auf `Klasse.schuljahr_id == einstellung.aktuelles_schuljahr_id` gescopet (vorher unscoped über alle Jahre).
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Ersetze den kompletten Inhalt von `backend/tests/test_asv_csv_import.py`:
 
@@ -1382,12 +1382,12 @@ async def test_import_skips_reprocessing_when_file_unchanged(db_session, tmp_pat
     assert result.scalar_one().vorname == "ManuellGeaendert"
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -v`
 Expected: FAIL — die neuen Historie-Tests scheitern (`scalar_one()` findet keine Zeile), da `import_schueler` `schueler_klasse_historie` noch nicht schreibt. `test_import_creates_schueler_with_matching_klasse` schlägt zusätzlich fehl, weil `klasse_id_by_name` noch unscoped ist — an dieser Stelle (vor Step 3) sollte dieser Test noch zufällig passen (unscoped findet die einzige `Klasse`-Zeile auch), das ist erwartbar.
 
-- [ ] **Step 3: `import_schueler` erweitern**
+- [x] **Step 3: `import_schueler` erweitern**
 
 In `backend/app/services/asv_csv_import.py`, füge den Import hinzu:
 
@@ -1485,17 +1485,19 @@ zu:
 
 Ergänze im Docstring von `import_schueler` einen Hinweis, dass zusätzlich zu `schueler.klasse_id` ein `schueler_klasse_historie`-Snapshot für das aktuelle Schuljahr gepflegt wird (siehe Design-Dok).
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+**Abweichung von der obigen Snippet-Reihenfolge:** Das `await db.flush()` für neue `Schueler`-Zeilen darf nicht direkt nach `Schueler(externe_id=externe_id)` stehen (wie oben skizziert), weil `vorname`/`nachname` NOT-NULL-Spalten ohne Default sind und zu diesem Zeitpunkt noch nicht gesetzt sind — das verletzt den NOT-NULL-Constraint. Der Flush wurde stattdessen hinter das Setzen von `vorname`/`nachname`/`klasse_id`/`aktiv`/`klassenzuordnung_aktualisiert_am` verschoben (nur ausgeführt, wenn `schueler.id is None`), unmittelbar vor dem Historie-Block, der `schueler.id` benötigt.
+
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 5: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS (nach Task 2's Sweep + Task 3/4/6 sind jetzt alle `Klasse`-Konstruktoraufrufe der gesamten Suite gültig).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/asv_csv_import.py backend/tests/test_asv_csv_import.py
