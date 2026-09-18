@@ -83,15 +83,18 @@ async def _juengstes_bereits_gestartetes_schuljahr(db: AsyncSession) -> Schuljah
 
 
 async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) -> Schuljahr:
-    """Aktualisiert den schuljahr-Cache aus getSchoolyears und liefert das aktuell
-    gueltige Schuljahr zurueck. Wenn WebUntis kein aktuelles Schuljahr kennt (z.B.
-    Uebergangszeitraum zwischen zwei Schuljahren, siehe Live-Fund 2026-07-30), oder
-    das von getCurrentSchoolyear gemeldete Schuljahr entgegen Erwartung nicht im
-    gerade aktualisierten Cache steht, wird ersatzweise das juengste bereits
-    gestartete Schuljahr im Cache zurueckgegeben - so bekommen nachfolgende
-    schuljahresgebundene WebUntis-Aufrufe (z.B. getKlassen) immer eine gueltige
-    schoolyearId, auch waehrend der Luecke, und es wird nie ein noch nicht
-    begonnenes zukuenftiges Schuljahr faelschlich als 'aktuell' behandelt."""
+    """Aktualisiert den schuljahr-Cache aus getSchoolyears und liefert das aktuell gueltige
+    Schuljahr zurueck - datumsbasiert bevorzugt: die zuerst gepruefte Quelle ist eine gecachte
+    Schuljahr-Zeile, deren [start_datum, end_datum] das heutige Kalenderdatum abdeckt. Das ist
+    noetig, weil WebUntis' eigenes 'aktuelles Schuljahr' (getCurrentSchoolyear) waehrend der
+    Uebergangsluecke zwischen zwei Schuljahren zeitweise dem Kalenderdatum hinterherhinkt (Live-
+    Fund 2026-09-18, siehe docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md)
+    - ohne diesen Vorrang wuerde einstellung.aktuelles_schuljahr_id/schuljahr_start_cache zu spaet
+    umkippen und das Eskalations-Zaehlfenster faelschlich noch Fehlzeiten des Vorjahres mitzaehlen.
+    Nur wenn KEINE gecachte Zeile das heutige Datum abdeckt (echte Luecke: WebUntis hat das neue
+    Schuljahr noch gar nicht angelegt), wird wie bisher auf getCurrentSchoolyear zurueckgegriffen,
+    und bei dessen Fehlschlag/einer im Cache unbekannten ID auf das juengste bereits gestartete
+    Schuljahr (siehe _juengstes_bereits_gestartetes_schuljahr)."""
     rows = await client.call("getSchoolyears", {})
     for row in rows:
         start = datetime.strptime(str(row["startDate"]), "%Y%m%d").date()
@@ -104,6 +107,17 @@ async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) 
             bestehend.start_datum = start
             bestehend.end_datum = end
     await db.flush()
+
+    heute = datetime.now(timezone.utc).date()
+    datumstreffer = await db.execute(
+        select(Schuljahr)
+        .where(Schuljahr.start_datum <= heute, Schuljahr.end_datum >= heute)
+        .order_by(Schuljahr.end_datum.desc())
+        .limit(1)
+    )
+    passendes_schuljahr = datumstreffer.scalar_one_or_none()
+    if passendes_schuljahr is not None:
+        return passendes_schuljahr
 
     try:
         aktuell = await client.call("getCurrentSchoolyear", {})

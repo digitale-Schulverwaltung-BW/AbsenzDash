@@ -323,6 +323,50 @@ async def test_resolve_aktuelles_schuljahr_falls_back_when_current_id_not_in_cac
 
 
 @pytest.mark.asyncio
+async def test_resolve_aktuelles_schuljahr_prefers_date_covering_cached_row_over_stale_getcurrentschoolyear(db_session):
+    """Reproduziert den Live-Fund vom 2026-09-18 (Root Cause Eskalationsstufe, siehe
+    docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md): WebUntis hat intern
+    noch nicht auf das neue Schuljahr umgeschaltet (getCurrentSchoolyear meldet weiterhin das
+    alte), obwohl getSchoolyears das neue Schuljahr laengst listet und dessen start_datum
+    laut Kalenderdatum bereits begonnen hat. Der Resolver muss das per Datum passende gecachte
+    Schuljahr VORZIEHEN statt sich auf die (in dieser Uebergangsphase falsche) Antwort von
+    getCurrentSchoolyear zu verlassen - sonst kippt schuljahr_start_cache nicht rechtzeitig um
+    und das Eskalations-Zaehlfenster zaehlt faelschlich weiter Fehlzeiten aus dem Vorjahr mit."""
+    heute = datetime.now(timezone.utc).date()
+
+    client = AsyncMock()
+
+    async def _call(method, _params):
+        if method == "getSchoolyears":
+            return [
+                {
+                    "id": 28,
+                    "name": "2025/2026",
+                    "startDate": (heute - timedelta(days=365)).strftime("%Y%m%d"),
+                    "endDate": (heute - timedelta(days=5)).strftime("%Y%m%d"),
+                },
+                {
+                    "id": 29,
+                    "name": "2026/2027",
+                    "startDate": (heute - timedelta(days=4)).strftime("%Y%m%d"),
+                    "endDate": (heute + timedelta(days=300)).strftime("%Y%m%d"),
+                },
+            ]
+        if method == "getCurrentSchoolyear":
+            # WebUntis meldet in der Uebergangsluecke noch das ALTE Schuljahr, obwohl das neue
+            # laut Kalenderdatum und getSchoolyears bereits laeuft.
+            return {"id": 28, "name": "2025/2026", "startDate": 20250915, "endDate": 20260729}
+        raise AssertionError(f"unexpected call: {method}")
+
+    client.call = AsyncMock(side_effect=_call)
+
+    schuljahr = await sync_orchestrator.resolve_aktuelles_schuljahr(client, db_session)
+
+    assert schuljahr.id == 29
+    assert schuljahr.name == "2026/2027"
+
+
+@pytest.mark.asyncio
 async def test_run_full_sync_continues_when_getklassen_fails_without_active_schoolyear(db_session, monkeypatch):
     """Reproduziert den Live-Fund vom 2026-07-30: getKlassen wirft denselben NPE wie
     getCurrentSchoolyear, wenn kein schoolyearId explizit mitgegeben wird. Mit der
