@@ -940,7 +940,7 @@ git commit -m "fix: scope sync_bereiche's klasse lookup to the current schuljahr
 **Interfaces:**
 - Produces: `SchuelerKlasseHistorie` (`id`, `schueler_id` FK, `schuljahr_id` FK, `klasse_id` FK nullable), unique `(schueler_id, schuljahr_id)`.
 
-- [ ] **Step 1: Fehlschlagenden Test schreiben**
+- [x] **Step 1: Fehlschlagenden Test schreiben**
 
 Erstelle `backend/tests/test_models_schueler_klasse_historie.py`:
 
@@ -1002,12 +1002,12 @@ async def test_schueler_klasse_historie_unique_per_schueler_and_schuljahr(db_ses
         await db_session.commit()
 ```
 
-- [ ] **Step 2: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_models_schueler_klasse_historie.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.models.schueler_klasse_historie'`.
 
-- [ ] **Step 3: Modell erstellen**
+- [x] **Step 3: Modell erstellen**
 
 `backend/app/models/schueler_klasse_historie.py`:
 
@@ -1049,12 +1049,12 @@ from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 
 (nach `from app.models.schueler import Schueler`, vor `from app.models.schueler_zaehlerstand import SchuelerZaehlerstand`) und in `__all__` entsprechend `"SchuelerKlasseHistorie",`.
 
-- [ ] **Step 4: Test ausführen, Erfolg verifizieren**
+- [x] **Step 4: Test ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_models_schueler_klasse_historie.py -v`
 Expected: alle 3 Tests PASS.
 
-- [ ] **Step 5: Migration schreiben**
+- [x] **Step 5: Migration schreiben**
 
 ```bash
 docker exec absenzdash-backend python -m alembic revision -m "add schueler_klasse_historie table"
@@ -1100,7 +1100,7 @@ def downgrade() -> None:
     op.drop_table("schueler_klasse_historie")
 ```
 
-- [ ] **Step 6: Migration gegen den Dev-Stack verifizieren**
+- [x] **Step 6: Migration gegen den Dev-Stack verifizieren**
 
 ```bash
 docker exec absenzdash-backend python -m alembic upgrade head
@@ -1109,7 +1109,7 @@ docker exec absenzdash-backend python -m alembic downgrade -1
 docker exec absenzdash-backend python -m alembic upgrade head
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/app/models/schueler_klasse_historie.py backend/app/models/__init__.py \
