@@ -101,6 +101,6 @@ class Absenzdash_Shortcode {
 		if ( ! is_user_logged_in() ) {
 			return '<p>AbsenzDash: Bitte einloggen.</p>';
 		}
-		return '<div id="absenzdash-root"></div>';
+		return '<div id="absenzdash-root">Lade AbsenzDash&hellip;</div>';
 	}
 }
