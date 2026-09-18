@@ -361,16 +361,26 @@ async def load_schueler_rohzahlen(
 
 
 async def load_student_detail(
-    db: AsyncSession, schueler_id: int, von: date | None = None, bis: date | None = None
+    db: AsyncSession,
+    schueler_id: int,
+    von: date | None = None,
+    bis: date | None = None,
+    ist_historie: bool = False,
 ) -> dict[str, Any]:
     """Laedt alle Unterlisten fuer die Detailansicht eines Schuelers.
 
-    Ohne von/bis (Standard): unveraendertes Verhalten, alle Zeilen, zaehlerstand befuellt.
-    Mit von/bis (Historie-Modus fuer ein vergangenes Schuljahr): fehlzeiten/klassenbuch/
-    ausnahmen/benachrichtigungen werden auf den Zeitraum gefiltert; massnahmen bleibt bewusst
-    ungefiltert (SPECS.md: Massnahmen sollen unabhaengig vom betrachteten Schuljahr sichtbar
-    bleiben); zaehlerstand ist in diesem Modus nicht aussagekraeftig (bezieht sich nur auf das
-    aktuelle Schuljahr) und wird daher als leeres dict geliefert.
+    von/bis grenzen fehlzeiten/klassenbuch/ausnahmen/benachrichtigungen auf einen Zeitraum ein
+    (z.B. das aktuelle oder ein vergangenes Schuljahr) -- ohne beide (Default) bleiben sie
+    unveraendert, alle Zeilen. massnahmen bleibt davon unabhaengig immer ungefiltert (SPECS.md:
+    Massnahmen sollen unabhaengig vom betrachteten Schuljahr sichtbar bleiben).
+
+    ist_historie steuert getrennt davon, ob zaehlerstand befuellt wird: er bezieht sich nur auf
+    das aktuelle Schuljahr (siehe eskalations_pruefung.pruefe_schwellwerte) und ist daher fuer
+    ein vergangenes Schuljahr nicht aussagekraeftig -- dann leeres dict. Bewusst kein Ableiten
+    aus "von/bis gesetzt?": seit dem Fix fuer den Live-Fund 2026-09-18 (Detail-Ansicht zeigte im
+    Normalmodus schuljahresuebergreifend alle Fehlzeiten statt nur die des aktuellen Schuljahres,
+    siehe get_student_detail) sind von/bis auch im Normalmodus gesetzt (Grenzen des aktuellen
+    Schuljahres), zaehlerstand soll dort aber weiterhin befuellt werden.
     """
     fehlzeiten_query = select(Fehlzeit).where(Fehlzeit.schueler_id == schueler_id)
     klassenbuch_query = select(KlassenbuchEintrag).where(KlassenbuchEintrag.schueler_id == schueler_id)
@@ -413,7 +423,7 @@ async def load_student_detail(
     ).all()
 
     zaehlerstand: dict[str, Any] = {}
-    if von is None and bis is None:
+    if not ist_historie:
         zaehlerstand = (await load_zaehlerstand_map(db, [schueler_id]))[schueler_id]
 
     rohzahlen = (await load_schueler_rohzahlen(db, [schueler_id], von, bis))[schueler_id]

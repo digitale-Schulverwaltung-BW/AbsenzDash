@@ -192,7 +192,11 @@ async def get_student_detail(
     schuljahr_id: int | None = None,
 ) -> StudentDetailOut:
     von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
-    detail = await student_query.load_student_detail(db, schueler.id, von=von, bis=bis)
+    ist_historie = von is not None
+    effektiv_von, effektiv_bis = (von, bis) if ist_historie else await _aktuelles_schuljahr_zeitraum(db)
+    detail = await student_query.load_student_detail(
+        db, schueler.id, von=effektiv_von, bis=effektiv_bis, ist_historie=ist_historie
+    )
     klasse = None
     if schueler.klasse_id is not None:
         klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])

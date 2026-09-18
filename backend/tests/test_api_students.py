@@ -668,3 +668,42 @@ async def test_get_student_detail_history_mode_filters_four_sections_not_massnah
     assert body["fehlzeiten"][0]["datum"] == "2024-10-01"
     assert len(body["massnahmen"]) == 1  # unabhaengig vom Schuljahr-Filter sichtbar
     assert body["zaehlerstand"] == {}
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_normal_mode_scopes_to_aktuelles_schuljahr(db_session):
+    """Regression Live-Fund 2026-09-18: ohne schuljahr_id-Query-Param (Normalmodus, "aktuelles
+    Schuljahr") zeigte die Detailansicht schuljahresuebergreifend ALLE Fehlzeiten statt nur die
+    des aktuellen Schuljahres -- inkonsistent mit der (korrekt geklemmten) Eskalationsstufe und
+    mit GET /students, das im Normalmodus bereits ueber _aktuelles_schuljahr_zeitraum filtert."""
+    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr_alt = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    schuljahr_neu = Schuljahr(id=29, name="2026/2027", start_datum=date(2026, 9, 14), end_datum=date(2027, 7, 30))
+    db_session.add_all([klasse, schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    einstellung = Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id, schuljahr_start_cache=schuljahr_neu.start_datum)
+    db_session.add(einstellung)
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # altes Schuljahr -- darf im Normalmodus NICHT mehr auftauchen
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 7, 24), start_zeit=0, end_zeit=2359),
+            # aktuelles Schuljahr -- muss auftauchen
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 9, 20), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students/{schueler.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [f["datum"] for f in body["fehlzeiten"]] == ["2026-09-20"]
+    assert body["fehltage"] == {"gesamt": 1.0, "entschuldigt": 0.0, "unentschuldigt": 1.0}
+    assert body["zaehlerstand"] is not None  # weiterhin befuellt, nur die Listen werden gescopet

@@ -525,7 +525,7 @@ async def test_load_student_detail_filters_by_range_except_massnahmen(db_session
     # Test unabhaengig vom tatsaechlichen Testlaufdatum ist: Ausnahme.created_at wird beim Insert
     # auf "jetzt" gesetzt, und die Ausnahme soll trotzdem als ueberlappend gelten (unbefristet).
     detail = await student_query.load_student_detail(
-        db_session, schueler.id, von=date(2025, 9, 15), bis=date(2099, 12, 31)
+        db_session, schueler.id, von=date(2025, 9, 15), bis=date(2099, 12, 31), ist_historie=True
     )
 
     assert [f.datum for f in detail["fehlzeiten"]] == [date(2025, 10, 1)]
