@@ -10,7 +10,7 @@ from app.models.bereich import Bereich, bereich_klasse
 from app.models.klasse import Klasse
 
 
-async def sync_bereiche(db: AsyncSession) -> None:
+async def sync_bereiche(db: AsyncSession, schuljahr_id: int) -> None:
     """Leitet bereich/bereich_klasse verbindlich aus abteilung/klasse.abteilung_id ab (Bundle D).
 
     Legt fuer jede Abteilung genau einen Bereich an (1:1) und haelt bereich_klasse mit dem
@@ -19,9 +19,14 @@ async def sync_bereiche(db: AsyncSession) -> None:
     Bereiche werden nie geloescht -- eine Abteilung mit aktuell 0 Klassen bekommt einfach
     eine leere bereich_klasse-Menge, siehe
     docs/superpowers/specs/2026-08-05-bundle-d-bereiche-entschlacken-design.md.
+
+    Die `klasse`-Abfrage ist bewusst auf `schuljahr_id` gescopet: seit klasse.schuljahr_id
+    (siehe docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md) existiert pro
+    Jahr eine eigene, nie geloeschte Zeile je webuntis_id - ohne diesen Filter wuerden Klassen
+    mehrerer Schuljahre gleichzeitig im selben Bereich landen.
     """
     abteilungen = (await db.execute(select(Abteilung).order_by(Abteilung.name))).scalars().all()
-    klassen = (await db.execute(select(Klasse))).scalars().all()
+    klassen = (await db.execute(select(Klasse).where(Klasse.schuljahr_id == schuljahr_id))).scalars().all()
     existing_bereiche = (await db.execute(select(Bereich))).scalars().all()
     bereich_by_abteilung_id = {b.abteilung_id: b for b in existing_bereiche if b.abteilung_id is not None}
 

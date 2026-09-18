@@ -159,7 +159,7 @@ async def _run_sync_once_impl(db: AsyncSession) -> None:
 
         await sync_abteilungen(client, db)
         await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
-        await sync_bereiche(db)
+        await sync_bereiche(db, schuljahr_id=aktuelles_schuljahr.id)
         await sync_kategorien(client, db)
         await sync_stundenraster(client, db)
         await import_schueler(db)

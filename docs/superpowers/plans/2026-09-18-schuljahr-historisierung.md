@@ -671,7 +671,7 @@ git commit -m "fix: key sync_klassen upsert by (webuntis_id, schoolyear_id)"
 **Interfaces:**
 - `sync_bereiche(db, schuljahr_id)` — neuer Pflicht-Parameter `schuljahr_id: int`.
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Ersetze den kompletten Inhalt von `backend/tests/test_webuntis_bereich_sync.py`:
 
@@ -883,12 +883,12 @@ async def test_sync_bereiche_never_touches_ausgeblendet_or_leiter(db_session):
     assert len(leiter_rows) == 1
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_webuntis_bereich_sync.py -v`
 Expected: FAIL — `sync_bereiche()` akzeptiert `schuljahr_id` noch nicht (`TypeError`), und `test_sync_bereiche_ignores_klassen_from_other_schuljahre` würde bei ungefixter Implementierung ohnehin beide Klassen-Zeilen zurückgeben.
 
-- [ ] **Step 3: `sync_bereiche` anpassen**
+- [x] **Step 3: `sync_bereiche` anpassen**
 
 In `backend/app/services/webuntis_bereich_sync.py`, ändere die Signatur und die Klassen-Abfrage:
 
@@ -901,7 +901,7 @@ async def sync_bereiche(db: AsyncSession, schuljahr_id: int) -> None:
 
 (Rest der Funktion unverändert.) Ergänze im Docstring einen Satz, dass `klassen` bewusst auf das übergebene Schuljahr gescopet ist, da `klasse`-Zeilen älterer Jahre nie gelöscht werden.
 
-- [ ] **Step 4: Aufrufer anpassen**
+- [x] **Step 4: Aufrufer anpassen**
 
 In `backend/app/services/sync_orchestrator.py`, ändere in `_run_sync_once_impl`:
 
@@ -915,12 +915,12 @@ zu:
         await sync_bereiche(db, schuljahr_id=aktuelles_schuljahr.id)
 ```
 
-- [ ] **Step 5: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 5: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_webuntis_bereich_sync.py tests/test_sync_orchestrator.py -v`
 Expected: alle Tests PASS (`test_sync_orchestrator.py` mockt `sync_bereiche` vollständig, der zusätzliche Keyword-Parameter ist für `AsyncMock` unproblematisch).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/webuntis_bereich_sync.py backend/app/services/sync_orchestrator.py backend/tests/test_webuntis_bereich_sync.py
