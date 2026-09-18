@@ -260,8 +260,8 @@ async def test_put_threshold_rules_rejects_new_rule_with_stray_stufe_id(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_put_threshold_rules_accepts_klasse_specific_rule(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_put_threshold_rules_accepts_klasse_specific_rule(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.commit()
 

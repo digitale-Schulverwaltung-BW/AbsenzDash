@@ -21,10 +21,10 @@ from app.services import dashboard_query
 
 
 @pytest.mark.asyncio
-async def test_get_nav_options_for_schulleitung_returns_all_bereiche_and_klassen(db_session):
+async def test_get_nav_options_for_schulleitung_returns_all_bereiche_and_klassen(db_session, schuljahr):
     bereich = Bereich(name="Ausbildung")
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="BME12")
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
     db_session.add_all([bereich, klasse_a, klasse_b])
     await db_session.flush()
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse_a.id))
@@ -42,9 +42,9 @@ async def test_get_nav_options_for_schulleitung_returns_all_bereiche_and_klassen
 
 
 @pytest.mark.asyncio
-async def test_get_nav_options_for_klassenlehrkraft_returns_only_own_klassen_and_no_bereiche(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="BME12")
+async def test_get_nav_options_for_klassenlehrkraft_returns_only_own_klassen_and_no_bereiche(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
@@ -60,11 +60,11 @@ async def test_get_nav_options_for_klassenlehrkraft_returns_only_own_klassen_and
 
 
 @pytest.mark.asyncio
-async def test_get_nav_options_for_bereichsleiter_returns_own_bereiche_and_their_klassen(db_session):
+async def test_get_nav_options_for_bereichsleiter_returns_own_bereiche_and_their_klassen(db_session, schuljahr):
     bereich = Bereich(name="Ausbildung")
     andere_bereich = Bereich(name="Berufsschule")
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="BME12")
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
     db_session.add_all([bereich, andere_bereich, klasse_a, klasse_b])
     await db_session.flush()
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse_a.id))
@@ -158,8 +158,8 @@ async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_for_single_klasse_averages_over_active_students_only(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_dashboard_stats_for_single_klasse_averages_over_active_students_only(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schuljahr_start = datetime.date(2025, 9, 15)
@@ -185,8 +185,8 @@ async def test_get_dashboard_stats_for_single_klasse_averages_over_active_studen
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_computes_avg_fehlstunden_from_minutes_not_row_count(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_dashboard_stats_computes_avg_fehlstunden_from_minutes_not_row_count(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schuljahr_start = datetime.date(2025, 9, 15)
@@ -218,8 +218,8 @@ async def test_get_dashboard_stats_computes_avg_fehlstunden_from_minutes_not_row
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_excludes_fehlzeiten_before_schuljahr_start(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_dashboard_stats_excludes_fehlzeiten_before_schuljahr_start(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schuljahr_start = datetime.date(2025, 9, 15)
@@ -247,8 +247,8 @@ async def test_get_dashboard_stats_excludes_fehlzeiten_before_schuljahr_start(db
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_counts_klassenbuch_and_massnahmen(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_dashboard_stats_counts_klassenbuch_and_massnahmen(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schuljahr_start = datetime.date(2025, 9, 15)
@@ -288,11 +288,11 @@ async def test_get_dashboard_stats_counts_klassenbuch_and_massnahmen(db_session)
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_schulweit_compares_bereiche(db_session):
+async def test_get_dashboard_stats_schulweit_compares_bereiche(db_session, schuljahr):
     bereich_a = Bereich(name="Ausbildung")
     bereich_b = Bereich(name="Berufsschule")
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="BME12")
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
     db_session.add_all([bereich_a, bereich_b, klasse_a, klasse_b])
     await db_session.flush()
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich_a.id, klasse_id=klasse_a.id))
@@ -313,9 +313,9 @@ async def test_get_dashboard_stats_schulweit_compares_bereiche(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_defaults_bereichsleiter_with_single_bereich_to_that_bereich(db_session):
+async def test_get_dashboard_stats_defaults_bereichsleiter_with_single_bereich_to_that_bereich(db_session, schuljahr):
     bereich = Bereich(name="Ausbildung")
-    klasse = Klasse(webuntis_id=1, name="AME56")
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add_all([bereich, klasse])
     await db_session.flush()
     await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
@@ -332,9 +332,9 @@ async def test_get_dashboard_stats_defaults_bereichsleiter_with_single_bereich_t
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_klassenlehrkraft_with_multiple_klassen_compares_own_klassen(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="AME57")
+async def test_get_dashboard_stats_klassenlehrkraft_with_multiple_klassen_compares_own_klassen(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="AME57", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
@@ -368,11 +368,11 @@ async def test_get_dashboard_stats_rejects_bereich_id_for_klassenlehrkraft(db_se
 
 
 @pytest.mark.asyncio
-async def test_get_dashboard_stats_404s_for_klasse_outside_scope(db_session):
+async def test_get_dashboard_stats_404s_for_klasse_outside_scope(db_session, schuljahr):
     from fastapi import HTTPException
 
-    klasse_a = Klasse(webuntis_id=1, name="AME56")
-    klasse_b = Klasse(webuntis_id=2, name="AME57")
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="AME57", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")

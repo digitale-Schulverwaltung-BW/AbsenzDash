@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,7 @@ from unittest.mock import AsyncMock
 import app.core.scheduler as scheduler_module
 from app.core.database import async_session_factory, engine
 from app.models.base import Base
+from app.models.schuljahr import Schuljahr
 from app.services import eskalations_pruefung
 
 
@@ -36,3 +39,16 @@ def mock_send_email(monkeypatch):
 async def db_session() -> AsyncSession:
     async with async_session_factory() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def schuljahr(db_session) -> Schuljahr:
+    """Standard-Schuljahr fuer Tests, die Klasse-Zeilen anlegen muessen (Klasse.schuljahr_id ist
+    seit diesem Plan NOT NULL). id/Daten sind fuer die meisten Tests irrelevant - nur der
+    Fremdschluessel muss aufloesbar sein. Tests, die bereits ein eigenes Schuljahr mit konkreten
+    Daten anlegen (z.B. um zwei Jahre zu vergleichen), nutzen weiterhin ihr eigenes und lassen
+    diese Fixture ungenutzt."""
+    jahr = Schuljahr(id=1, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add(jahr)
+    await db_session.flush()
+    return jahr

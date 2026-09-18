@@ -11,8 +11,8 @@ from app.models.schueler import Schueler
 
 
 @pytest.mark.asyncio
-async def test_schueler_roundtrip(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_schueler_roundtrip(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
 

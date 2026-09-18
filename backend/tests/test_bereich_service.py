@@ -22,8 +22,8 @@ async def test_list_abteilungen_returns_all_sorted_by_name(db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_bereiche_includes_klasse_namen_and_ausgeblendet(db_session):
-    klasse = Klasse(webuntis_id=1, name="1BFE")
+async def test_list_bereiche_includes_klasse_namen_and_ausgeblendet(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="1BFE", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     bereich = Bereich(name="Mechatronik", ausgeblendet=True)
@@ -54,8 +54,8 @@ async def test_update_bereiche_sets_ausgeblendet(db_session):
 
 
 @pytest.mark.asyncio
-async def test_update_bereiche_does_not_change_name_or_klassen(db_session):
-    klasse = Klasse(webuntis_id=1, name="1BFE")
+async def test_update_bereiche_does_not_change_name_or_klassen(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="1BFE", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     bereich = Bereich(name="Mechatronik")

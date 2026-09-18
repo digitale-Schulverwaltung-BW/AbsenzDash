@@ -87,13 +87,13 @@ async def test_record_massnahme_does_not_reset_when_flag_false(db_session):
 
 
 @pytest.mark.asyncio
-async def test_record_massnahme_resets_by_typ_even_if_current_regel_differs_from_original(db_session):
+async def test_record_massnahme_resets_by_typ_even_if_current_regel_differs_from_original(db_session, schuljahr):
     """Simuliert einen echten Klassenwechsel: der Zaehlerstand entstand unter einer klassen-
     spezifischen Regel fuer die alte Klasse; zwischen Entstehung und Massnahmen-Erfassung wechselt
     der Schueler die Klasse, wodurch eine ANDERE klassen-spezifische Regel (gleicher typ) fuer ihn
     zustaendig wird. Der Reset muss unter der jetzt aufgeloesten Regel erfolgen."""
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
 

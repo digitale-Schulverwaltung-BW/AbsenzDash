@@ -482,8 +482,8 @@ async def test_pruefe_schwellwerte_excludes_invalid_fehlzeiten(db_session):
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_writes_benachrichtigung_on_newly_reached_stufe(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_pruefe_schwellwerte_writes_benachrichtigung_on_newly_reached_stufe(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -531,8 +531,8 @@ async def test_pruefe_schwellwerte_no_repeat_benachrichtigung_on_unchanged_stufe
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_kein_empfaenger_when_no_klassenlehrkraft_registered(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_pruefe_schwellwerte_kein_empfaenger_when_no_klassenlehrkraft_registered(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -574,8 +574,8 @@ async def test_pruefe_schwellwerte_initial_import_status_before_first_full_sync(
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     bereich = Bereich(name="Kaufmaennischer Bereich")
     db_session.add_all([klasse, bereich])
     await db_session.flush()
@@ -613,10 +613,10 @@ async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger(db_session
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_duplicate(db_session):
+async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_duplicate(db_session, schuljahr):
     """Ein Lehrer mit zwei NutzerKlasse-Zeilen (webuntis_seed + manuell) fuer dieselbe Klasse
     darf nur EINMAL als Empfaenger auftauchen (Regression fuer fehlendes .distinct())."""
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -644,10 +644,10 @@ async def test_pruefe_schwellwerte_resolves_klassenlehrkraft_empfaenger_without_
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_resolves_regel_once_per_klasse_not_per_schueler(db_session):
+async def test_pruefe_schwellwerte_resolves_regel_once_per_klasse_not_per_schueler(db_session, schuljahr):
     """Regel-Aufloesung ist innerhalb eines Sync-Laufs pro (klasse_id, typ) invariant und soll dort
     nur einmal ausgefuehrt werden, nicht einmal pro Schueler (Performance-Fix)."""
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -750,11 +750,11 @@ async def test_pruefe_schwellwerte_ausnahme_kategorie_is_independent_across_type
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_duplicate(db_session):
+async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_duplicate(db_session, schuljahr):
     """Ein Bereichsleiter, der zwei Bereiche leitet, die beide auf dieselbe Klasse gemappt sind, darf nur
     EINMAL als Empfaenger auftauchen (Regression fuer fehlendes .distinct(), bereichsleiter-Fall — bisher
     nur fuer klassenlehrkraft abgedeckt)."""
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     bereich_a = Bereich(name="Kaufmaennischer Bereich")
     bereich_b = Bereich(name="Technischer Bereich")
     db_session.add_all([klasse, bereich_a, bereich_b])
@@ -799,9 +799,9 @@ async def test_pruefe_schwellwerte_resolves_bereichsleiter_empfaenger_without_du
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_status_fehler_when_send_email_raises(db_session, mock_send_email):
+async def test_pruefe_schwellwerte_status_fehler_when_send_email_raises(db_session, mock_send_email, schuljahr):
     mock_send_email.side_effect = OSError("Connection refused")
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -826,7 +826,7 @@ async def test_pruefe_schwellwerte_status_fehler_when_send_email_raises(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_status_fehler_when_template_malformed(db_session, mock_send_email, monkeypatch, tmp_path):
+async def test_pruefe_schwellwerte_status_fehler_when_template_malformed(db_session, mock_send_email, monkeypatch, tmp_path, schuljahr):
     """Ein fehlerhaftes Admin-Template-Override (hier: Tippfehler im Platzhalternamen, fuehrt zu
     KeyError in render_template) darf den Sync-Lauf nicht abbrechen - analog zum send_email-Fehlerfall
     landet das auf status='fehler', und pruefe_schwellwerte wirft keine Exception."""
@@ -835,7 +835,7 @@ async def test_pruefe_schwellwerte_status_fehler_when_template_malformed(db_sess
     )
     monkeypatch.setattr(eskalations_pruefung, "TEMPLATES_DIR", tmp_path)
 
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)
@@ -861,10 +861,10 @@ async def test_pruefe_schwellwerte_status_fehler_when_template_malformed(db_sess
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_dedupes_recipient_addresses_for_send(db_session, mock_send_email):
+async def test_pruefe_schwellwerte_dedupes_recipient_addresses_for_send(db_session, mock_send_email, schuljahr):
     """Ein Nutzer, der fuer dieselbe Klasse sowohl Klassenlehrkraft als auch Bereichsleiter ist,
     darf beim tatsaechlichen Versand nur EINMAL im To-Feld auftauchen (Log-Eintrag behaelt beide Rollen)."""
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     bereich = Bereich(name="Kaufmaennischer Bereich")
     db_session.add_all([klasse, bereich])
     await db_session.flush()
@@ -912,14 +912,14 @@ Diese E-Mail wurde automatisch von AbsenzDash versendet."""
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, mock_send_email, monkeypatch, tmp_path):
+async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, mock_send_email, monkeypatch, tmp_path, schuljahr):
     """Hermetisch: schreibt eine eigene .default-Datei nach tmp_path statt gegen das echte
     TEMPLATES_DIR zu testen, damit ein lokal angelegtes, nicht versioniertes Admin-Override in
     backend/app/templates/email_benachrichtigung.txt die Assertions nicht unbemerkt beeinflusst."""
     (tmp_path / "email_benachrichtigung.txt.default").write_text(_DEFAULT_TEMPLATE_CONTENT, encoding="utf-8")
     monkeypatch.setattr(eskalations_pruefung, "TEMPLATES_DIR", tmp_path)
 
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", aktiv=True, klasse_id=klasse.id)
@@ -947,8 +947,8 @@ async def test_pruefe_schwellwerte_renders_expected_mail_content(db_session, moc
 
 
 @pytest.mark.asyncio
-async def test_pruefe_schwellwerte_kein_empfaenger_does_not_call_send_email(db_session, mock_send_email):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_pruefe_schwellwerte_kein_empfaenger_does_not_call_send_email(db_session, mock_send_email, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id)

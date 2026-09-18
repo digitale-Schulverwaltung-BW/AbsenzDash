@@ -171,7 +171,7 @@ git commit -m "fix: prefer date-covering cached schoolyear over stale getCurrent
 - Produces: `Klasse.schuljahr_id: int` (FK `schuljahr.id`, `NOT NULL`). Unique-Constraint wechselt von `webuntis_id` allein zu `(webuntis_id, schuljahr_id)` (Name: `uq_klasse_webuntis_id_schuljahr_id`). `webuntis_id` bleibt (nicht-eindeutig) indiziert.
 - Produces: `tests/conftest.py`-Fixture `schuljahr` (siehe Step 6) — Standard-`Schuljahr`-Zeile für Tests, die `Klasse`-Zeilen anlegen müssen.
 
-- [ ] **Step 1: Fehlschlagende Modell-Tests schreiben**
+- [x] **Step 1: Fehlschlagende Modell-Tests schreiben**
 
 Ersetze den kompletten Inhalt von `backend/tests/test_models_klasse.py`:
 
@@ -263,12 +263,12 @@ async def test_bereich_klasse_association(db_session):
     assert row.klasse_id == klasse.id
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_models_klasse.py -v`
 Expected: FAIL — `Klasse()` akzeptiert `schuljahr_id` noch nicht als Argument (`TypeError`), bzw. `test_klasse_schuljahr_id_is_required`/`..._forbids_same_webuntis_id...` schlagen fehl, weil die aktuelle Spalte noch nullable/unique-per-webuntis_id-only ist.
 
-- [ ] **Step 3: Modell ändern**
+- [x] **Step 3: Modell ändern**
 
 Ersetze den kompletten Inhalt von `backend/app/models/klasse.py`:
 
@@ -302,7 +302,7 @@ class Klasse(Base, TimestampMixin):
     schuljahr_id: Mapped[int] = mapped_column(ForeignKey("schuljahr.id"), nullable=False)
 ```
 
-- [ ] **Step 4: Migration schreiben**
+- [x] **Step 4: Migration schreiben**
 
 ```bash
 docker exec absenzdash-backend python -m alembic revision -m "add klasse schuljahr_id"
@@ -356,7 +356,7 @@ def downgrade() -> None:
 
 **Achtung Backfill-Edge-Case:** Falls die Ziel-DB `einstellung.aktuelles_schuljahr_id IS NULL` hat (z.B. noch nie erfolgreich gesynct) UND bereits `klasse`-Zeilen existieren, bleibt `schuljahr_id` nach dem `UPDATE` `NULL` und `alter_column(..., nullable=False)` schlägt fehl. Vor dem Ausführen gegen eine DB mit Altdaten (nicht der leere lokale Dev-Stack) manuell prüfen: `SELECT aktuelles_schuljahr_id FROM einstellung;` — falls `NULL` und `klasse` nicht leer ist, zuerst einen Sync-Lauf durchführen (setzt `aktuelles_schuljahr_id`) oder die Migration um einen expliziten Fallback-Wert ergänzen, bevor sie angewendet wird.
 
-- [ ] **Step 5: Migration gegen den Dev-Stack verifizieren**
+- [x] **Step 5: Migration gegen den Dev-Stack verifizieren**
 
 ```bash
 docker exec absenzdash-backend python -m alembic upgrade head
@@ -368,7 +368,7 @@ docker exec absenzdash-backend python -m alembic upgrade head
 
 Erwartet: nach `upgrade head` zeigt `\d klasse` die neue Spalte `schuljahr_id` (NOT NULL), den FK `fk_klasse_schuljahr_id`, den nicht-eindeutigen Index `ix_klasse_webuntis_id` und den Unique-Constraint `uq_klasse_webuntis_id_schuljahr_id`; nach `downgrade -1` ist alles auf den alten Stand zurück (`ix_klasse_webuntis_id` wieder `UNIQUE`, keine `schuljahr_id`-Spalte); erneutes `upgrade head` läuft sauber durch.
 
-- [ ] **Step 6: Testsuite-Sweep — `schuljahr`-Fixture + alle betroffenen `Klasse(...)`-Konstruktoraufrufe**
+- [x] **Step 6: Testsuite-Sweep — `schuljahr`-Fixture + alle betroffenen `Klasse(...)`-Konstruktoraufrufe**
 
 Füge in `backend/tests/conftest.py` (nach den bestehenden Imports/Fixtures) eine wiederverwendbare Fixture hinzu:
 
@@ -442,12 +442,12 @@ async def test_...(db_session, schuljahr):
 
 Nach jeder Datei: `docker exec absenzdash-backend python -m pytest tests/<datei> -v` und iterieren, bis alle `IntegrityError`/`TypeError`-Fehlschläge behoben sind. `test_webuntis_klassen_sync.py`, `test_webuntis_bereich_sync.py` und `test_asv_csv_import.py` werden bewusst NICHT hier, sondern in ihren jeweiligen Tasks (3, 4, 6) mit vollständigem Kontext überarbeitet, da sie ohnehin für neues Verhalten umgeschrieben werden.
 
-- [ ] **Step 7: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 7: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: außer den in Task 3/4/6 noch zu behebenden Dateien (`test_webuntis_klassen_sync.py`, `test_webuntis_bereich_sync.py`, `test_asv_csv_import.py` — diese schlagen an dieser Stelle noch mit `IntegrityError` fehl, das ist erwartet) sind alle anderen Tests grün. Das ist der einzige Task in diesem Plan, nach dem die Gesamtsuite bewusst noch nicht vollständig grün ist.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/app/models/klasse.py backend/alembic/versions/ backend/tests/conftest.py backend/tests/test_models_klasse.py \

@@ -28,9 +28,9 @@ async def test_nutzer_roundtrip(db_session):
 
 
 @pytest.mark.asyncio
-async def test_nutzer_klasse_unique_per_quelle(db_session):
+async def test_nutzer_klasse_unique_per_quelle(db_session, schuljahr):
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
-    klasse = Klasse(webuntis_id=1, name="10a")
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add_all([nutzer, klasse])
     await db_session.flush()
 

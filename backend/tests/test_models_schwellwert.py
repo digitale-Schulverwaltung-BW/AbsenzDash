@@ -46,11 +46,11 @@ async def test_schwellwert_regel_prevents_duplicate_abteilung_regel_same_typ(db_
 
 
 @pytest.mark.asyncio
-async def test_schwellwert_regel_prevents_duplicate_klasse_regel_same_typ(db_session):
+async def test_schwellwert_regel_prevents_duplicate_klasse_regel_same_typ(db_session, schuljahr):
     abteilung = Abteilung(webuntis_id=1, name="A")
     db_session.add(abteilung)
     await db_session.flush()
-    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id)
+    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id, schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
 

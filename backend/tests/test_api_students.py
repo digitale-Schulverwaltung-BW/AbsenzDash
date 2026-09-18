@@ -58,9 +58,9 @@ async def test_get_students_rejects_missing_wordpress_secret():
 
 
 @pytest.mark.asyncio
-async def test_get_students_returns_only_students_in_callers_scope(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_get_students_returns_only_students_in_callers_scope(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler_a = Schueler(externe_id="ext-a", vorname="Max", nachname="Muster", klasse_id=klasse_a.id, aktiv=True)
@@ -80,8 +80,8 @@ async def test_get_students_returns_only_students_in_callers_scope(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_students_response_includes_zaehlerstand_and_letzte_benachrichtigung(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_get_students_response_includes_zaehlerstand_and_letzte_benachrichtigung(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
@@ -115,9 +115,9 @@ async def test_get_students_response_includes_zaehlerstand_and_letzte_benachrich
 
 
 @pytest.mark.asyncio
-async def test_get_students_pagination_and_bereich_filter(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_get_students_pagination_and_bereich_filter(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     bereich = Bereich(name="Oberstufe")
@@ -152,8 +152,8 @@ async def test_get_students_pagination_and_bereich_filter(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_student_detail_returns_all_sublists(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_get_student_detail_returns_all_sublists(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -193,8 +193,8 @@ async def test_get_student_detail_returns_all_sublists(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_student_detail_includes_revoked_ausnahmen(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_get_student_detail_includes_revoked_ausnahmen(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -217,9 +217,9 @@ async def test_get_student_detail_includes_revoked_ausnahmen(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_student_detail_404s_for_out_of_scope_student(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_get_student_detail_404s_for_out_of_scope_student(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
@@ -233,8 +233,8 @@ async def test_get_student_detail_404s_for_out_of_scope_student(db_session):
 
 
 @pytest.mark.asyncio
-async def test_create_measure_returns_created_measure_and_writes_audit_log(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_create_measure_returns_created_measure_and_writes_audit_log(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -260,8 +260,8 @@ async def test_create_measure_returns_created_measure_and_writes_audit_log(db_se
 
 
 @pytest.mark.asyncio
-async def test_create_measure_404s_for_unknown_measure_type(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_create_measure_404s_for_unknown_measure_type(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -279,9 +279,9 @@ async def test_create_measure_404s_for_unknown_measure_type(db_session):
 
 
 @pytest.mark.asyncio
-async def test_create_measure_404s_for_out_of_scope_student(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_create_measure_404s_for_out_of_scope_student(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
@@ -300,8 +300,8 @@ async def test_create_measure_404s_for_out_of_scope_student(db_session):
 
 
 @pytest.mark.asyncio
-async def test_create_exemption_returns_created_exemption_and_writes_audit_log(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_create_exemption_returns_created_exemption_and_writes_audit_log(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -326,8 +326,8 @@ async def test_create_exemption_returns_created_exemption_and_writes_audit_log(d
 
 
 @pytest.mark.asyncio
-async def test_revoke_exemption_sets_inactive_and_writes_audit_log(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_revoke_exemption_sets_inactive_and_writes_audit_log(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -358,8 +358,8 @@ async def test_revoke_exemption_sets_inactive_and_writes_audit_log(db_session):
 
 
 @pytest.mark.asyncio
-async def test_revoke_exemption_404s_when_already_revoked(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_revoke_exemption_404s_when_already_revoked(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -379,8 +379,8 @@ async def test_revoke_exemption_404s_when_already_revoked(db_session):
 
 
 @pytest.mark.asyncio
-async def test_revoke_exemption_404s_for_exemption_belonging_to_different_student(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_revoke_exemption_404s_for_exemption_belonging_to_different_student(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler_a = Schueler(externe_id="ext-a", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -401,8 +401,8 @@ async def test_revoke_exemption_404s_for_exemption_belonging_to_different_studen
 
 
 @pytest.mark.asyncio
-async def test_export_pdf_returns_pdf_with_all_sections_by_default(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_export_pdf_returns_pdf_with_all_sections_by_default(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -421,12 +421,14 @@ async def test_export_pdf_returns_pdf_with_all_sections_by_default(db_session):
 
 @pytest.mark.asyncio
 async def test_export_pdf_filters_by_schuljahr_id(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
-    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
-    db_session.add_all([schueler, schuljahr])
+    db_session.add(schueler)
     await db_session.flush()
     db_session.add_all(
         [
@@ -454,12 +456,14 @@ async def test_export_pdf_forwards_resolved_schuljahr_zeitraum_to_export_service
     """Route-level Test fuer die schuljahr_id -> (von, bis, schuljahr_name)-Aufloesung: der
     reine Statuscode/PDF-Smoke-Test oben wuerde nicht bemerken, wenn die Route aufhoert, diese
     Werte an export_service.render_student_export_html durchzureichen."""
-    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
-    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
-    db_session.add_all([schueler, schuljahr])
+    db_session.add(schueler)
     await _seed_klassenlehrkraft(db_session, [klasse.id])
     await db_session.commit()
 
@@ -483,8 +487,8 @@ async def test_export_pdf_forwards_resolved_schuljahr_zeitraum_to_export_service
 
 
 @pytest.mark.asyncio
-async def test_export_pdf_writes_audit_log_with_requested_sections(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_export_pdf_writes_audit_log_with_requested_sections(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -508,8 +512,8 @@ async def test_export_pdf_writes_audit_log_with_requested_sections(db_session):
 
 
 @pytest.mark.asyncio
-async def test_export_pdf_rejects_unknown_section(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_export_pdf_rejects_unknown_section(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -527,9 +531,9 @@ async def test_export_pdf_rejects_unknown_section(db_session):
 
 
 @pytest.mark.asyncio
-async def test_export_pdf_404s_for_out_of_scope_student(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_export_pdf_404s_for_out_of_scope_student(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)
@@ -544,15 +548,17 @@ async def test_export_pdf_404s_for_out_of_scope_student(db_session):
 
 @pytest.mark.asyncio
 async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     await _seed_klassenlehrkraft(db_session, [klasse.id])
 
     schueler_aktiv = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
     schueler_inaktiv = Schueler(externe_id="ext-2", vorname="B", nachname="B", klasse_id=klasse.id, aktiv=False)
-    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
-    db_session.add_all([schueler_aktiv, schueler_inaktiv, schuljahr])
+    db_session.add_all([schueler_aktiv, schueler_inaktiv])
     await db_session.flush()
     db_session.add(
         Fehlzeit(schueler_id=schueler_inaktiv.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359)
@@ -576,9 +582,11 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
 
 @pytest.mark.asyncio
 async def test_get_students_normal_mode_also_returns_fehltage_fehlstunden_split(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
     schuljahr = Schuljahr(id=30, name="2025/2026", start_datum=date(2025, 9, 8), end_datum=date(2026, 7, 30))
-    db_session.add_all([klasse, schuljahr])
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
     await db_session.flush()
     einstellung = Einstellung(aktuelles_schuljahr_id=schuljahr.id)
     db_session.add(einstellung)
@@ -604,8 +612,8 @@ async def test_get_students_normal_mode_also_returns_fehltage_fehlstunden_split(
 
 
 @pytest.mark.asyncio
-async def test_get_students_sort_by_fehlstunden_desc(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_get_students_sort_by_fehlstunden_desc(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     await _seed_klassenlehrkraft(db_session, [klasse.id])
@@ -636,7 +644,10 @@ async def test_get_students_sort_by_fehlstunden_desc(db_session):
 
 @pytest.mark.asyncio
 async def test_get_student_detail_history_mode_filters_four_sections_not_massnahmen(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     await _seed_klassenlehrkraft(db_session, [klasse.id])
@@ -644,8 +655,7 @@ async def test_get_student_detail_history_mode_filters_four_sections_not_massnah
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse.id)
     typ = MassnahmenTyp(name="Gespraech", setzt_zaehler_zurueck=False)
     nutzer = Nutzer(wp_user_id="u2", email="c@d.de", name="C", rolle="klassenlehrkraft")
-    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
-    db_session.add_all([schueler, typ, nutzer, schuljahr])
+    db_session.add_all([schueler, typ, nutzer])
     await db_session.flush()
     db_session.add_all(
         [
@@ -676,10 +686,12 @@ async def test_get_student_detail_normal_mode_scopes_to_aktuelles_schuljahr(db_s
     Schuljahr") zeigte die Detailansicht schuljahresuebergreifend ALLE Fehlzeiten statt nur die
     des aktuellen Schuljahres -- inkonsistent mit der (korrekt geklemmten) Eskalationsstufe und
     mit GET /students, das im Normalmodus bereits ueber _aktuelles_schuljahr_zeitraum filtert."""
-    klasse = Klasse(webuntis_id=1, name="10a")
     schuljahr_alt = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
     schuljahr_neu = Schuljahr(id=29, name="2026/2027", start_datum=date(2026, 9, 14), end_datum=date(2027, 7, 30))
-    db_session.add_all([klasse, schuljahr_alt, schuljahr_neu])
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_neu.id)
+    db_session.add(klasse)
     await db_session.flush()
     einstellung = Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id, schuljahr_start_cache=schuljahr_neu.start_datum)
     db_session.add(einstellung)

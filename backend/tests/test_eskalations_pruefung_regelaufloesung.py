@@ -7,11 +7,11 @@ from app.services.eskalations_pruefung import resolve_schwellwert_regel
 
 
 @pytest.mark.asyncio
-async def test_resolve_schwellwert_regel_prefers_klasse_specific(db_session):
+async def test_resolve_schwellwert_regel_prefers_klasse_specific(db_session, schuljahr):
     abteilung = Abteilung(webuntis_id=1, name="A")
     db_session.add(abteilung)
     await db_session.flush()
-    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id)
+    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id, schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
 
@@ -27,11 +27,11 @@ async def test_resolve_schwellwert_regel_prefers_klasse_specific(db_session):
 
 
 @pytest.mark.asyncio
-async def test_resolve_schwellwert_regel_falls_back_to_abteilung(db_session):
+async def test_resolve_schwellwert_regel_falls_back_to_abteilung(db_session, schuljahr):
     abteilung = Abteilung(webuntis_id=1, name="A")
     db_session.add(abteilung)
     await db_session.flush()
-    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id)
+    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=abteilung.id, schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
 
@@ -78,10 +78,10 @@ async def test_resolve_schwellwert_regel_handles_nonexistent_klasse_id_gracefull
 
 
 @pytest.mark.asyncio
-async def test_resolve_schwellwert_regel_falls_back_to_schulweit_when_klasse_has_no_abteilung(db_session):
+async def test_resolve_schwellwert_regel_falls_back_to_schulweit_when_klasse_has_no_abteilung(db_session, schuljahr):
     """Eine Klasse ohne Abteilung (abteilung_id=None) soll die Abteilungs-Aufloesung ueberspringen und
     direkt auf die schulweite Regel zurueckfallen, statt zu crashen oder faelschlich None zu liefern."""
-    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=None)
+    klasse = Klasse(webuntis_id=1, name="10a", abteilung_id=None, schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
 

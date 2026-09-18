@@ -13,6 +13,7 @@ from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
+from app.models.schuljahr import Schuljahr
 from app.services import export_service
 
 
@@ -37,7 +38,10 @@ def test_build_export_filename_replaces_spaces_with_dash():
 
 
 async def _seed_full_student(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+    schuljahr = Schuljahr(id=1, name="2025/2026", start_datum=datetime.date(2025, 9, 15), end_datum=datetime.date(2026, 7, 29))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
@@ -215,8 +219,8 @@ async def test_render_student_export_html_shows_gesamte_historie_when_no_schulja
 
 
 @pytest.mark.asyncio
-async def test_render_student_export_html_shows_dauer_anzeige_for_fehlzeiten(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_render_student_export_html_shows_dauer_anzeige_for_fehlzeiten(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)

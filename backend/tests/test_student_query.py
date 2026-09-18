@@ -23,9 +23,9 @@ from app.services import student_query
 
 
 @pytest.mark.asyncio
-async def test_list_students_scopes_by_klasse_ids(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_list_students_scopes_by_klasse_ids(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler_a = Schueler(externe_id="ext-a", vorname="A", nachname="A", klasse_id=klasse_a.id, aktiv=True)
@@ -50,9 +50,9 @@ async def test_list_students_returns_empty_for_empty_scope(db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_students_filters_by_bereich_id(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_list_students_filters_by_bereich_id(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     bereich = Bereich(name="Oberstufe")
@@ -258,9 +258,9 @@ async def test_list_students_excludes_inactive_students_by_default(db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     db_session.add_all(
@@ -278,8 +278,8 @@ async def test_list_students_klasse_id_filter_cannot_widen_scope(db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_students_sorts_by_fehlstunden_descending(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_list_students_sorts_by_fehlstunden_descending(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler_wenig = Schueler(externe_id="ext-wenig", vorname="Wenig", nachname="Fehlstunden", klasse_id=klasse.id, aktiv=True)

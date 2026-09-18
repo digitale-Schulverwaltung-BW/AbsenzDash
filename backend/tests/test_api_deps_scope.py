@@ -43,9 +43,9 @@ async def test_resolve_scope_returns_none_for_schulleitung(db_session):
 
 
 @pytest.mark.asyncio
-async def test_resolve_scope_returns_assigned_klassen_for_klassenlehrkraft(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_resolve_scope_returns_assigned_klassen_for_klassenlehrkraft(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="klassenlehrkraft")
@@ -68,9 +68,9 @@ async def test_resolve_scope_returns_no_klassen_for_klassenlehrkraft_without_ass
 
 
 @pytest.mark.asyncio
-async def test_resolve_scope_returns_bereich_klassen_for_bereichsleiter(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_resolve_scope_returns_bereich_klassen_for_bereichsleiter(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     bereich = Bereich(name="Oberstufe")
@@ -88,8 +88,8 @@ async def test_resolve_scope_returns_bereich_klassen_for_bereichsleiter(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_get_scoped_schueler_returns_student_in_scope(db_session):
-    klasse = Klasse(webuntis_id=1, name="10a")
+async def test_get_scoped_schueler_returns_student_in_scope(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id)
@@ -109,9 +109,9 @@ async def test_get_scoped_schueler_returns_student_in_scope(db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_scoped_schueler_404s_for_student_outside_scope(db_session):
-    klasse_a = Klasse(webuntis_id=1, name="10a")
-    klasse_b = Klasse(webuntis_id=2, name="10b")
+async def test_get_scoped_schueler_404s_for_student_outside_scope(db_session, schuljahr):
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
     db_session.add_all([klasse_a, klasse_b])
     await db_session.flush()
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse_b.id)

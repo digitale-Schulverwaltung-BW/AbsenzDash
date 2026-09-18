@@ -22,8 +22,8 @@ def _set_secret(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_nav_options_returns_only_scoped_klassen(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_nav_options_returns_only_scoped_klassen(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="jseyfried", email="a@b.de", name="A", rolle="klassenlehrkraft")
@@ -53,8 +53,8 @@ async def test_get_stats_rejects_bereich_id_for_klassenlehrkraft():
 
 
 @pytest.mark.asyncio
-async def test_get_stats_returns_klasse_level_for_own_klasse(db_session):
-    klasse = Klasse(webuntis_id=1, name="AME56")
+async def test_get_stats_returns_klasse_level_for_own_klasse(db_session, schuljahr):
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
     db_session.add(klasse)
     await db_session.flush()
     nutzer = Nutzer(wp_user_id="jseyfried", email="a@b.de", name="A", rolle="klassenlehrkraft")
