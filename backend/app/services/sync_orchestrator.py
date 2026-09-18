@@ -42,6 +42,14 @@ async def get_or_create_einstellung(db: AsyncSession) -> Einstellung:
 def _fehlzeiten_zeitraum(einstellung: Einstellung, heute: date, schuljahr_ende: date) -> tuple[date, date]:
     if einstellung.letzter_sync_am is not None:
         von = einstellung.letzter_sync_am.date() - timedelta(days=1)
+        # Liegt der letzte erfolgreiche Sync noch im vorherigen Schuljahr (Schuljahreswechsel seitdem),
+        # faellt von sonst ins ALTE Schuljahr, waehrend bis (s.u.) bereits im neuen liegt -- getTimetable-
+        # WithAbsences lehnt mit "startDate and endDate are not within a single school year" ab (WebUntis
+        # -8507, Live-Fund 2026-09-18). schuljahr_start_cache ist zu diesem Zeitpunkt bereits auf den
+        # Start des aktuellen Schuljahres aktualisiert (siehe _run_sync_once_impl), daher als Untergrenze
+        # geeignet.
+        if einstellung.schuljahr_start_cache is not None:
+            von = max(von, einstellung.schuljahr_start_cache)
     elif einstellung.schuljahr_start_cache is not None:
         von = einstellung.schuljahr_start_cache
     else:

@@ -167,6 +167,26 @@ def test_fehlzeiten_zeitraum_clamps_bis_to_schuljahr_ende_in_uebergangsluecke():
     assert von <= bis
 
 
+def test_fehlzeiten_zeitraum_clamps_von_to_schuljahr_start_beim_schuljahreswechsel():
+    """Regression Live-Fund 2026-09-18: der letzte erfolgreiche Sync liegt noch im vorherigen
+    Schuljahr (2025/2026, endete 2026-07-29), das neue Schuljahr (2026/2027, Start 2026-09-14) ist
+    inzwischen aktuell. Ohne Clamping waere von=2026-07-14 (letzter_sync_am - 1 Tag) im ALTEN
+    Schuljahr, waehrend bis bereits im neuen liegt -- getTimetableWithAbsences schlaegt dann mit
+    'startDate and endDate are not within a single school year' fehl (WebUntis -8507). von muss
+    stattdessen auf den Start des aktuellen Schuljahres (schuljahr_start_cache) gekappt werden."""
+    einstellung = Einstellung(
+        letzter_sync_am=datetime(2026, 7, 15, 10, 30, tzinfo=timezone.utc),
+        schuljahr_start_cache=date(2026, 9, 14),
+    )
+    heute = date(2026, 9, 18)
+    schuljahr_ende = date(2027, 7, 30)
+
+    von, bis = sync_orchestrator._fehlzeiten_zeitraum(einstellung, heute, schuljahr_ende)
+
+    assert von == date(2026, 9, 14)
+    assert bis == heute
+
+
 @pytest.mark.asyncio
 async def test_resolve_aktuelles_schuljahr_uses_current_schoolyear(db_session, monkeypatch):
     client = AsyncMock()
