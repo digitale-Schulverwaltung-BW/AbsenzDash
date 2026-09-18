@@ -8,6 +8,8 @@ from app.api.routes.students import router as students_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.core.config import settings
+from app.core.database import engine
+from app.core.migration_check import warn_if_migrations_pending
 from app.core.scheduler import create_scheduler, start_scheduler
 from app.core import scheduler as scheduler_module
 
@@ -19,6 +21,8 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logging.getLogger("apscheduler").setLevel(logging.INFO)
+
+    await warn_if_migrations_pending(engine)
 
     scheduler = create_scheduler()
     await start_scheduler(scheduler)

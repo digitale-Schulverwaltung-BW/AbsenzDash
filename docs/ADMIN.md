@@ -59,7 +59,7 @@ Der Sync-Ablauf (Klassen/Kategorien → ASV-BW-CSV-Import → Fehlzeiten/Klassen
 ## Monitoring & Troubleshooting
 
 - **Health-Check:** `GET /health` am Backend.
-- **Migrationen:** nach jedem Update `docker compose run --rm backend alembic upgrade head` ausführen (siehe [backend-setup.md](backend-setup.md)).
+- **Migrationen:** nach jedem Update `docker compose run --rm backend alembic upgrade head` ausführen (siehe [backend-setup.md](backend-setup.md)). Das Backend prüft beim Start selbst, ob die DB auf der vom Code erwarteten Alembic-Revision steht, und schreibt bei Abweichung eine `WARNING`-Zeile ins Log (`app/core/migration_check.py`) — wendet die Migration aber bewusst **nicht automatisch** an, da manche Migrationen einen manuellen Vorbereitungsschritt brauchen (z.B. der `TRUNCATE fehlzeit`-Reset, siehe [deployment.md](deployment.md)), der dabei sonst unbemerkt übergangen würde.
 - **Tests:** `docker compose run --rm backend pytest` (Backend), siehe [ci-cd-setup.md](ci-cd-setup.md) für die CI-Pipeline und häufige lokale Fehlerquellen (z.B. "database connection refused").
 - **PDF-Export-Abhängigkeit:** WeasyPrint benötigt Pango/Cairo/GDK-Pixbuf, bereits im mitgelieferten `Dockerfile` installiert — nach einem Image-Rebuild ist nichts weiter zu tun.
 - **Deep Links auf `/schueler` und `/schueler/:id`:** funktionieren nur bei In-App-Navigation. Ein direkter Aufruf, Reload oder weitergegebener Link auf diese Pfade liefert aktuell ein WordPress-404, da keine passende Rewrite-Regel existiert (siehe [deployment.md](deployment.md)).
