@@ -10,10 +10,14 @@ from app.services.nutzer_klasse_sync import seed_nutzer_klasse_from_webuntis
 
 
 async def sync_klassen(client: WebUntisClient, db: AsyncSession, schoolyear_id: int) -> None:
-    """getKlassen -> klasse (Upsert nach webuntis_id), danach nutzer_klasse-Seeding (TECH-SPEC.md Abschnitt 1.2)."""
+    """getKlassen -> klasse (Upsert nach (webuntis_id, schoolyear_id), siehe
+    docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md), danach
+    nutzer_klasse-Seeding (TECH-SPEC.md Abschnitt 1.2)."""
     rows = await client.call("getKlassen", {"schoolyearId": schoolyear_id})
 
-    existing = (await db.execute(select(Klasse))).scalars().all()
+    existing = (
+        await db.execute(select(Klasse).where(Klasse.schuljahr_id == schoolyear_id))
+    ).scalars().all()
     by_webuntis_id = {klasse.webuntis_id: klasse for klasse in existing}
 
     abteilung_result = await db.execute(select(Abteilung))
@@ -22,7 +26,7 @@ async def sync_klassen(client: WebUntisClient, db: AsyncSession, schoolyear_id: 
     for row in rows:
         klasse = by_webuntis_id.get(row["id"])
         if klasse is None:
-            klasse = Klasse(webuntis_id=row["id"], name=row["name"])
+            klasse = Klasse(webuntis_id=row["id"], name=row["name"], schuljahr_id=schoolyear_id)
             db.add(klasse)
         else:
             klasse.name = row["name"]

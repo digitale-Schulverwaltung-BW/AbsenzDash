@@ -470,7 +470,7 @@ git commit -m "feat: make klasse schoolyear-scoped (schuljahr_id, composite uniq
 **Interfaces:**
 - `sync_klassen(client, db, schoolyear_id)` — Signatur unverändert, aber der interne Upsert-Schlüssel wird von `webuntis_id` allein zu `(webuntis_id, schoolyear_id)`.
 
-- [ ] **Step 1: Fehlschlagenden Test schreiben**
+- [x] **Step 1: Fehlschlagenden Test schreiben**
 
 Ersetze den kompletten Inhalt von `backend/tests/test_webuntis_klassen_sync.py`:
 
@@ -606,12 +606,12 @@ async def test_sync_klassen_leaves_abteilung_id_none_when_did_unresolvable(db_se
     assert klasse.abteilung_id is None
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_webuntis_klassen_sync.py -v`
 Expected: FAIL — bestehende Tests scheitern an der fehlenden `Schuljahr`-Zeile (FK-Verletzung), der neue Test `test_sync_klassen_creates_separate_rows_per_schuljahr_for_same_webuntis_id` scheitert zusätzlich daran, dass `sync_klassen` die zweite Zeile fälschlich als Update der ersten behandelt (heutiges `by_webuntis_id`-Dict ist über ALLE Klasse-Zeilen aufgebaut, nicht schuljahr-gefiltert).
 
-- [ ] **Step 3: `sync_klassen` anpassen**
+- [x] **Step 3: `sync_klassen` anpassen**
 
 In `backend/app/services/webuntis_klassen_sync.py`, ändere:
 
@@ -645,12 +645,12 @@ zu:
             db.add(klasse)
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_webuntis_klassen_sync.py -v`
 Expected: alle 6 Tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/webuntis_klassen_sync.py backend/tests/test_webuntis_klassen_sync.py
