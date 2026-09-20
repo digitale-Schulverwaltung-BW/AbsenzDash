@@ -2172,12 +2172,12 @@ git commit -m "feat: scope GET /dashboard/nav-options klassen list to the (reque
 **Files:**
 - Keine Code-Änderungen erwartet (Verifikationstask) — außer eventuell kleine Anpassungen, falls die Verifikation etwas findet.
 
-- [ ] **Step 1: Vollen Backend-Testlauf**
+- [x] **Step 1: Vollen Backend-Testlauf**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 2: Frontend-Verifikation (kein Code-Change erwartet)**
+- [x] **Step 2: Frontend-Verifikation (kein Code-Change erwartet)**
 
 Bereits während der Planerstellung geprüft:
 - `frontend/src/pages/StudentList/StudentList.tsx:166`: `<td>{student.klasse?.name ?? "—"}</td>`
