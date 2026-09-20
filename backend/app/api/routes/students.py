@@ -118,17 +118,16 @@ async def get_students(
         offset=offset,
     )
     schueler_ids = [schueler.id for schueler in schueler_list]
-    klasse_ids = [schueler.klasse_id for schueler in schueler_list if schueler.klasse_id is not None]
-    klasse_map = await student_query.load_klasse_map(db, klasse_ids)
     rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, effektiv_von, effektiv_bis)
 
     if ist_historie:
+        klasse_map_historie = await student_query.load_historische_klasse_map(db, schueler_ids, schuljahr_id)
         items = [
             StudentOverviewOut(
                 id=schueler.id,
                 vorname=schueler.vorname,
                 nachname=schueler.nachname,
-                klasse=klasse_map.get(schueler.klasse_id) if schueler.klasse_id is not None else None,
+                klasse=klasse_map_historie[schueler.id],
                 fehltage=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehltage"]),
                 fehlstunden=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehlstunden"]),
                 klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
@@ -136,6 +135,9 @@ async def get_students(
             for schueler in schueler_list
         ]
         return StudentListOut(items=items, total=total, limit=limit, offset=offset)
+
+    klasse_ids = [schueler.klasse_id for schueler in schueler_list if schueler.klasse_id is not None]
+    klasse_map = await student_query.load_klasse_map(db, klasse_ids)
 
     extras = await student_query.load_overview_extras(db, schueler_ids)
     regel_ids = [

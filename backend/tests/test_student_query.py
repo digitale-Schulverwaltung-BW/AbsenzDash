@@ -17,7 +17,9 @@ from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
+from app.models.schuljahr import Schuljahr
 from app.models.stundenraster_periode import StundenrasterPeriode
 from app.services import student_query
 
@@ -568,3 +570,40 @@ async def test_load_student_detail_uses_stundenraster_when_available(db_session)
     detail = await student_query.load_student_detail(db_session, schueler.id)
 
     assert detail["fehlzeiten"][0].dauer_anzeige == "15 Minuten (Stunde 1)"
+
+
+@pytest.mark.asyncio
+async def test_load_historische_klasse_map_reads_from_historie_not_live_klasse_id(db_session, schuljahr):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse_neu.id)
+    schueler_ohne_snapshot = Schueler(externe_id="ext-2", vorname="C", nachname="D", klasse_id=klasse_neu.id)
+    db_session.add_all([schueler, schueler_ohne_snapshot])
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_alt.id))
+    await db_session.commit()
+
+    result = await student_query.load_historische_klasse_map(
+        db_session, [schueler.id, schueler_ohne_snapshot.id], schuljahr_alt.id
+    )
+
+    assert result[schueler.id].name == "10a"  # aus der Historie, NICHT die live klasse_neu
+    assert result[schueler_ohne_snapshot.id] is None  # keine Historie-Zeile -> unbekannt
+
+
+@pytest.mark.asyncio
+async def test_load_historische_klasse_map_none_when_historie_klasse_id_is_null(db_session, schuljahr):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B")
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=None))
+    await db_session.commit()
+
+    result = await student_query.load_historische_klasse_map(db_session, [schueler.id], schuljahr.id)
+
+    assert result[schueler.id] is None

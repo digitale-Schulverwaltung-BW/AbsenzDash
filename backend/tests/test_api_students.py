@@ -21,6 +21,7 @@ from app.models.nutzer import Nutzer
 from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schuljahr import Schuljahr
 from app.models.schwellwert_regel import SchwellwertRegel
@@ -578,6 +579,34 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
     inaktiv_item = next(item for item in body["items"] if item["id"] == schueler_inaktiv.id)
     assert inaktiv_item["fehltage"] == {"gesamt": 1.0, "entschuldigt": 0.0, "unentschuldigt": 1.0}
     assert inaktiv_item["zaehlerstand"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_students_history_mode_shows_klasse_from_historie_not_live_klasse_id(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    await _seed_klassenlehrkraft(db_session, [klasse_neu.id])
+    # Schueler ist aktuell (live) in klasse_neu, war im alten Schuljahr aber in klasse_alt.
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_neu.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_alt.id))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students?schuljahr_id={schuljahr_alt.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    item = next(item for item in response.json()["items"] if item["id"] == schueler.id)
+    assert item["klasse"] == {"id": klasse_alt.id, "name": "10a"}
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.stundenraster_periode import StundenrasterPeriode
@@ -129,6 +130,34 @@ async def load_klasse_map(db: AsyncSession, klasse_ids: list[int]) -> dict[int, 
         return {}
     result = await db.execute(select(Klasse).where(Klasse.id.in_(klasse_ids)))
     return {klasse.id: klasse for klasse in result.scalars().all()}
+
+
+async def load_historische_klasse_map(
+    db: AsyncSession, schueler_ids: list[int], schuljahr_id: int
+) -> dict[int, Klasse | None]:
+    """Klassenzugehoerigkeit je Schueler fuer ein vergangenes Schuljahr, aus
+    schueler_klasse_historie statt der live schueler.klasse_id/aktuellen klasse-Tabelle
+    (Historie-Modus, siehe docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md).
+    Fehlt eine Historie-Zeile (Schuljahre vor Einfuehrung dieses Features) oder ist ihr klasse_id
+    NULL, liefert das Ergebnis fuer diesen Schueler None (Frontend zeigt 'unbekannt') statt eines
+    Fallbacks auf die aktuelle Klasse (bewusste Nutzer-Entscheidung, Design-Dok 'Nicht-Ziele')."""
+    result: dict[int, Klasse | None] = {sid: None for sid in schueler_ids}
+    if not schueler_ids:
+        return result
+
+    rows = (
+        await db.execute(
+            select(SchuelerKlasseHistorie.schueler_id, Klasse)
+            .outerjoin(Klasse, Klasse.id == SchuelerKlasseHistorie.klasse_id)
+            .where(
+                SchuelerKlasseHistorie.schueler_id.in_(schueler_ids),
+                SchuelerKlasseHistorie.schuljahr_id == schuljahr_id,
+            )
+        )
+    ).all()
+    for schueler_id, klasse in rows:
+        result[schueler_id] = klasse
+    return result
 
 
 async def load_regel_typ_map(db: AsyncSession, regel_ids: list[int]) -> dict[int, str]:

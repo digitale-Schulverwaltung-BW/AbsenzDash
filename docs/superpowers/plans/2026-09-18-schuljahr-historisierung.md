@@ -1720,7 +1720,7 @@ git commit -m "feat: snapshot klasse assignment for all students when a real sch
 **Interfaces:**
 - Produces: `student_query.load_historische_klasse_map(db, schueler_ids, schuljahr_id) -> dict[int, Klasse | None]`.
 
-- [ ] **Step 1: Fehlschlagenden Service-Test schreiben**
+- [x] **Step 1: Fehlschlagenden Service-Test schreiben**
 
 Füge in `backend/tests/test_student_query.py` (am Ende) hinzu (Imports `Schuljahr`, `SchuelerKlasseHistorie` ergänzen):
 
@@ -1762,12 +1762,12 @@ async def test_load_historische_klasse_map_none_when_historie_klasse_id_is_null(
 
 (Ergänze am Dateianfang: `from app.models.schueler_klasse_historie import SchuelerKlasseHistorie`, `from app.models.schuljahr import Schuljahr` — falls noch nicht vorhanden.)
 
-- [ ] **Step 2: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_student_query.py -k historische_klasse_map -v`
 Expected: FAIL — `load_historische_klasse_map` existiert nicht.
 
-- [ ] **Step 3: `load_historische_klasse_map` implementieren**
+- [x] **Step 3: `load_historische_klasse_map` implementieren**
 
 In `backend/app/services/student_query.py`, füge den Import hinzu:
 
@@ -1806,12 +1806,12 @@ async def load_historische_klasse_map(
     return result
 ```
 
-- [ ] **Step 4: Test ausführen, Erfolg verifizieren**
+- [x] **Step 4: Test ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_student_query.py -k historische_klasse_map -v`
 Expected: PASS.
 
-- [ ] **Step 5: Fehlschlagenden HTTP-Test schreiben**
+- [x] **Step 5: Fehlschlagenden HTTP-Test schreiben**
 
 Füge in `backend/tests/test_api_students.py` hinzu (Import `SchuelerKlasseHistorie` ergänzen):
 
@@ -1842,12 +1842,12 @@ async def test_get_students_history_mode_shows_klasse_from_historie_not_live_kla
     assert item["klasse"] == {"id": klasse_alt.id, "name": "10a"}
 ```
 
-- [ ] **Step 6: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 6: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py -k shows_klasse_from_historie -v`
 Expected: FAIL — die Route liefert weiterhin `klasse_neu` (live `schueler.klasse_id`).
 
-- [ ] **Step 7: Route anpassen**
+- [x] **Step 7: Route anpassen**
 
 In `backend/app/api/routes/students.py`, in `get_students`, ändere den Historie-Zweig:
 
@@ -1901,12 +1901,12 @@ zu:
 
 (Der ursprüngliche `klasse_ids`/`klasse_map`-Aufbau wird also hinter den `if ist_historie:`-Zweig verschoben, da er im Normalmodus weiterhin benötigt wird, im Historie-Modus aber durch `load_historische_klasse_map` ersetzt ist. Der Rest der Funktion — Normalmodus-Zweig mit `extras`/`regel_typ_map`/`items` — bleibt unverändert und nutzt weiterhin `klasse_map`.)
 
-- [ ] **Step 8: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 8: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py tests/test_student_query.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/app/services/student_query.py backend/app/api/routes/students.py \
