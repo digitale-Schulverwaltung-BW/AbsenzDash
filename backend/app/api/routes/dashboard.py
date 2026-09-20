@@ -18,8 +18,9 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 async def get_nav_options(
     nutzer: Annotated[Nutzer, Depends(get_wordpress_proxy_nutzer)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    schuljahr_id: int | None = None,
 ) -> NavOptionsOut:
-    return await dashboard_query.get_nav_options(db, nutzer)
+    return await dashboard_query.get_nav_options(db, nutzer, schuljahr_id=schuljahr_id)
 
 
 @router.get("/stats")

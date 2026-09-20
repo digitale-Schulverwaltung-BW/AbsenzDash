@@ -2038,7 +2038,7 @@ git commit -m "feat: resolve klasse from schueler_klasse_historie in GET /studen
 **Interfaces:**
 - `get_nav_options(db, nutzer, schuljahr_id: int | None = None)` — neuer optionaler Parameter. Ohne Angabe (oder mit dem aktuellen Schuljahr) unverändertes Verhalten, aber jetzt implizit auf `Klasse.schuljahr_id == aktuelles_schuljahr_id` gescopet. Mit einer historischen `schuljahr_id` wird die `klassen`-Liste auf `Klasse.schuljahr_id == schuljahr_id` gescopet.
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Füge in `backend/tests/test_dashboard_query.py` hinzu:
 
@@ -2077,12 +2077,12 @@ async def test_get_nav_options_klassen_scoped_to_requested_historical_schuljahr(
     assert [k.id for k in result.klassen] == [klasse_alt.id]
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -k klassen_scoped -v`
 Expected: FAIL — `get_nav_options` liefert beide Klassen (bzw. akzeptiert `schuljahr_id` noch nicht als Keyword-Argument).
 
-- [ ] **Step 3: `get_nav_options` anpassen**
+- [x] **Step 3: `get_nav_options` anpassen**
 
 In `backend/app/services/dashboard_query.py`, ändere die Funktionssignatur und den `klassen`-Aufbau:
 
@@ -2148,17 +2148,17 @@ async def get_nav_options(
     return await dashboard_query.get_nav_options(db, nutzer, schuljahr_id=schuljahr_id)
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py tests/test_api_dashboard.py -v`
 Expected: alle Tests PASS — insbesondere bleiben die bestehenden `test_get_nav_options_for_*`-Tests grün, da sie keine `Einstellung`/`schuljahr_id` setzen und `effektive_schuljahr_id` dann `None` bleibt (Filter wird übersprungen, identisch zum bisherigen Verhalten).
 
-- [ ] **Step 5: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 5: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/api/routes/dashboard.py backend/app/services/dashboard_query.py backend/tests/test_dashboard_query.py

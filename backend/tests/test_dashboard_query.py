@@ -140,6 +140,44 @@ async def test_get_nav_options_aktuelles_schuljahr_id_is_none_when_not_set(db_se
     assert result.aktuelles_schuljahr_id is None
 
 
+@pytest.mark.asyncio
+async def test_get_nav_options_klassen_scoped_to_aktuelles_schuljahr_by_default(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add_all([schuljahr_alt, schuljahr_neu, nutzer])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert [k.id for k in result.klassen] == [klasse_neu.id]
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_klassen_scoped_to_requested_historical_schuljahr(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add_all([schuljahr_alt, schuljahr_neu, nutzer])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer, schuljahr_id=schuljahr_alt.id)
+
+    assert [k.id for k in result.klassen] == [klasse_alt.id]
+
+
 async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
     schueler = Schueler(externe_id="ext-1", vorname="Max", nachname="Muster", klasse_id=klasse.id, aktiv=True)
     db_session.add(schueler)

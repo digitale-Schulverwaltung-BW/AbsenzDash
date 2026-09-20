@@ -29,9 +29,13 @@ from app.schemas.dashboard import (
 )
 
 
-async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
+async def get_nav_options(db: AsyncSession, nutzer: Nutzer, schuljahr_id: int | None = None) -> NavOptionsOut:
     bereich_scope = await resolve_bereich_scope(db, nutzer)
     klasse_scope = await resolve_scope(db, nutzer)
+
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    aktuelles_schuljahr_id = einstellung.aktuelles_schuljahr_id if einstellung else None
+    effektive_schuljahr_id = schuljahr_id if schuljahr_id is not None else aktuelles_schuljahr_id
 
     if bereich_scope is not None and not bereich_scope:
         bereiche = []
@@ -47,6 +51,8 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         query = select(Klasse).order_by(Klasse.name)
         if klasse_scope is not None:
             query = query.where(Klasse.id.in_(klasse_scope))
+        if effektive_schuljahr_id is not None:
+            query = query.where(Klasse.schuljahr_id == effektive_schuljahr_id)
         klassen = (await db.execute(query)).scalars().all()
 
     klasse_bereich_map = dict(
@@ -58,9 +64,6 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer) -> NavOptionsOut:
         NavSchuljahrOut(id=s.id, name=s.name, start_datum=s.start_datum, end_datum=s.end_datum)
         for s in schuljahre_result.scalars().all()
     ]
-
-    einstellung = (await db.execute(select(Einstellung))).scalars().first()
-    aktuelles_schuljahr_id = einstellung.aktuelles_schuljahr_id if einstellung else None
 
     return NavOptionsOut(
         bereiche=[NavBereichOut(id=b.id, name=b.name) for b in bereiche],
