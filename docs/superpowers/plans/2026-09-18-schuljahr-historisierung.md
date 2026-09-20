@@ -2211,19 +2211,19 @@ git commit -m "fix: address issues found during full-suite/frontend verification
 - Modify: `TECH-SPEC.md`
 - Modify: `SPECS.md`
 
-- [ ] **Step 1: TECH-SPEC.md aktualisieren**
+- [x] **Step 1: TECH-SPEC.md aktualisieren**
 
 Ergänze `klasse` im §2-Datenmodell um `schuljahr_id` (FK `schuljahr.id`, NOT NULL, Teil des Unique-Constraints `(webuntis_id, schuljahr_id)`). Füge die neue Tabelle `schueler_klasse_historie` hinzu (`id`, `schueler_id`, `schuljahr_id`, `klasse_id` nullable, unique `(schueler_id, schuljahr_id)` — "Ein-Zeile-pro-Schüler-pro-Jahr-Snapshot, geschrieben vom ASV-CSV-Import und beim Rollover"). Aktualisiere §1.3a's Beschreibung von `resolve_aktuelles_schuljahr`: die zuerst geprüfte Quelle ist jetzt eine gecachte `Schuljahr`-Zeile, deren Datumsbereich das heutige Kalenderdatum abdeckt, `getCurrentSchoolyear` ist nur noch Fallback für die echte Übergangslücke. Ergänze §3 um den `schuljahr_id`-Query-Param auf `GET /dashboard/nav-options`.
 
-- [ ] **Step 2: SPECS.md aktualisieren**
+- [x] **Step 2: SPECS.md aktualisieren**
 
 Ergänze bei der Beschreibung von Schülerliste/-Detail (§4/§7) einen Absatz: im Historie-Modus (vergangenes Schuljahr) wird die angezeigte Klasse aus dem zu diesem Schuljahr gehörenden Snapshot gelesen; fehlt dieser (Schuljahre vor Einführung dieses Features), zeigt die Ansicht explizit "unbekannt" statt der aktuellen Klasse.
 
-- [ ] **Step 3: ROADMAP.md aktualisieren**
+- [x] **Step 3: ROADMAP.md aktualisieren**
 
 Trage den Eintrag "Schuljahr-Historisierung (Klassenzugehörigkeit) & Rollover-Fix" als **Plan 14** (oder die nächste freie Nummer, in der Datei nachschauen) unter "Abgeschlossen" ein, mit Link auf `docs/superpowers/plans/2026-09-18-schuljahr-historisierung.md`, und einem Hinweis, dass Task 4 (`sync_bereiche`-Scoping) eine während der Planung entdeckte, vom ursprünglichen Design-Dok nicht vorgesehene notwendige Korrektur war.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add ROADMAP.md SPECS.md TECH-SPEC.md
