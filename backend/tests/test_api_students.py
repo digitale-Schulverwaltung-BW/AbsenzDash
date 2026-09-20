@@ -748,3 +748,60 @@ async def test_get_student_detail_normal_mode_scopes_to_aktuelles_schuljahr(db_s
     assert [f["datum"] for f in body["fehlzeiten"]] == ["2026-09-20"]
     assert body["fehltage"] == {"gesamt": 1.0, "entschuldigt": 0.0, "unentschuldigt": 1.0}
     assert body["zaehlerstand"] is not None  # weiterhin befuellt, nur die Listen werden gescopet
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_history_mode_shows_klasse_from_historie(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    await _seed_klassenlehrkraft(db_session, [klasse_neu.id])
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse_neu.id)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_alt.id))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}?schuljahr_id={schuljahr_alt.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert response.status_code == 200
+    assert response.json()["klasse"] == {"id": klasse_alt.id, "name": "10a"}
+
+
+@pytest.mark.asyncio
+async def test_get_student_detail_history_mode_klasse_is_none_without_historie_snapshot(db_session):
+    """Schuljahre vor Einfuehrung dieses Features haben keine schueler_klasse_historie-Zeilen -
+    die API liefert dann explizit klasse=None statt eines Fallbacks auf die aktuelle Klasse
+    (Nutzer-Entscheidung, siehe Design-Dok 'Nicht-Ziele')."""
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add(klasse_neu)
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    await _seed_klassenlehrkraft(db_session, [klasse_neu.id])
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="B", klasse_id=klasse_neu.id)
+    db_session.add(schueler)
+    await db_session.commit()
+    # keine SchuelerKlasseHistorie-Zeile fuer schuljahr_alt angelegt
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students/{schueler.id}?schuljahr_id={schuljahr_alt.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert response.status_code == 200
+    assert response.json()["klasse"] is None

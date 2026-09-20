@@ -1922,7 +1922,7 @@ git commit -m "feat: resolve klasse from schueler_klasse_historie in GET /studen
 - Modify: `backend/app/api/routes/students.py`
 - Test: `backend/tests/test_api_students.py`
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Füge in `backend/tests/test_api_students.py` hinzu:
 
@@ -1980,12 +1980,12 @@ async def test_get_student_detail_history_mode_klasse_is_none_without_historie_s
     assert response.json()["klasse"] is None
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py -k shows_klasse_from_historie -v`
 Expected: FAIL — `get_student_detail` liefert weiterhin die live `klasse_neu` (bzw. die zweite Test-Erwartung stimmt zufällig, weil aktuell keine Historie gelesen wird — der erste Test ist der maßgebliche Fehlschlag).
 
-- [ ] **Step 3: Route anpassen**
+- [x] **Step 3: Route anpassen**
 
 In `backend/app/api/routes/students.py`, in `get_student_detail`, ändere:
 
@@ -2009,17 +2009,17 @@ zu:
             klasse = klasse_map.get(schueler.klasse_id)
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 5: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/api/routes/students.py backend/tests/test_api_students.py

@@ -199,10 +199,14 @@ async def get_student_detail(
     detail = await student_query.load_student_detail(
         db, schueler.id, von=effektiv_von, bis=effektiv_bis, ist_historie=ist_historie
     )
-    klasse = None
-    if schueler.klasse_id is not None:
-        klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])
-        klasse = klasse_map.get(schueler.klasse_id)
+    if ist_historie:
+        klasse_map_historie = await student_query.load_historische_klasse_map(db, [schueler.id], schuljahr_id)
+        klasse = klasse_map_historie[schueler.id]
+    else:
+        klasse = None
+        if schueler.klasse_id is not None:
+            klasse_map = await student_query.load_klasse_map(db, [schueler.klasse_id])
+            klasse = klasse_map.get(schueler.klasse_id)
 
     benachrichtigung_regel_ids = [b.regel_id for b in detail["benachrichtigungen"] if b.regel_id is not None]
     regel_typ_map = await student_query.load_regel_typ_map(db, benachrichtigung_regel_ids)
