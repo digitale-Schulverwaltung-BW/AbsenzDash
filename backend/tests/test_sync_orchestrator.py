@@ -10,7 +10,9 @@ from app.integrations.webuntis_client import WebUntisError
 from app.models.benachrichtigung import Benachrichtigung
 from app.models.einstellung import Einstellung
 from app.models.fehlzeit import Fehlzeit
+from app.models.klasse import Klasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schuljahr import Schuljahr
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
@@ -364,6 +366,103 @@ async def test_resolve_aktuelles_schuljahr_prefers_date_covering_cached_row_over
 
     assert schuljahr.id == 29
     assert schuljahr.name == "2026/2027"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_klassenzugehoerigkeit_bei_rollover_covers_all_schueler_including_inactive(db_session):
+    schuljahr_neu = Schuljahr(id=29, name="2026/2027", start_datum=date(2026, 9, 14), end_datum=date(2027, 7, 30))
+    schuljahr_alt = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=28)
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler_aktiv = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    schueler_inaktiv = Schueler(externe_id="ext-2", vorname="B", nachname="B", klasse_id=klasse.id, aktiv=False)
+    schueler_ohne_klasse = Schueler(externe_id="ext-3", vorname="C", nachname="C", klasse_id=None, aktiv=True)
+    db_session.add_all([schueler_aktiv, schueler_inaktiv, schueler_ohne_klasse])
+    await db_session.commit()
+
+    await sync_orchestrator._snapshot_klassenzugehoerigkeit_bei_rollover(db_session, neues_schuljahr_id=29)
+
+    result = await db_session.execute(
+        select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schuljahr_id == 29)
+    )
+    by_schueler_id = {h.schueler_id: h for h in result.scalars().all()}
+    assert by_schueler_id[schueler_aktiv.id].klasse_id == klasse.id
+    assert by_schueler_id[schueler_inaktiv.id].klasse_id == klasse.id  # auch inaktive Schueler
+    assert by_schueler_id[schueler_ohne_klasse.id].klasse_id is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_klassenzugehoerigkeit_bei_rollover_does_not_overwrite_existing_row(db_session):
+    """Falls fuer das neue Schuljahr bereits eine Zeile existiert (z.B. weil import_schueler im
+    selben Sync-Lauf zufaellig vorher gelaufen ist), darf der Rollover-Snapshot sie nicht
+    ueberschreiben."""
+    schuljahr_neu = Schuljahr(id=29, name="2026/2027", start_datum=date(2026, 9, 14), end_datum=date(2027, 7, 30))
+    schuljahr_alt = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=28)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=29)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_alt.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=29, klasse_id=klasse_neu.id))
+    await db_session.commit()
+
+    await sync_orchestrator._snapshot_klassenzugehoerigkeit_bei_rollover(db_session, neues_schuljahr_id=29)
+
+    historie = (
+        await db_session.execute(
+            select(SchuelerKlasseHistorie).where(
+                SchuelerKlasseHistorie.schueler_id == schueler.id, SchuelerKlasseHistorie.schuljahr_id == 29
+            )
+        )
+    ).scalar_one()
+    assert historie.klasse_id == klasse_neu.id  # unveraendert, nicht auf klasse_alt zurueckgesetzt
+
+
+@pytest.mark.asyncio
+async def test_run_full_sync_triggers_rollover_snapshot_only_on_real_change(db_session, monkeypatch):
+    """End-to-End: beim allerersten Sync (aktuelles_schuljahr_id vorher None) und bei einem
+    Sync-Lauf ohne Schuljahreswechsel darf kein Rollover-Snapshot geschrieben werden; nur wenn
+    sich aktuelles_schuljahr_id tatsaechlich AENDERT."""
+    aufgerufen_mit: list[int] = []
+    monkeypatch.setattr(
+        sync_orchestrator,
+        "_snapshot_klassenzugehoerigkeit_bei_rollover",
+        AsyncMock(side_effect=lambda db, neues_schuljahr_id: aufgerufen_mit.append(neues_schuljahr_id)),
+    )
+
+    # Erster Sync-Lauf: aktuelles_schuljahr_id vorher None -> kein Rollover.
+    await sync_orchestrator.run_full_sync(async_session_factory)
+    assert aufgerufen_mit == []
+
+    # Zweiter Sync-Lauf mit demselben Schuljahr (id 28 laut _FakeWebUntisClient) -> weiterhin kein Rollover.
+    await sync_orchestrator.run_full_sync(async_session_factory)
+    assert aufgerufen_mit == []
+
+
+@pytest.mark.asyncio
+async def test_run_full_sync_triggers_rollover_snapshot_when_schuljahr_changes(db_session, monkeypatch):
+    aufgerufen_mit: list[int] = []
+    monkeypatch.setattr(
+        sync_orchestrator,
+        "_snapshot_klassenzugehoerigkeit_bei_rollover",
+        AsyncMock(side_effect=lambda db, neues_schuljahr_id: aufgerufen_mit.append(neues_schuljahr_id)),
+    )
+    schuljahr_vorherig = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_vorherig)
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=27))  # simuliert vorherigen Sync mit anderem Schuljahr
+    await db_session.commit()
+
+    await sync_orchestrator.run_full_sync(async_session_factory)  # _FakeWebUntisClient liefert id 28
+
+    assert aufgerufen_mit == [28]
 
 
 @pytest.mark.asyncio

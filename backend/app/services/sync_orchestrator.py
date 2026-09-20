@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.models.einstellung import Einstellung
+from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schuljahr import Schuljahr
 from app.services.asv_csv_import import import_schueler
 from app.services.eskalations_pruefung import pruefe_schwellwerte
@@ -80,6 +82,35 @@ async def _juengstes_bereits_gestartetes_schuljahr(db: AsyncSession) -> Schuljah
 
     result = await db.execute(select(Schuljahr).order_by(Schuljahr.end_datum.desc()).limit(1))
     return result.scalar_one()
+
+
+async def _snapshot_klassenzugehoerigkeit_bei_rollover(db: AsyncSession, neues_schuljahr_id: int) -> None:
+    """Bei einem echten Schuljahreswechsel wird fuer ALLE Schueler (auch inaktive/ausgeschiedene)
+    einmalig ein Snapshot ihrer zu diesem Zeitpunkt noch aktuellen schueler.klasse_id (i.d.R. noch
+    die Klasse des alten Schuljahres, da import_schueler in diesem Sync-Lauf erst DANACH laeuft)
+    fuers neue Schuljahr geschrieben, siehe
+    docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md. Ohne diesen Snapshot
+    wuerden Schueler, die ausscheiden BEVOR sie je ein ASV-CSV-Update unter dem neuen Schuljahr
+    bekommen (import_schueler deckt nur noch in der CSV gelistete Schueler ab), permanent ohne
+    Historie-Eintrag fuer das neue Schuljahr bleiben. Bereits vorhandene Zeilen werden nicht
+    ueberschrieben - der regulaere ASV-CSV-Import-Pfad, der im selben Sync-Lauf direkt danach
+    laeuft, uebernimmt ab dann die laufende Pflege dieser Zeile fuer aktuell eingeschriebene
+    Schueler."""
+    bereits_erfasst = set(
+        (
+            await db.execute(
+                select(SchuelerKlasseHistorie.schueler_id).where(
+                    SchuelerKlasseHistorie.schuljahr_id == neues_schuljahr_id
+                )
+            )
+        ).scalars().all()
+    )
+    alle_schueler = (await db.execute(select(Schueler.id, Schueler.klasse_id))).all()
+    for schueler_id, klasse_id in alle_schueler:
+        if schueler_id in bereits_erfasst:
+            continue
+        db.add(SchuelerKlasseHistorie(schueler_id=schueler_id, schuljahr_id=neues_schuljahr_id, klasse_id=klasse_id))
+    await db.flush()
 
 
 async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) -> Schuljahr:
@@ -153,9 +184,14 @@ async def _run_sync_once_impl(db: AsyncSession) -> None:
         einstellung = await get_or_create_einstellung(db)
 
         aktuelles_schuljahr = await resolve_aktuelles_schuljahr(client, db)
+        vorheriges_schuljahr_id = einstellung.aktuelles_schuljahr_id
         einstellung.aktuelles_schuljahr_id = aktuelles_schuljahr.id
         if aktuelles_schuljahr.start_datum != einstellung.schuljahr_start_cache:
             einstellung.schuljahr_start_cache = aktuelles_schuljahr.start_datum
+
+        ist_rollover = vorheriges_schuljahr_id is not None and vorheriges_schuljahr_id != aktuelles_schuljahr.id
+        if ist_rollover:
+            await _snapshot_klassenzugehoerigkeit_bei_rollover(db, aktuelles_schuljahr.id)
 
         await sync_abteilungen(client, db)
         await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)

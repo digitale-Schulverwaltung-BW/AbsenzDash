@@ -1515,7 +1515,7 @@ git commit -m "feat: snapshot schueler_klasse_historie on every ASV-CSV import"
 **Interfaces:**
 - Produces: `async def _snapshot_klassenzugehoerigkeit_bei_rollover(db: AsyncSession, neues_schuljahr_id: int) -> None`, aufgerufen aus `_run_sync_once_impl`, sobald `einstellung.aktuelles_schuljahr_id` sich gegenüber dem vorherigen Wert ändert (und vorher nicht `None` war — der allererste Sync ist kein "Wechsel").
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Füge in `backend/tests/test_sync_orchestrator.py` folgende Imports hinzu (nach den bestehenden):
 
@@ -1617,12 +1617,12 @@ async def test_run_full_sync_triggers_rollover_snapshot_when_schuljahr_changes(d
     assert aufgerufen_mit == [28]
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_sync_orchestrator.py -k snapshot_klassenzugehoerigkeit -v`
 Expected: FAIL — `sync_orchestrator._snapshot_klassenzugehoerigkeit_bei_rollover` existiert noch nicht (`AttributeError`).
 
-- [ ] **Step 3: Funktion implementieren und verdrahten**
+- [x] **Step 3: Funktion implementieren und verdrahten**
 
 In `backend/app/services/sync_orchestrator.py`, füge den Import hinzu:
 
@@ -1690,17 +1690,17 @@ zu:
         await sync_abteilungen(client, db)
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_sync_orchestrator.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 5: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/sync_orchestrator.py backend/tests/test_sync_orchestrator.py
