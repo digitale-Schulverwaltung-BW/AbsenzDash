@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiDelete, apiDownload, apiGet, apiPost, apiPut } from "./client";
+import { ApiError, apiDelete, apiDownload, apiGet, apiPost, apiPostFormData, apiPut } from "./client";
 
 afterEach(() => {
   window.absenzdashConfig = undefined;
@@ -108,6 +108,47 @@ describe("apiPut", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 422 })));
 
     await expect(apiPut("admin/schwellwerte/1", {})).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("apiPostFormData", () => {
+  it("sends the nonce header and FormData body without a Content-Type header, returns the parsed response", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const formData = new FormData();
+    formData.append("schuljahr_id", "27");
+
+    const result = await apiPostFormData<{ ok: boolean }>("admin/schuljahr-historie-import/preview", formData);
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/wp-json/absenzdash/v1/api/admin/schuljahr-historie-import/preview",
+      {
+        method: "POST",
+        headers: { "X-WP-Nonce": "abc123" },
+        body: formData,
+      },
+    );
+    const [, options] = fetchMock.mock.calls[0];
+    expect(Object.keys(options.headers)).not.toContain("Content-Type");
+  });
+
+  it("throws an ApiError when the response is not ok", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 422 })));
+
+    await expect(apiPostFormData("admin/schuljahr-historie-import/preview", new FormData())).rejects.toBeInstanceOf(
+      ApiError,
+    );
   });
 });
 

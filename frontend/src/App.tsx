@@ -4,6 +4,7 @@ import { Navigation } from "./components/Navigation/Navigation";
 import { AdminLayout } from "./pages/Admin/AdminLayout";
 import { ExcuseStatuses } from "./pages/Admin/ExcuseStatuses";
 import { MeasureTypes } from "./pages/Admin/MeasureTypes";
+import { SchuljahrImport } from "./pages/Admin/SchuljahrImport";
 import { SyncSettings } from "./pages/Admin/SyncSettings";
 import { ThresholdRules } from "./pages/Admin/ThresholdRules";
 import { Landing } from "./pages/Landing/Landing";
@@ -49,6 +50,7 @@ export default function App() {
         >
           <Route index element={<Navigate to="schwellwerte" replace />} />
           <Route path="sync" element={<SyncSettings />} />
+          <Route path="schuljahr-import" element={<SchuljahrImport />} />
           <Route path="entschuldigungsstatus" element={<ExcuseStatuses />} />
           <Route path="massnahmen" element={<MeasureTypes />} />
           <Route path="schwellwerte" element={<ThresholdRules />} />

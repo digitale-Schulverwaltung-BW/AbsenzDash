@@ -1689,14 +1689,14 @@ git commit -m "feat: add commit endpoint for retroactive schuljahr historie impo
 - Neu: `apiPostFormData<T>(path: string, formData: FormData): Promise<T>` in `client.ts` (kein bestehendes Upload-Muster wiederverwendbar, siehe Abweichung 7).
 - Neue Route `/admin/schuljahr-import` → `SchuljahrImport`-Seite, neuer Tab in `AdminLayout`.
 
-- [ ] **Step 1: Fehlschlagenden Test für `apiPostFormData` schreiben**
+- [x] **Step 1: Fehlschlagenden Test für `apiPostFormData` schreiben**
 
 Füge in `frontend/src/api/client.test.ts` (Struktur/Mock-Muster wie die bestehenden `apiPost`-Tests dort) einen Test hinzu, der `apiPostFormData` mit einer `FormData`-Instanz aufruft und prüft, dass `fetch` mit `method: "POST"`, dem `X-WP-Nonce`-Header (aber explizit OHNE `Content-Type`-Header) und der `FormData` als `body` aufgerufen wird, sowie dass ein Non-OK-Response einen `ApiError` wirft (identisches Fehlerverhalten zu `apiPost`). Orientiere dich am exakten Aufbau der bestehenden `apiPost`-Tests in dieser Datei (`window.absenzdashConfig`-Mock, `global.fetch = vi.fn(...)`).
 
 Run: `cd frontend && npm test -- client.test.ts`
 Expected: FAIL — `apiPostFormData` existiert noch nicht.
 
-- [ ] **Step 2: `apiPostFormData` implementieren**
+- [x] **Step 2: `apiPostFormData` implementieren**
 
 In `frontend/src/api/client.ts`, füge nach `apiPut` (nach Zeile 54) ein:
 
@@ -1720,7 +1720,7 @@ export async function apiPostFormData<T>(path: string, formData: FormData): Prom
 Run: `cd frontend && npm test -- client.test.ts`
 Expected: PASS.
 
-- [ ] **Step 3: Types ergänzen**
+- [x] **Step 3: Types ergänzen**
 
 In `frontend/src/api/types.ts`, füge am Ende an:
 
@@ -1740,7 +1740,7 @@ export interface HistorieImportResult {
 }
 ```
 
-- [ ] **Step 4: Hooks erstellen**
+- [x] **Step 4: Hooks erstellen**
 
 Erstelle `frontend/src/api/hooks/useSchuljahrHistorieImportPreview.ts`:
 
@@ -1790,7 +1790,7 @@ export function useSchuljahrHistorieImport() {
 }
 ```
 
-- [ ] **Step 5: Fehlschlagenden Komponenten-Test schreiben**
+- [x] **Step 5: Fehlschlagenden Komponenten-Test schreiben**
 
 Erstelle `frontend/src/pages/Admin/SchuljahrImport.test.tsx`:
 
@@ -1899,12 +1899,12 @@ describe("SchuljahrImport", () => {
 });
 ```
 
-- [ ] **Step 6: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 6: Test ausführen, Fehlschlag verifizieren**
 
 Run: `cd frontend && npm test -- SchuljahrImport`
 Expected: FAIL — `SchuljahrImport.tsx` existiert noch nicht (Import-Fehler).
 
-- [ ] **Step 7: Seite implementieren**
+- [x] **Step 7: Seite implementieren**
 
 Erstelle `frontend/src/pages/Admin/SchuljahrImport.tsx`:
 
@@ -2031,12 +2031,12 @@ export function SchuljahrImport() {
 }
 ```
 
-- [ ] **Step 8: Test ausführen, Erfolg verifizieren**
+- [x] **Step 8: Test ausführen, Erfolg verifizieren**
 
 Run: `cd frontend && npm test -- SchuljahrImport`
 Expected: alle Tests PASS.
 
-- [ ] **Step 9: Admin-Navigation ergänzen**
+- [x] **Step 9: Admin-Navigation ergänzen**
 
 In `frontend/src/pages/Admin/AdminLayout.tsx`, ergänze `TABS` (Zeile 4-9):
 
@@ -2063,12 +2063,12 @@ Ergänze die Route (nach Zeile 51):
           <Route path="schuljahr-import" element={<SchuljahrImport />} />
 ```
 
-- [ ] **Step 10: Vollen Frontend-Testlauf verifizieren**
+- [x] **Step 10: Vollen Frontend-Testlauf verifizieren**
 
 Run: `cd frontend && npm test`
 Expected: alle Tests PASS.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add frontend/src/api/client.ts frontend/src/api/client.test.ts frontend/src/api/types.ts \

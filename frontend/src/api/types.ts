@@ -226,3 +226,17 @@ export interface StudentCatalog {
   excuse_statuses: ExcuseStatusCatalogEntry[];
   classreg_categories: ClassregCategoryCatalogEntry[];
 }
+
+export interface HistorieImportPreview {
+  zeilen_gesamt: number;
+  schueler_bekannt: number;
+  schueler_neu: number;
+  unbekannte_klassen: string[];
+  uebersprungene_zeilen: number;
+}
+
+export interface HistorieImportResult {
+  zeilen_verarbeitet: number;
+  neu_angelegte_schueler: number;
+  uebersprungene_zeilen: number;
+}

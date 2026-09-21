@@ -53,6 +53,19 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function apiPostFormData<T>(path: string, formData: FormData): Promise<T> {
+  const config = getConfig();
+  const response = await fetch(`${config.restUrl}/${path}`, {
+    method: "POST",
+    headers: { "X-WP-Nonce": config.nonce },
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, `POST ${path} failed with status ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const config = getConfig();
   const response = await fetch(`${config.restUrl}/${path}`, {

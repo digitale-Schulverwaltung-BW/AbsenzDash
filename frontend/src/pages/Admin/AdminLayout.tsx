@@ -6,6 +6,7 @@ const TABS = [
   { path: "/admin/massnahmen", label: "Maßnahmen-Katalog" },
   { path: "/admin/entschuldigungsstatus", label: "Entschuldigungsstatus" },
   { path: "/admin/sync", label: "Sync-Einstellungen" },
+  { path: "/admin/schuljahr-import", label: "Schuljahr-Import" },
 ];
 
 export function AdminLayout() {
