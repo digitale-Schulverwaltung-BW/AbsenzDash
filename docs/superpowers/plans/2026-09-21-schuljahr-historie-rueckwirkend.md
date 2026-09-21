@@ -2087,44 +2087,44 @@ git commit -m "feat: add Schuljahr-Import admin page for retroactive historie ba
 - Modify: `TECH-SPEC.md`
 - Modify: `SPECS.md`
 
-- [ ] **Step 1: Vollen Backend-Testlauf**
+- [x] **Step 1: Vollen Backend-Testlauf**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 2: Vollen Frontend-Testlauf**
+- [x] **Step 2: Vollen Frontend-Testlauf**
 
 Run: `cd frontend && npm test`
 Expected: alle Tests PASS.
 
-- [ ] **Step 3: Manuelle Verifikation im Dev-Stack (optional, empfohlen)**
+- [x] **Step 3: Manuelle Verifikation im Dev-Stack (optional, empfohlen)**
 
 - `GET /students?schuljahr_id=<ein_Jahr_ohne_Historie-Daten>` gegen den Dev-Stack aufrufen und prüfen, dass `items: []`/`total: 0` zurückkommt (statt weiterhin aller Schüler).
 - Eine kleine Test-CSV über die neue Admin-Seite hochladen (Vorschau, dann Bestätigen) und per `docker exec absenzdash-db psql -U absenzdash -d absenzdash -c "SELECT * FROM schueler_klasse_historie WHERE schuljahr_id = <id>;"` prüfen, dass die erwarteten Zeilen entstanden sind.
 - Nach einem echten Sync-Lauf prüfen, dass `<ASV_CSV_ARCHIVE_DIR>/<schuljahr-name-mit-bindestrich>.csv` existiert und dem Inhalt der zuletzt verarbeiteten Live-CSV entspricht.
 
-- [ ] **Step 4: Commit (falls Step 1-3 Anpassungen erfordern)**
+- [x] **Step 4: Commit (falls Step 1-3 Anpassungen erfordern)**
 
 ```bash
 git add -A
 git commit -m "fix: address issues found during full-suite/manual verification"
 ```
 
-- [ ] **Step 5: TECH-SPEC.md aktualisieren**
+- [x] **Step 5: TECH-SPEC.md aktualisieren**
 
 - §1.3 (Schüler-Stammdaten & Schüler↔Klasse-Zuordnung): ergänze einen Absatz zur CSV-Archivierung (`ASV_CSV_ARCHIVE_DIR`, ein Stand pro Schuljahr, Dateiname mit `/` → `-` sanitiert, bei jedem tatsächlich verarbeiteten Import überschrieben) und zum rückwirkenden Admin-Import (zweistufig: Vorschau ohne Schreiben, dann Bestätigen; schreibt ausschließlich `schueler_klasse_historie`, legt für unbekannte `externe_id` einen minimalen `Schueler`-Stammsatz an, rührt live `schueler`-Felder bestehender Schüler nie an).
 - §2 (Datenbank-Schema): kein neues Feld/keine neue Tabelle (keine Schema-Änderung durch diesen Plan) — ggf. nur einen Verweis auf die Query-Semantik-Änderung von `GET /students`/`GET /students/{id}` (Roster-Basis im Historie-Modus ist jetzt ein INNER JOIN auf `schueler_klasse_historie`, nicht mehr `schueler` mit `nur_aktive=False`; `GET /students/{id}` liefert 404 statt eines Klassen-Fallbacks, wenn keine Historie-Zeile existiert).
 - §3 (API-Vertrag): ergänze die zwei neuen Endpunkte `POST /admin/schuljahr-historie-import/preview` und `POST /admin/schuljahr-historie-import` (Multipart, `schulleitung`-only, Request-/Response-Felder wie in `HistorieImportPreviewOut`/`HistorieImportResultOut`).
 
-- [ ] **Step 6: SPECS.md aktualisieren**
+- [x] **Step 6: SPECS.md aktualisieren**
 
 - §4/§7 (Datenmodell/Dashboard-Funktionen): ergänze bei der Schülerliste/-Detail-Beschreibung, dass ein vergangenes Schuljahr ohne (rückwirkenden) Datenimport eine leere Liste liefert bzw. Schüler-Detail mit 404 antwortet — nicht mehr die (fälschlich vollständige) Live-Schülerliste bzw. einen Klassen-Fallback. Ergänze einen Hinweis auf den neuen Admin-Import-Flow für rückwirkende Datenpflege.
 
-- [ ] **Step 7: ROADMAP.md aktualisieren**
+- [x] **Step 7: ROADMAP.md aktualisieren**
 
 Trage den Eintrag "Rückwirkendes Schuljahr-Archiv, Roster-Filterung & CSV-Archivierung" als **Plan 17** unter "Abgeschlossen" ein (nächste freie Nummer nach Plan 16, in der Datei nachschauen), mit Link auf diesen Plan (`docs/superpowers/plans/2026-09-21-schuljahr-historie-rueckwirkend.md`) und dessen [Design-Dok](../specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md). Entferne/ersetze den bisherigen "Design-Dok fertig, Umsetzungsplan offen"-Eintrag unter "Geplant" (aktuell Zeile 61 in `ROADMAP.md`) durch einen Verweis auf den jetzt abgeschlossenen Plan 17. Erwähne explizit die in "Wichtige Abweichungen" Punkt 6 gefundene Notwendigkeit, den Schuljahr-Namen im Archiv-Dateinamen zu sanitieren (`/` → `-`) — kein im Design-Dok vorgesehener, aber notwendiger Korrektur-Fund, analog zu Plan 16s `sync_bereiche`-Fund.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ROADMAP.md SPECS.md TECH-SPEC.md
