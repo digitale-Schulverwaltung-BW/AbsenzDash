@@ -41,6 +41,121 @@ async def test_list_students_scopes_by_klasse_ids(db_session, schuljahr):
 
 
 @pytest.mark.asyncio
+async def test_list_students_historie_mode_includes_only_students_with_historie_row(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler_mit_historie = Schueler(externe_id="ext-mit", vorname="Mit", nachname="A", aktiv=False)
+    schueler_ohne_historie = Schueler(externe_id="ext-ohne", vorname="Ohne", nachname="B", aktiv=True)
+    db_session.add_all([schueler_mit_historie, schueler_ohne_historie])
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler_mit_historie.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id)
+    )
+    await db_session.commit()
+
+    items, total = await student_query.list_students(db_session, scope=None, historie_schuljahr_id=schuljahr.id)
+
+    assert total == 1
+    assert [s.id for s in items] == [schueler_mit_historie.id]  # inaktiv, erscheint trotzdem (Historie-Snapshot)
+
+
+@pytest.mark.asyncio
+async def test_list_students_historie_mode_empty_schuljahr_returns_empty(db_session, schuljahr):
+    db_session.add(Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True))
+    await db_session.commit()
+
+    items, total = await student_query.list_students(db_session, scope=None, historie_schuljahr_id=999999)
+
+    assert items == []
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_list_students_historie_mode_filters_by_klasse_id_via_historie_not_live_klasse_id(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse_a = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_b = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
+    db_session.add_all([klasse_a, klasse_b])
+    await db_session.flush()
+    # schueler ist LIVE in klasse_b, war historisch aber in klasse_a
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_b.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse_a.id))
+    await db_session.commit()
+
+    items, total = await student_query.list_students(
+        db_session, scope=None, klasse_id=klasse_a.id, historie_schuljahr_id=schuljahr.id
+    )
+    assert total == 1
+    assert [s.id for s in items] == [schueler.id]
+
+    items_b, total_b = await student_query.list_students(
+        db_session, scope=None, klasse_id=klasse_b.id, historie_schuljahr_id=schuljahr.id
+    )
+    assert total_b == 0  # klasse_b ist nur die LIVE-Klasse, nicht die historische -> kein Treffer
+
+
+@pytest.mark.asyncio
+async def test_list_students_historie_mode_filters_by_bereich_id_via_historie(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    bereich = Bereich(name="Mechatronik")
+    db_session.add(bereich)
+    await db_session.flush()
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id))
+    await db_session.commit()
+
+    items, total = await student_query.list_students(
+        db_session, scope=None, bereich_id=bereich.id, historie_schuljahr_id=schuljahr.id
+    )
+    assert total == 1
+    assert [s.id for s in items] == [schueler.id]
+
+
+@pytest.mark.asyncio
+async def test_list_students_historie_mode_scope_matches_historische_klasse_id(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse_im_scope = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_ausserhalb = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
+    db_session.add_all([klasse_im_scope, klasse_ausserhalb])
+    await db_session.flush()
+    schueler_im_scope = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    schueler_ausserhalb = Schueler(externe_id="ext-2", vorname="B", nachname="B", aktiv=True)
+    db_session.add_all([schueler_im_scope, schueler_ausserhalb])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SchuelerKlasseHistorie(schueler_id=schueler_im_scope.id, schuljahr_id=schuljahr.id, klasse_id=klasse_im_scope.id),
+            SchuelerKlasseHistorie(schueler_id=schueler_ausserhalb.id, schuljahr_id=schuljahr.id, klasse_id=klasse_ausserhalb.id),
+        ]
+    )
+    await db_session.commit()
+
+    items, total = await student_query.list_students(
+        db_session, scope={klasse_im_scope.id}, historie_schuljahr_id=schuljahr.id
+    )
+    assert total == 1
+    assert [s.id for s in items] == [schueler_im_scope.id]
+
+
+@pytest.mark.asyncio
 async def test_list_students_returns_empty_for_empty_scope(db_session):
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)

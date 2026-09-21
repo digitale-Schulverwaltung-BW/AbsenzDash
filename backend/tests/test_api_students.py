@@ -561,6 +561,12 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
     schueler_inaktiv = Schueler(externe_id="ext-2", vorname="B", nachname="B", klasse_id=klasse.id, aktiv=False)
     db_session.add_all([schueler_aktiv, schueler_inaktiv])
     await db_session.flush()
+    db_session.add_all(
+        [
+            SchuelerKlasseHistorie(schueler_id=schueler_aktiv.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id),
+            SchuelerKlasseHistorie(schueler_id=schueler_inaktiv.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id),
+        ]
+    )
     db_session.add(
         Fehlzeit(schueler_id=schueler_inaktiv.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359)
     )
@@ -582,6 +588,86 @@ async def test_get_students_history_mode_returns_rohzahlen_and_includes_inactive
 
 
 @pytest.mark.asyncio
+async def test_get_students_history_mode_excludes_students_without_historie_row(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    # Schueler ist heute (live) aktiv in dieser Klasse, war es aber im betrachteten Schuljahr
+    # nachweislich nicht (keine schueler_klasse_historie-Zeile) -- z.B. erst spaeter eingeschult.
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/students?schuljahr_id={schuljahr.id}", headers=HEADERS_KLASSENLEHRKRAFT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_students_history_mode_returns_empty_for_schuljahr_without_any_historie(db_session):
+    """Ein Schuljahr vor Einfuehrung dieses Features (oder vor einem rueckwirkenden Import)
+    hat ueberhaupt keine schueler_klasse_historie-Zeilen -- liefert dadurch automatisch eine
+    leere Liste, kein Sonderfall noetig (Design-Dok Abschnitt 1)."""
+    schuljahr = Schuljahr(id=20, name="2017/2018", start_datum=date(2017, 9, 11), end_datum=date(2018, 7, 27))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    nutzer = Nutzer(wp_user_id="jseyfried", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    db_session.add(Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/students?schuljahr_id={schuljahr.id}",
+            headers={**HEADERS_KLASSENLEHRKRAFT, "X-WordPress-Role": "schulleitung"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_students_history_mode_klasse_id_filter_uses_historische_klasse(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    klasse_live = Klasse(webuntis_id=2, name="10b", schuljahr_id=schuljahr.id)
+    db_session.add_all([klasse_alt, klasse_live])
+    await db_session.flush()
+    await _seed_klassenlehrkraft(db_session, [klasse_alt.id, klasse_live.id])
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_live.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse_alt.id))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        treffer = await client.get(
+            f"/students?schuljahr_id={schuljahr.id}&klasse_id={klasse_alt.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+        kein_treffer = await client.get(
+            f"/students?schuljahr_id={schuljahr.id}&klasse_id={klasse_live.id}", headers=HEADERS_KLASSENLEHRKRAFT
+        )
+
+    assert [item["id"] for item in treffer.json()["items"]] == [schueler.id]
+    assert kein_treffer.json()["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_get_students_history_mode_shows_klasse_from_historie_not_live_klasse_id(db_session):
     schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
     schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
@@ -592,7 +678,10 @@ async def test_get_students_history_mode_shows_klasse_from_historie_not_live_kla
     db_session.add_all([klasse_alt, klasse_neu])
     await db_session.flush()
     db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
-    await _seed_klassenlehrkraft(db_session, [klasse_neu.id])
+    # NutzerKlasse wird laut Design-Dok bei jedem Sync-Lauf fuer ALLE (auch alte) klasse-Zeilen
+    # mit passender webuntis_teacher_id neu geseedet (Plan 16) -- der Scope einer
+    # Klassenlehrkraft enthaelt deshalb auch historische klasse.id-Werte, nicht nur die aktuelle.
+    await _seed_klassenlehrkraft(db_session, [klasse_neu.id, klasse_alt.id])
     # Schueler ist aktuell (live) in klasse_neu, war im alten Schuljahr aber in klasse_alt.
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_neu.id, aktiv=True)
     db_session.add(schueler)

@@ -45,25 +45,42 @@ async def list_students(
     sort_dir: str = "asc",
     limit: int = 50,
     offset: int = 0,
+    historie_schuljahr_id: int | None = None,
 ) -> tuple[list[Schueler], int]:
     """Liefert die fuer den Scope sichtbaren Schueler (gefiltert, sortiert, paginiert) sowie
     die Gesamtzahl (nach Filtern, vor Pagination). von/bis grenzen den Zeitraum fuer die
-    Fehltage/Fehlstunden/Einträge-Sortierung ein (None/None = unbegrenzt)."""
+    Fehltage/Fehlstunden/Einträge-Sortierung ein (None/None = unbegrenzt).
+
+    historie_schuljahr_id (Default None) schaltet den Historie-Modus ein (siehe
+    docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md): die
+    Roster-Basis wird dann ein INNER JOIN auf schueler_klasse_historie fuer dieses Schuljahr
+    statt einer unscoped schueler-Abfrage mit nur_aktive=False -- nur Schueler MIT Snapshot fuer
+    dieses Jahr erscheinen (ein Schuljahr ganz ohne Zeilen liefert dadurch automatisch eine leere
+    Liste, kein Sonderfall noetig). scope/klasse_id/bereich_id filtern in diesem Modus konsequent
+    gegen schueler_klasse_historie.klasse_id statt schueler.klasse_id. Der Aufrufer (students.py)
+    neutralisiert weiterhin typ/min_stufe/nur_auffaellige/nur_aktive auf None/False, wenn
+    historie_schuljahr_id gesetzt ist (Zaehlerstand/Benachrichtigungs-Filter sind im Historie-
+    Modus nicht aussagekraeftig, siehe Plan 16)."""
     if scope is not None and not scope:
         return [], 0
     if sort_by is not None and sort_by not in SORTIERBARE_FELDER:
         raise ValueError(f"Unbekanntes sort_by: {sort_by}")
 
+    klasse_id_col = SchuelerKlasseHistorie.klasse_id if historie_schuljahr_id is not None else Schueler.klasse_id
+
     conditions = []
-    if nur_aktive:
+    if nur_aktive and historie_schuljahr_id is None:
+        # Im Historie-Modus ersetzt die INNER-JOIN-Mitgliedschaft in schueler_klasse_historie
+        # die aktiv-Filterung komplett (Design-Dok Abschnitt 1) -- ein Schueler, der historisch
+        # eingeschrieben war, erscheint unabhaengig vom LIVE-aktiv-Status.
         conditions.append(Schueler.aktiv.is_(True))
     if scope is not None:
-        conditions.append(Schueler.klasse_id.in_(scope))
+        conditions.append(klasse_id_col.in_(scope))
     if klasse_id is not None:
-        conditions.append(Schueler.klasse_id == klasse_id)
+        conditions.append(klasse_id_col == klasse_id)
     if bereich_id is not None:
         bereich_klassen = select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich_id)
-        conditions.append(Schueler.klasse_id.in_(bereich_klassen))
+        conditions.append(klasse_id_col.in_(bereich_klassen))
 
     if min_stufe is not None or nur_auffaellige:
         typen = [typ] if typ is not None else list(ZAEHLERSTAND_TYPEN)
@@ -75,8 +92,17 @@ async def list_students(
         matching_ids = select(SchuelerZaehlerstand.schueler_id).where(*zaehlerstand_conditions)
         conditions.append(Schueler.id.in_(matching_ids))
 
-    count_query = select(func.count()).select_from(Schueler)
-    query = select(Schueler)
+    def _mit_historie_join(stmt):
+        if historie_schuljahr_id is None:
+            return stmt
+        return stmt.join(
+            SchuelerKlasseHistorie,
+            (SchuelerKlasseHistorie.schueler_id == Schueler.id)
+            & (SchuelerKlasseHistorie.schuljahr_id == historie_schuljahr_id),
+        )
+
+    count_query = _mit_historie_join(select(func.count()).select_from(Schueler))
+    query = _mit_historie_join(select(Schueler))
     for condition in conditions:
         count_query = count_query.where(condition)
         query = query.where(condition)
@@ -87,7 +113,7 @@ async def list_students(
     if sort_by is None or sort_by == "nachname":
         query = query.order_by(Schueler.nachname, Schueler.vorname, Schueler.id)
     elif sort_by == "klasse":
-        query = query.outerjoin(Klasse, Klasse.id == Schueler.klasse_id).order_by(
+        query = query.outerjoin(Klasse, Klasse.id == klasse_id_col).order_by(
             richtung(Klasse.name), Schueler.nachname, Schueler.id
         )
     elif sort_by == "klassenbuch_anzahl":

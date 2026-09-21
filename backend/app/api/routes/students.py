@@ -116,6 +116,7 @@ async def get_students(
         sort_dir=sort_dir,
         limit=limit,
         offset=offset,
+        historie_schuljahr_id=schuljahr_id if ist_historie else None,
     )
     schueler_ids = [schueler.id for schueler in schueler_list]
     rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, effektiv_von, effektiv_bis)
