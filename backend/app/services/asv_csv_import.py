@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 import os
+import shutil
 from datetime import date, datetime, timezone
 
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.models.einstellung import Einstellung
 from app.models.klasse import Klasse
 from app.models.schueler import Schueler
 from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
+from app.models.schuljahr import Schuljahr
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,19 @@ def _parse_datum(value: str) -> date | None:
     return datetime.strptime(value, "%d.%m.%Y").date()
 
 
+def _archiviere_csv(quelle: str, archiv_verzeichnis: str, schuljahr_name: str) -> None:
+    """Kopiert die soeben verarbeitete ASV-CSV nach <archiv_verzeichnis>/<schuljahr_name>.csv
+    (ein Stand pro Schuljahr, bei jedem weiteren Import desselben Jahres ueberschrieben) -- siehe
+    docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md. schuljahr_name
+    enthaelt ein "/" (z.B. "2025/2026", siehe app/models/schuljahr.py) -- wird durch "-" ersetzt,
+    da ein woertliches "/" im Dateinamen auf Linux ein Unterverzeichnis erzeugen wuerde statt
+    einer einzelnen Datei. archiv_verzeichnis muss auf ein persistentes Volume zeigen
+    (ASV_CSV_ARCHIVE_DIR), nicht das fluechtige Live-Mount-Verzeichnis von asv_csv_path."""
+    os.makedirs(archiv_verzeichnis, exist_ok=True)
+    ziel_dateiname = f"{schuljahr_name.replace('/', '-')}.csv"
+    shutil.copyfile(quelle, os.path.join(archiv_verzeichnis, ziel_dateiname))
+
+
 async def import_schueler(db: AsyncSession) -> None:
     """ASV-BW-CSV -> schueler (Upsert nach externe_id), TECH-SPEC.md Abschnitt 1.3.
 
@@ -32,6 +47,12 @@ async def import_schueler(db: AsyncSession) -> None:
     Pflegt zusätzlich zu schueler.klasse_id einen schueler_klasse_historie-Snapshot für das
     aktuelle Schuljahr (einstellung.aktuelles_schuljahr_id) - siehe
     docs/superpowers/specs/2026-09-18-schuljahr-historisierung-design.md.
+
+    Archiviert bei jedem tatsächlich verarbeiteten Lauf (mtime-Check nicht übersprungen) die
+    rohe ASV-CSV zusätzlich nach <asv_csv_archive_dir>/<schuljahr.name mit "/" -> "-">.csv (ein
+    Stand pro Schuljahr, überschrieben bei jedem weiteren Import desselben Jahres), sofern
+    einstellung.aktuelles_schuljahr_id gesetzt ist - siehe
+    docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md.
     """
     mtime = datetime.fromtimestamp(os.path.getmtime(settings.asv_csv_path), tz=timezone.utc)
 
@@ -137,6 +158,11 @@ async def import_schueler(db: AsyncSession) -> None:
                 logger.warning("ASV-CSV: %d Zeile(n) wegen Fehlern übersprungen", uebersprungene_zeilen)
     except UnicodeDecodeError as exc:
         raise OSError(f"ASV-CSV: Datei {settings.asv_csv_path} ist nicht UTF-8-kodiert: {exc}") from exc
+
+    if einstellung.aktuelles_schuljahr_id is not None:
+        aktuelles_schuljahr = await db.get(Schuljahr, einstellung.aktuelles_schuljahr_id)
+        if aktuelles_schuljahr is not None:
+            _archiviere_csv(settings.asv_csv_path, settings.asv_csv_archive_dir, aktuelles_schuljahr.name)
 
     einstellung.asv_csv_zuletzt_importiert_mtime = mtime
     await db.commit()

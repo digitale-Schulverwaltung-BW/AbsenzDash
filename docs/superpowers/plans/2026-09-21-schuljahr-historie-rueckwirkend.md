@@ -618,7 +618,7 @@ git commit -m "fix: return 404 from GET /students/{id} when student has no histo
 - Neu: `Settings.asv_csv_archive_dir: str` (Pflichtfeld, analog `asv_csv_path`).
 - `import_schueler(db)` — Signatur unverändert. Kopiert bei jedem tatsächlich verarbeiteten Lauf (mtime-Check nicht übersprungen) zusätzlich `settings.asv_csv_path` nach `<asv_csv_archive_dir>/<schuljahr.name mit "/" -> "-">.csv`, sofern `einstellung.aktuelles_schuljahr_id` gesetzt ist (sonst wie beim Historie-Snapshot: übersprungen, siehe Abweichung 6).
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Füge in `backend/tests/test_asv_csv_import.py` nach dem `_set_csv_path`-Fixture (Zeile 1159-1161) ein zweites autouse-Fixture ein:
 
@@ -678,12 +678,12 @@ async def test_import_skips_archiving_when_no_aktuelles_schuljahr(db_session, tm
 
 Ergänze am Dateianfang die Imports `import os` (für `os.utime`) — bereits über `from pathlib import Path` hinaus nötig, `datetime` ist bereits importiert (Zeile 1).
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -k archiv -v`
 Expected: FAIL — `Settings`-Objekt hat noch kein `asv_csv_archive_dir`-Attribut (`AttributeError` beim `monkeypatch.setattr`, da `Settings` mit `extra="ignore"` zwar kein neues Attribut per `setattr` verhindert, `import_schueler` aber niemals danach liest — die Datei wird schlicht nie archiviert, `archiv_datei.exists()` ist `False`).
 
-- [ ] **Step 3: `Settings` erweitern**
+- [x] **Step 3: `Settings` erweitern**
 
 In `backend/app/core/config.py`, füge nach `asv_csv_path: str` (Zeile 15) ein:
 
@@ -698,7 +698,7 @@ In `backend/.env.example`, ergänze nach `ASV_CSV_PATH=...` (Zeile 11):
 ASV_CSV_ARCHIVE_DIR=/data/asv-csv-archiv
 ```
 
-- [ ] **Step 4: `import_schueler` erweitern**
+- [x] **Step 4: `import_schueler` erweitern**
 
 In `backend/app/services/asv_csv_import.py`, füge die Imports hinzu:
 
@@ -743,12 +743,12 @@ from app.models.schuljahr import Schuljahr
 
 Ergänze im Docstring von `import_schueler` (Zeile 28-34) einen Satz zur Archivierung.
 
-- [ ] **Step 5: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 5: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 6: `docker-compose.yml` — neues Volume**
+- [x] **Step 6: `docker-compose.yml` — neues Volume**
 
 In `backend/docker-compose.yml`, ergänze im `backend`-Service die `volumes`-Liste (Zeile 34-35):
 
@@ -768,12 +768,12 @@ volumes:
 
 Ergänze in der lokalen `backend/.env` (nicht versioniert, manuell) `ASV_CSV_ARCHIVE_DIR=/data/asv-csv-archiv`, passend zum neuen Mount-Ziel — analog zu `.env.example`.
 
-- [ ] **Step 7: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 7: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS. (Docker-Compose-Änderung selbst wird nicht gegen den Dev-Stack ausgerollt/getestet, siehe Global Constraints — reines Konfigurations-Review reicht, `docker compose config` kann optional zur Syntax-Prüfung laufen: `cd backend && docker compose config --quiet`.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/app/core/config.py backend/app/services/asv_csv_import.py \

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     webuntis_username: str
     webuntis_password: str
     asv_csv_path: str
+    asv_csv_archive_dir: str
     asv_csv_column_externe_id: str = "idnumber"
     asv_csv_column_vorname: str = "firstname"
     asv_csv_column_nachname: str = "lastname"

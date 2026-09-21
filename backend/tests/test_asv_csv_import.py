@@ -1,4 +1,5 @@
-from datetime import date
+import os
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,11 @@ def _write_csv(tmp_path: Path, rows: list[str]) -> Path:
 @pytest.fixture(autouse=True)
 def _set_csv_path(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "asv_csv_path", str(tmp_path / "schueler.csv"))
+
+
+@pytest.fixture(autouse=True)
+def _set_csv_archive_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "asv_csv_archive_dir", str(tmp_path / "archiv"))
 
 
 async def _seed_aktuelles_schuljahr(db_session, schuljahr_id: int = 30) -> Schuljahr:
@@ -245,3 +251,48 @@ async def test_import_skips_reprocessing_when_file_unchanged(db_session, tmp_pat
 
     result = await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-5"))
     assert result.scalar_one().vorname == "ManuellGeaendert"
+
+
+@pytest.mark.asyncio
+async def test_import_archives_csv_under_schuljahr_name(db_session, tmp_path):
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    _write_csv(
+        tmp_path,
+        ['"x";"x";"ext-archiv-1";"Name";"Vor";"";"";"01.01.1990";"";"17.03.2020";"ja"'],
+    )
+
+    await import_schueler(db_session)
+
+    archiv_datei = Path(settings.asv_csv_archive_dir) / "2025-2026.csv"
+    assert archiv_datei.exists()
+    assert archiv_datei.read_text(encoding="utf-8") == Path(settings.asv_csv_path).read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_import_overwrites_archive_on_reimport_of_same_schuljahr(db_session, tmp_path):
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    _write_csv(tmp_path, ['"x";"x";"ext-archiv-2";"Alt";"Vor";"";"";"01.01.1990";"";"17.03.2020";"ja"'])
+    await import_schueler(db_session)
+
+    # neue mtime erzwingen, damit der zweite Lauf nicht per mtime-Check uebersprungen wird
+    neue_zeit = datetime.now().timestamp() + 5
+    _write_csv(tmp_path, ['"x";"x";"ext-archiv-2";"Neu";"Vor";"";"";"01.01.1990";"";"17.03.2020";"ja"'])
+    os.utime(settings.asv_csv_path, (neue_zeit, neue_zeit))
+
+    await import_schueler(db_session)
+
+    archiv_datei = Path(settings.asv_csv_archive_dir) / "2025-2026.csv"
+    inhalt = archiv_datei.read_text(encoding="utf-8")
+    assert '"Neu"' in inhalt
+    assert '"Alt"' not in inhalt
+    # genau eine Datei pro Schuljahr, kein "eine Datei pro Import"
+    assert len(list(Path(settings.asv_csv_archive_dir).iterdir())) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_skips_archiving_when_no_aktuelles_schuljahr(db_session, tmp_path):
+    _write_csv(tmp_path, ['"x";"x";"ext-archiv-3";"Name";"Vor";"";"";"01.01.1990";"";"17.03.2020";"ja"'])
+
+    await import_schueler(db_session)
+
+    assert not Path(settings.asv_csv_archive_dir).exists() or list(Path(settings.asv_csv_archive_dir).iterdir()) == []
