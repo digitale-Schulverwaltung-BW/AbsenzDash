@@ -186,6 +186,24 @@ async def load_historische_klasse_map(
     return result
 
 
+async def student_hat_historie_eintrag(db: AsyncSession, schueler_id: int, schuljahr_id: int) -> bool:
+    """True, wenn fuer diesen Schueler ein schueler_klasse_historie-Snapshot fuer schuljahr_id
+    existiert -- AUCH wenn dessen klasse_id NULL ist (das heisst "eingeschrieben, Klasse zum
+    Importzeitpunkt unbekannt", nicht "nicht eingeschrieben"). False heisst "im gewaehlten
+    Schuljahr nicht eingeschrieben" -- GET /students/{id} liefert dann 404 statt eines
+    Klassen-Fallbacks, siehe
+    docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md. Bewusst separat
+    von load_historische_klasse_map, die "keine Zeile" und "Zeile mit klasse_id=NULL" fuer die
+    Klassen-ANZEIGE absichtlich gleichbehandelt (beides "unbekannt")."""
+    result = await db.execute(
+        select(SchuelerKlasseHistorie.id).where(
+            SchuelerKlasseHistorie.schueler_id == schueler_id,
+            SchuelerKlasseHistorie.schuljahr_id == schuljahr_id,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def load_regel_typ_map(db: AsyncSession, regel_ids: list[int]) -> dict[int, str]:
     """Pro regel_id der zugehoerige typ ('fehlzeiten'/'klassenbuch'), fuer die Anzeige
     im 'Benachrichtigt'-Badge (SPECS.md Abschnitt 7)."""

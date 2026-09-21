@@ -775,6 +775,7 @@ async def test_get_student_detail_history_mode_filters_four_sections_not_massnah
     nutzer = Nutzer(wp_user_id="u2", email="c@d.de", name="C", rolle="klassenlehrkraft")
     db_session.add_all([schueler, typ, nutzer])
     await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id))
     db_session.add_all(
         [
             Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
@@ -868,10 +869,11 @@ async def test_get_student_detail_history_mode_shows_klasse_from_historie(db_ses
 
 
 @pytest.mark.asyncio
-async def test_get_student_detail_history_mode_klasse_is_none_without_historie_snapshot(db_session):
-    """Schuljahre vor Einfuehrung dieses Features haben keine schueler_klasse_historie-Zeilen -
-    die API liefert dann explizit klasse=None statt eines Fallbacks auf die aktuelle Klasse
-    (Nutzer-Entscheidung, siehe Design-Dok 'Nicht-Ziele')."""
+async def test_get_student_detail_history_mode_returns_404_without_historie_snapshot(db_session):
+    """Schuljahre vor Einfuehrung dieses Features (oder ohne rueckwirkenden Import) haben keine
+    schueler_klasse_historie-Zeilen -- die API liefert dann 404 ('nicht eingeschrieben') statt
+    stillschweigend klasse=None mit Status 200 (bewusste Verhaltensaenderung gegenueber Plan 16,
+    siehe docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md Abschnitt 1)."""
     schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
     schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
     db_session.add_all([schuljahr_alt, schuljahr_neu])
@@ -892,5 +894,4 @@ async def test_get_student_detail_history_mode_klasse_is_none_without_historie_s
             f"/students/{schueler.id}?schuljahr_id={schuljahr_alt.id}", headers=HEADERS_KLASSENLEHRKRAFT
         )
 
-    assert response.status_code == 200
-    assert response.json()["klasse"] is None
+    assert response.status_code == 404

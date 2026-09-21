@@ -722,3 +722,38 @@ async def test_load_historische_klasse_map_none_when_historie_klasse_id_is_null(
     result = await student_query.load_historische_klasse_map(db_session, [schueler.id], schuljahr.id)
 
     assert result[schueler.id] is None
+
+
+@pytest.mark.asyncio
+async def test_student_hat_historie_eintrag_true_when_row_exists_even_with_null_klasse(db_session, schuljahr):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=None))
+    await db_session.commit()
+
+    assert await student_query.student_hat_historie_eintrag(db_session, schueler.id, schuljahr.id) is True
+
+
+@pytest.mark.asyncio
+async def test_student_hat_historie_eintrag_false_when_no_row(db_session, schuljahr):
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.commit()
+
+    assert await student_query.student_hat_historie_eintrag(db_session, schueler.id, schuljahr.id) is False
+
+
+@pytest.mark.asyncio
+async def test_student_hat_historie_eintrag_false_for_other_schuljahr(db_session):
+    schuljahr_a = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_b = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_a, schuljahr_b])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_a.id, klasse_id=None))
+    await db_session.commit()
+
+    assert await student_query.student_hat_historie_eintrag(db_session, schueler.id, schuljahr_b.id) is False

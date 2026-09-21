@@ -440,7 +440,7 @@ git commit -m "fix: scope GET /students roster to schueler_klasse_historie membe
 **Interfaces:**
 - Neu: `student_query.student_hat_historie_eintrag(db, schueler_id: int, schuljahr_id: int) -> bool` — True nur, wenn eine `schueler_klasse_historie`-Zeile existiert (unabhängig vom `klasse_id`-Wert, auch `klasse_id=NULL` zählt als "eingeschrieben, Klasse unbekannt").
 
-- [ ] **Step 1: Fehlschlagenden Test in `test_student_query.py` schreiben**
+- [x] **Step 1: Fehlschlagenden Test in `test_student_query.py` schreiben**
 
 Füge nach `test_load_historische_klasse_map_none_when_historie_klasse_id_is_null` (letzter Test der Datei, Zeile 600) an:
 
@@ -480,12 +480,12 @@ async def test_student_hat_historie_eintrag_false_for_other_schuljahr(db_session
     assert await student_query.student_hat_historie_eintrag(db_session, schueler.id, schuljahr_b.id) is False
 ```
 
-- [ ] **Step 2: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_student_query.py -k student_hat_historie_eintrag -v`
 Expected: FAIL — `AttributeError: module 'app.services.student_query' has no attribute 'student_hat_historie_eintrag'`.
 
-- [ ] **Step 3: Funktion implementieren**
+- [x] **Step 3: Funktion implementieren**
 
 In `backend/app/services/student_query.py`, füge nach `load_historische_klasse_map` (nach Zeile 160) ein:
 
@@ -508,12 +508,12 @@ async def student_hat_historie_eintrag(db: AsyncSession, schueler_id: int, schul
     return result.scalar_one_or_none() is not None
 ```
 
-- [ ] **Step 4: Test ausführen, Erfolg verifizieren**
+- [x] **Step 4: Test ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_student_query.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Route-Tests in `test_api_students.py` anpassen**
+- [x] **Step 5: Route-Tests in `test_api_students.py` anpassen**
 
 **5a.** Ändere `test_get_student_detail_history_mode_filters_four_sections_not_massnahmen` (Zeile 675-708) — ergänze nach dem `db_session.add_all([schueler, typ, nutzer])`/`await db_session.flush()`-Block (nach Zeile 688) eine `SchuelerKlasseHistorie`-Zeile:
 
@@ -555,12 +555,12 @@ async def test_get_student_detail_history_mode_returns_404_without_historie_snap
     assert response.status_code == 404
 ```
 
-- [ ] **Step 6: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 6: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py -k "history_mode_returns_404 or history_mode_filters_four_sections" -v`
 Expected: FAIL — die Route liefert für `test_get_student_detail_history_mode_returns_404_without_historie_snapshot` noch 200 (kein Existenz-Check); `test_get_student_detail_history_mode_filters_four_sections_not_massnahmen` sollte an dieser Stelle bereits wieder PASS sein (reine Testdaten-Ergänzung, kein Route-Fix nötig), da noch kein 404-Check existiert, der ihn brechen könnte.
 
-- [ ] **Step 7: Route fixen**
+- [x] **Step 7: Route fixen**
 
 In `backend/app/api/routes/students.py`, ändere in `get_student_detail` (Zeilen 190-201):
 
@@ -585,17 +585,17 @@ async def get_student_detail(
 
 (Rest der Funktion unverändert — der bestehende `if ist_historie: klasse_map_historie = ...`-Block danach bleibt exakt wie er ist, da ab hier garantiert eine Historie-Zeile existiert.)
 
-- [ ] **Step 8: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 8: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_students.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 9: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 9: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add backend/app/services/student_query.py backend/app/api/routes/students.py \
