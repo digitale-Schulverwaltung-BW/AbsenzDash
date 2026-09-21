@@ -296,3 +296,36 @@ async def test_import_skips_archiving_when_no_aktuelles_schuljahr(db_session, tm
     await import_schueler(db_session)
 
     assert not Path(settings.asv_csv_archive_dir).exists() or list(Path(settings.asv_csv_archive_dir).iterdir()) == []
+
+
+def test_lese_asv_csv_zeilen_returns_parsed_rows(tmp_path):
+    from app.services.asv_csv_import import lese_asv_csv_zeilen
+
+    path = _write_csv(tmp_path, ['"a";"a";"ext-1";"Nachname";"Vorname";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"'])
+
+    rows = lese_asv_csv_zeilen(str(path))
+
+    assert len(rows) == 1
+    assert rows[0]["idnumber"] == "ext-1"
+
+
+def test_lese_asv_csv_zeilen_raises_value_error_on_missing_header_column(tmp_path):
+    from app.services.asv_csv_import import lese_asv_csv_zeilen
+
+    header_ohne_idnumber = "login;shortname;lastname;firstname;email;Klasse;birthday;Austrittsdatum;Eintrittsdatum;volljaehrig"
+    path = tmp_path / "schueler.csv"
+    path.write_text(header_ohne_idnumber + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        lese_asv_csv_zeilen(str(path))
+
+
+def test_lese_asv_csv_zeilen_raises_os_error_on_invalid_encoding(tmp_path):
+    from app.services.asv_csv_import import lese_asv_csv_zeilen
+
+    path = tmp_path / "schueler.csv"
+    zeilen = [HEADER.encode("utf-8"), b'"x";"x";"ext-1";"M\xfcller";"Vorname";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"']
+    path.write_bytes(b"\n".join(zeilen) + b"\n")
+
+    with pytest.raises(OSError):
+        lese_asv_csv_zeilen(str(path))

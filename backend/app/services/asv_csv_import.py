@@ -39,6 +39,36 @@ def _archiviere_csv(quelle: str, archiv_verzeichnis: str, schuljahr_name: str) -
     shutil.copyfile(quelle, os.path.join(archiv_verzeichnis, ziel_dateiname))
 
 
+def _erwartete_spalten() -> list[str]:
+    return [
+        settings.asv_csv_column_externe_id,
+        settings.asv_csv_column_vorname,
+        settings.asv_csv_column_nachname,
+        settings.asv_csv_column_klasse,
+        settings.asv_csv_column_eintrittsdatum,
+        settings.asv_csv_column_austrittsdatum,
+    ]
+
+
+def lese_asv_csv_zeilen(pfad: str) -> list[dict[str, str]]:
+    """Oeffnet+parst eine ASV-CSV-Datei (Spalten-Validierung, UTF-8, Delimiter ';') und liefert
+    die Rohzeilen als Liste von dicts (Spaltenname -> Wert), OHNE sie zu verarbeiten -- gemeinsame
+    Grundlage fuer den laufenden Live-Import (import_schueler) und den rueckwirkenden
+    Admin-Import (schuljahr_historie_import_service.py), siehe
+    docs/superpowers/specs/2026-09-21-schuljahr-historie-rueckwirkend-design.md. Wirft ValueError
+    bei fehlenden Header-Spalten, OSError bei ungueltiger Kodierung -- identische
+    Fehlerbehandlung wie zuvor inline in import_schueler."""
+    try:
+        with open(pfad, encoding="utf-8", newline="") as csv_file:
+            reader = csv.DictReader(csv_file, delimiter=";")
+            fehlende_spalten = [s for s in _erwartete_spalten() if s not in (reader.fieldnames or [])]
+            if fehlende_spalten:
+                raise ValueError(f"ASV-CSV: fehlende Spalten im Header: {fehlende_spalten}")
+            return list(reader)
+    except UnicodeDecodeError as exc:
+        raise OSError(f"ASV-CSV: Datei {pfad} ist nicht UTF-8-kodiert: {exc}") from exc
+
+
 async def import_schueler(db: AsyncSession) -> None:
     """ASV-BW-CSV -> schueler (Upsert nach externe_id), TECH-SPEC.md Abschnitt 1.3.
 
@@ -88,76 +118,59 @@ async def import_schueler(db: AsyncSession) -> None:
 
     heute = datetime.now(timezone.utc).date()
 
-    erwartete_spalten = [
-        settings.asv_csv_column_externe_id,
-        settings.asv_csv_column_vorname,
-        settings.asv_csv_column_nachname,
-        settings.asv_csv_column_klasse,
-        settings.asv_csv_column_eintrittsdatum,
-        settings.asv_csv_column_austrittsdatum,
-    ]
+    rows = lese_asv_csv_zeilen(settings.asv_csv_path)
 
-    try:
-        with open(settings.asv_csv_path, encoding="utf-8", newline="") as csv_file:
-            reader = csv.DictReader(csv_file, delimiter=";")
+    uebersprungene_zeilen = 0
+    for zeilen_nr, row in enumerate(rows, start=2):
+        try:
+            externe_id = row[settings.asv_csv_column_externe_id]
+            klasse_name = row[settings.asv_csv_column_klasse]
+            eintrittsdatum = _parse_datum(row[settings.asv_csv_column_eintrittsdatum])
+            austrittsdatum = _parse_datum(row[settings.asv_csv_column_austrittsdatum])
 
-            fehlende_spalten = [spalte for spalte in erwartete_spalten if spalte not in (reader.fieldnames or [])]
-            if fehlende_spalten:
-                raise ValueError(f"ASV-CSV: fehlende Spalten im Header: {fehlende_spalten}")
+            klasse_id = klasse_id_by_name.get(klasse_name)
+            if klasse_id is None:
+                logger.warning("ASV-CSV: unbekannte Klasse %r für externe_id=%s", klasse_name, externe_id)
 
-            uebersprungene_zeilen = 0
-            for zeilen_nr, row in enumerate(reader, start=2):
-                try:
-                    externe_id = row[settings.asv_csv_column_externe_id]
-                    klasse_name = row[settings.asv_csv_column_klasse]
-                    eintrittsdatum = _parse_datum(row[settings.asv_csv_column_eintrittsdatum])
-                    austrittsdatum = _parse_datum(row[settings.asv_csv_column_austrittsdatum])
+            schueler = by_externe_id.get(externe_id)
+            if schueler is None:
+                schueler = Schueler(externe_id=externe_id)
+                db.add(schueler)
+                by_externe_id[externe_id] = schueler
 
-                    klasse_id = klasse_id_by_name.get(klasse_name)
-                    if klasse_id is None:
-                        logger.warning("ASV-CSV: unbekannte Klasse %r für externe_id=%s", klasse_name, externe_id)
+            schueler.vorname = row[settings.asv_csv_column_vorname]
+            schueler.nachname = row[settings.asv_csv_column_nachname]
+            schueler.klasse_id = klasse_id
+            schueler.aktiv = bool(
+                eintrittsdatum is not None
+                and eintrittsdatum <= heute
+                and (austrittsdatum is None or austrittsdatum >= heute)
+            )
+            schueler.klassenzuordnung_aktualisiert_am = datetime.now(timezone.utc)
 
-                    schueler = by_externe_id.get(externe_id)
-                    if schueler is None:
-                        schueler = Schueler(externe_id=externe_id)
-                        db.add(schueler)
-                        by_externe_id[externe_id] = schueler
+            if einstellung.aktuelles_schuljahr_id is not None and schueler.id is None:
+                # neue schueler.id wird fuer schueler_klasse_historie benoetigt
+                await db.flush()
 
-                    schueler.vorname = row[settings.asv_csv_column_vorname]
-                    schueler.nachname = row[settings.asv_csv_column_nachname]
-                    schueler.klasse_id = klasse_id
-                    schueler.aktiv = bool(
-                        eintrittsdatum is not None
-                        and eintrittsdatum <= heute
-                        and (austrittsdatum is None or austrittsdatum >= heute)
+            if einstellung.aktuelles_schuljahr_id is not None:
+                historie = historie_by_schueler_id.get(schueler.id)
+                if historie is None:
+                    historie = SchuelerKlasseHistorie(
+                        schueler_id=schueler.id,
+                        schuljahr_id=einstellung.aktuelles_schuljahr_id,
+                        klasse_id=klasse_id,
                     )
-                    schueler.klassenzuordnung_aktualisiert_am = datetime.now(timezone.utc)
+                    db.add(historie)
+                    historie_by_schueler_id[schueler.id] = historie
+                else:
+                    historie.klasse_id = klasse_id
+        except (KeyError, ValueError) as exc:
+            uebersprungene_zeilen += 1
+            logger.warning("ASV-CSV: Zeile %d übersprungen (%s)", zeilen_nr, exc)
+            continue
 
-                    if einstellung.aktuelles_schuljahr_id is not None and schueler.id is None:
-                        # neue schueler.id wird fuer schueler_klasse_historie benoetigt
-                        await db.flush()
-
-                    if einstellung.aktuelles_schuljahr_id is not None:
-                        historie = historie_by_schueler_id.get(schueler.id)
-                        if historie is None:
-                            historie = SchuelerKlasseHistorie(
-                                schueler_id=schueler.id,
-                                schuljahr_id=einstellung.aktuelles_schuljahr_id,
-                                klasse_id=klasse_id,
-                            )
-                            db.add(historie)
-                            historie_by_schueler_id[schueler.id] = historie
-                        else:
-                            historie.klasse_id = klasse_id
-                except (KeyError, ValueError) as exc:
-                    uebersprungene_zeilen += 1
-                    logger.warning("ASV-CSV: Zeile %d übersprungen (%s)", zeilen_nr, exc)
-                    continue
-
-            if uebersprungene_zeilen:
-                logger.warning("ASV-CSV: %d Zeile(n) wegen Fehlern übersprungen", uebersprungene_zeilen)
-    except UnicodeDecodeError as exc:
-        raise OSError(f"ASV-CSV: Datei {settings.asv_csv_path} ist nicht UTF-8-kodiert: {exc}") from exc
+    if uebersprungene_zeilen:
+        logger.warning("ASV-CSV: %d Zeile(n) wegen Fehlern übersprungen", uebersprungene_zeilen)
 
     if einstellung.aktuelles_schuljahr_id is not None:
         aktuelles_schuljahr = await db.get(Schuljahr, einstellung.aktuelles_schuljahr_id)
