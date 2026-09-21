@@ -799,7 +799,7 @@ git commit -m "feat: archive the raw ASV-CSV per schuljahr on every processed li
 - Neu: `schuljahr_historie_import_service.preview_import(db, schuljahr_id: int, file: UploadFile) -> HistorieImportPreviewOut` — schreibt nichts (außer dem per `sync_klassen` ausgelösten Klassen-Nachzug).
 - Neu: `POST /admin/schuljahr-historie-import/preview` (multipart: `schuljahr_id`, `file`) → `HistorieImportPreviewOut`.
 
-- [ ] **Step 1: Fehlschlagenden Test für `lese_asv_csv_zeilen` schreiben**
+- [x] **Step 1: Fehlschlagenden Test für `lese_asv_csv_zeilen` schreiben**
 
 Füge in `backend/tests/test_asv_csv_import.py` an:
 
@@ -837,12 +837,12 @@ def test_lese_asv_csv_zeilen_raises_os_error_on_invalid_encoding(tmp_path):
         lese_asv_csv_zeilen(str(path))
 ```
 
-- [ ] **Step 2: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -k lese_asv_csv_zeilen -v`
 Expected: FAIL — `ImportError: cannot import name 'lese_asv_csv_zeilen'`.
 
-- [ ] **Step 3: `lese_asv_csv_zeilen` extrahieren, `import_schueler` darauf umstellen**
+- [x] **Step 3: `lese_asv_csv_zeilen` extrahieren, `import_schueler` darauf umstellen**
 
 In `backend/app/services/asv_csv_import.py`, füge nach `_parse_datum`/`_archiviere_csv` (nach Task 3) eine neue Funktion ein:
 
@@ -894,19 +894,19 @@ def lese_asv_csv_zeilen(pfad: str) -> list[dict[str, str]]:
 
 **Wichtig:** der bestehende `try/except UnicodeDecodeError`-Block außen um den `with open(...)`-Block entfällt komplett (die Umwandlung passiert jetzt innerhalb von `lese_asv_csv_zeilen`); `ValueError`/`OSError` aus `lese_asv_csv_zeilen` propagieren unverändert nach oben (identisch zum bisherigen Verhalten, keine neue `except`-Klausel in `import_schueler` nötig). Die restliche Zeilen-Verarbeitungslogik (Try/Except pro Zeile, Historie-Snapshot, `uebersprungene_zeilen`-Zähler und -Logging) bleibt unverändert, nur um eine Einrückungsebene reduziert (kein `with`-Block mehr).
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_asv_csv_import.py -v`
 Expected: alle Tests PASS (insbesondere bleiben `test_import_raises_value_error_on_missing_header_column`, `test_import_raises_os_error_on_invalid_encoding`, `test_import_skips_broken_row_but_keeps_valid_rows` unverändert grün — reiner Refactor, kein Verhaltensunterschied für `import_schueler`).
 
-- [ ] **Step 5: Commit (Zwischenstand, reiner Refactor)**
+- [x] **Step 5: Commit (Zwischenstand, reiner Refactor)**
 
 ```bash
 git add backend/app/services/asv_csv_import.py backend/tests/test_asv_csv_import.py
 git commit -m "refactor: extract lese_asv_csv_zeilen for reuse by the historical import"
 ```
 
-- [ ] **Step 6: Schemas ergänzen**
+- [x] **Step 6: Schemas ergänzen**
 
 In `backend/app/schemas/admin.py`, füge am Ende der Datei an:
 
@@ -925,7 +925,7 @@ class HistorieImportResultOut(BaseModel):
     uebersprungene_zeilen: int
 ```
 
-- [ ] **Step 7: Fehlschlagenden Service-Test schreiben**
+- [x] **Step 7: Fehlschlagenden Service-Test schreiben**
 
 Erstelle `backend/tests/test_schuljahr_historie_import_service.py`:
 
@@ -1047,12 +1047,12 @@ async def test_preview_import_counts_skipped_rows_with_broken_dates(db_session):
     assert preview.uebersprungene_zeilen == 1
 ```
 
-- [ ] **Step 8: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 8: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_schuljahr_historie_import_service.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.schuljahr_historie_import_service'`.
 
-- [ ] **Step 9: Service implementieren (Vorschau-Teil)**
+- [x] **Step 9: Service implementieren (Vorschau-Teil)**
 
 Erstelle `backend/app/services/schuljahr_historie_import_service.py`:
 
@@ -1181,12 +1181,12 @@ async def preview_import(db: AsyncSession, schuljahr_id: int, file: UploadFile) 
     )
 ```
 
-- [ ] **Step 10: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 10: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_schuljahr_historie_import_service.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 11: Fehlschlagenden Route-Test schreiben**
+- [x] **Step 11: Fehlschlagenden Route-Test schreiben**
 
 Erstelle `backend/tests/test_api_admin_schuljahr_historie_import.py`:
 
@@ -1284,12 +1284,12 @@ async def test_post_preview_returns_404_for_unknown_schuljahr(db_session):
     assert response.status_code == 404
 ```
 
-- [ ] **Step 12: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 12: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_admin_schuljahr_historie_import.py -v`
 Expected: FAIL — Route existiert noch nicht (404 "Not Found" statt der erwarteten Status-Codes, bzw. sogar der 403-Test schlägt fehl, da FastAPI eine unbekannte Route generisch mit 404 statt 403 beantwortet).
 
-- [ ] **Step 13: Route verdrahten**
+- [x] **Step 13: Route verdrahten**
 
 In `backend/app/api/routes/admin.py`, ergänze die Imports:
 
@@ -1327,17 +1327,17 @@ async def post_schuljahr_historie_import_preview(
 
 (Die `schulleitung`-Pflicht kommt bereits über `dependencies=[Depends(require_schulleitung)]` auf dem Router, Zeile 45 — kein zusätzlicher Parameter nötig, da diese Route `nutzer.id` nicht braucht, siehe `get_bereiche`/`get_threshold_rules` als Vorbild für reine GET/Lese-Endpunkte ohne `nutzer`-Parameter trotz Schreibschutz durch den Router.)
 
-- [ ] **Step 14: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 14: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_admin_schuljahr_historie_import.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 15: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 15: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 16: Commit**
+- [x] **Step 16: Commit**
 
 ```bash
 git add backend/app/schemas/admin.py backend/app/api/routes/admin.py \

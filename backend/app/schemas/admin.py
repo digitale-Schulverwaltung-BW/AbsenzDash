@@ -133,3 +133,17 @@ class BereichOut(BaseModel):
     klasse_namen: list[str]
     ausgeblendet: bool
     leiter: list[BereichLeiterOut]
+
+
+class HistorieImportPreviewOut(BaseModel):
+    zeilen_gesamt: int
+    schueler_bekannt: int
+    schueler_neu: int
+    unbekannte_klassen: list[str]
+    uebersprungene_zeilen: int
+
+
+class HistorieImportResultOut(BaseModel):
+    zeilen_verarbeitet: int
+    neu_angelegte_schueler: int
+    uebersprungene_zeilen: int

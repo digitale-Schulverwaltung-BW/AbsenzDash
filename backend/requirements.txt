@@ -13,3 +13,4 @@ weasyprint>=62,<63
 # 'super' object has no attribute 'transform'); WeasyPrint itself doesn't constrain this.
 pydyf==0.11.0
 jinja2>=3.1,<4.0
+python-multipart>=0.0.9,<1.0

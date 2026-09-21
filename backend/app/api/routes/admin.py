@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_schulleitung
@@ -19,6 +19,7 @@ from app.schemas.admin import (
     BereichOut,
     ExcuseStatusIn,
     ExcuseStatusOut,
+    HistorieImportPreviewOut,
     MeasureTypeIn,
     MeasureTypeOut,
     SyncNowOut,
@@ -34,6 +35,7 @@ from app.services import (
     excuse_status_service,
     mailer,
     measure_type_service,
+    schuljahr_historie_import_service,
     sync_settings_service,
     threshold_rule_service,
     webuntis_teacher_service,
@@ -212,3 +214,12 @@ async def post_test_email(
     )
     await db.commit()
     return TestEmailOut(status="ok", empfaenger=empfaenger)
+
+
+@router.post("/schuljahr-historie-import/preview")
+async def post_schuljahr_historie_import_preview(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    schuljahr_id: Annotated[int, Form()],
+    file: Annotated[UploadFile, File()],
+) -> HistorieImportPreviewOut:
+    return await schuljahr_historie_import_service.preview_import(db, schuljahr_id, file)
