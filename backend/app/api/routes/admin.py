@@ -20,6 +20,7 @@ from app.schemas.admin import (
     ExcuseStatusIn,
     ExcuseStatusOut,
     HistorieImportPreviewOut,
+    HistorieImportResultOut,
     MeasureTypeIn,
     MeasureTypeOut,
     SyncNowOut,
@@ -223,3 +224,13 @@ async def post_schuljahr_historie_import_preview(
     file: Annotated[UploadFile, File()],
 ) -> HistorieImportPreviewOut:
     return await schuljahr_historie_import_service.preview_import(db, schuljahr_id, file)
+
+
+@router.post("/schuljahr-historie-import")
+async def post_schuljahr_historie_import(
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    schuljahr_id: Annotated[int, Form()],
+    file: Annotated[UploadFile, File()],
+) -> HistorieImportResultOut:
+    return await schuljahr_historie_import_service.commit_import(db, schuljahr_id, file, nutzer.id)

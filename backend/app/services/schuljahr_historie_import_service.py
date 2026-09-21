@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
+from app.models.audit_log import AuditLog
 from app.models.klasse import Klasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schuljahr import Schuljahr
-from app.schemas.admin import HistorieImportPreviewOut
+from app.schemas.admin import HistorieImportPreviewOut, HistorieImportResultOut
 from app.services.asv_csv_import import _parse_datum, lese_asv_csv_zeilen
 from app.services.webuntis_klassen_sync import sync_klassen
 
@@ -118,5 +120,80 @@ async def preview_import(db: AsyncSession, schuljahr_id: int, file: UploadFile) 
         schueler_bekannt=len(externe_ids & bekannte_externe_ids),
         schueler_neu=len(externe_ids - bekannte_externe_ids),
         unbekannte_klassen=sorted(fehlende_namen),
+        uebersprungene_zeilen=uebersprungen,
+    )
+
+
+async def commit_import(
+    db: AsyncSession, schuljahr_id: int, file: UploadFile, admin_nutzer_id: int
+) -> HistorieImportResultOut:
+    """Schreibt schueler_klasse_historie fuer schuljahr_id (Upsert je schueler_id) -- ruehrt
+    schueler.klasse_id/aktiv/vorname/nachname fuer BESTEHENDE Schueler nicht an (das sind
+    "aktuelle Wahrheit", siehe Design-Dok Nicht-Ziele). Fuer eine komplett unbekannte externe_id
+    wird ein minimaler Schueler-Stammsatz angelegt (nur externe_id+Name; klasse_id/aktiv bleiben
+    Spalten-Default, da fuer einen moeglicherweise laengst ausgeschiedenen Schueler nicht sinnvoll
+    befuellbar). Idempotent: ein erneuter Import fuers selbe Schuljahr aktualisiert bestehende
+    schueler_klasse_historie-Zeilen statt sie zu duplizieren (Update-Fall, z.B. eine spaeter
+    aufgetauchte vollstaendigere Archiv-CSV)."""
+    await _schuljahr_oder_404(db, schuljahr_id)
+    geparste_zeilen, uebersprungen = await _lese_und_parse_upload(file)
+
+    klasse_namen = {z["klasse_name"] for z in geparste_zeilen if z["klasse_name"]}
+    klasse_id_by_name = await _klasse_id_by_name(db, schuljahr_id)
+    if klasse_namen - set(klasse_id_by_name.keys()):
+        await _klassen_von_webuntis_nachziehen(db, schuljahr_id)
+        klasse_id_by_name = await _klasse_id_by_name(db, schuljahr_id)
+
+    externe_ids = {z["externe_id"] for z in geparste_zeilen}
+    existing_schueler = (
+        await db.execute(select(Schueler).where(Schueler.externe_id.in_(externe_ids)))
+    ).scalars().all()
+    by_externe_id = {s.externe_id: s for s in existing_schueler}
+
+    existing_historie = (
+        await db.execute(select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schuljahr_id == schuljahr_id))
+    ).scalars().all()
+    historie_by_schueler_id = {h.schueler_id: h for h in existing_historie}
+
+    neu_angelegte_schueler = 0
+    zeilen_verarbeitet = 0
+    for zeile in geparste_zeilen:
+        klasse_id = klasse_id_by_name.get(zeile["klasse_name"])
+        schueler = by_externe_id.get(zeile["externe_id"])
+        if schueler is None:
+            schueler = Schueler(externe_id=zeile["externe_id"], vorname=zeile["vorname"], nachname=zeile["nachname"])
+            db.add(schueler)
+            await db.flush()
+            by_externe_id[zeile["externe_id"]] = schueler
+            neu_angelegte_schueler += 1
+
+        historie = historie_by_schueler_id.get(schueler.id)
+        if historie is None:
+            historie = SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_id, klasse_id=klasse_id)
+            db.add(historie)
+            historie_by_schueler_id[schueler.id] = historie
+        else:
+            historie.klasse_id = klasse_id
+        zeilen_verarbeitet += 1
+
+    db.add(
+        AuditLog(
+            user_id=admin_nutzer_id,
+            aktion="admin_schuljahr_historie_import",
+            resource_typ="schuljahr",
+            resource_id=str(schuljahr_id),
+            details={
+                "schuljahr_id": schuljahr_id,
+                "zeilen_gesamt": zeilen_verarbeitet,
+                "neu_angelegte_schueler": neu_angelegte_schueler,
+                "uebersprungene_zeilen": uebersprungen,
+            },
+        )
+    )
+    await db.commit()
+
+    return HistorieImportResultOut(
+        zeilen_verarbeitet=zeilen_verarbeitet,
+        neu_angelegte_schueler=neu_angelegte_schueler,
         uebersprungene_zeilen=uebersprungen,
     )

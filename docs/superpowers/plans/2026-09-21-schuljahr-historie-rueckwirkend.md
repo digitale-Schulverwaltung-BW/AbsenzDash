@@ -1360,7 +1360,7 @@ git commit -m "feat: add preview endpoint for retroactive schuljahr historie imp
 - Neu: `schuljahr_historie_import_service.commit_import(db, schuljahr_id: int, file: UploadFile, admin_nutzer_id: int) -> HistorieImportResultOut` — schreibt `schueler_klasse_historie` (Upsert je `schueler_id`), legt für unbekannte `externe_id` einen minimalen `Schueler` an, schreibt einen `AuditLog`-Eintrag (`aktion="admin_schuljahr_historie_import"`).
 - Neu: `POST /admin/schuljahr-historie-import` (multipart: `schuljahr_id`, `file`) → `HistorieImportResultOut`.
 
-- [ ] **Step 1: Fehlschlagende Service-Tests schreiben**
+- [x] **Step 1: Fehlschlagende Service-Tests schreiben**
 
 Füge in `backend/tests/test_schuljahr_historie_import_service.py` folgende Imports/Tests hinzu:
 
@@ -1465,12 +1465,12 @@ async def test_commit_import_writes_audit_log_with_schuljahr_and_counts(db_sessi
     assert audit.details["neu_angelegte_schueler"] == 1
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_schuljahr_historie_import_service.py -k commit_import -v`
 Expected: FAIL — `AttributeError: module ... has no attribute 'commit_import'`.
 
-- [ ] **Step 3: `commit_import` implementieren**
+- [x] **Step 3: `commit_import` implementieren**
 
 Ergänze in `backend/app/services/schuljahr_historie_import_service.py` die Imports:
 
@@ -1558,12 +1558,12 @@ async def commit_import(
     )
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_schuljahr_historie_import_service.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Fehlschlagenden Route-Test schreiben**
+- [x] **Step 5: Fehlschlagenden Route-Test schreiben**
 
 Füge in `backend/tests/test_api_admin_schuljahr_historie_import.py` an:
 
@@ -1631,12 +1631,12 @@ async def test_post_import_writes_historie_and_audit_log(db_session):
     assert audit.details["schuljahr_id"] == schuljahr.id
 ```
 
-- [ ] **Step 6: Test ausführen, Fehlschlag verifizieren**
+- [x] **Step 6: Test ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_admin_schuljahr_historie_import.py -k post_import -v`
 Expected: FAIL — Route `POST /admin/schuljahr-historie-import` existiert noch nicht.
 
-- [ ] **Step 7: Route verdrahten**
+- [x] **Step 7: Route verdrahten**
 
 In `backend/app/api/routes/admin.py`, füge nach `post_schuljahr_historie_import_preview` an:
 
@@ -1653,17 +1653,17 @@ async def post_schuljahr_historie_import(
 
 Ergänze `HistorieImportResultOut` im `from app.schemas.admin import (...)`-Block.
 
-- [ ] **Step 8: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 8: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_admin_schuljahr_historie_import.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 9: Vollen Backend-Testlauf verifizieren**
+- [x] **Step 9: Vollen Backend-Testlauf verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add backend/app/services/schuljahr_historie_import_service.py backend/app/api/routes/admin.py \

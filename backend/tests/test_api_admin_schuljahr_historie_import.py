@@ -2,11 +2,14 @@ from datetime import date
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.main import app
+from app.models.audit_log import AuditLog
 from app.models.klasse import Klasse
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schuljahr import Schuljahr
 
 HEADERS_SCHULLEITUNG = {
@@ -89,3 +92,60 @@ async def test_post_preview_returns_404_for_unknown_schuljahr(db_session):
             files={"file": ("archiv.csv", _csv_bytes(['"a";"a";"ext-1";"N";"V";"";"";"01.01.1990";"";"17.03.2020";"ja"']), "text/csv")},
         )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_post_import_rejects_non_schulleitung(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/admin/schuljahr-historie-import",
+            headers=HEADERS_KLASSENLEHRKRAFT,
+            data={"schuljahr_id": str(schuljahr.id)},
+            files={"file": ("archiv.csv", _csv_bytes(['"a";"a";"ext-1";"N";"V";"";"";"01.01.1990";"";"17.03.2020";"ja"']), "text/csv")},
+        )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_post_import_writes_historie_and_audit_log(db_session):
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    db_session.add(Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id))
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/admin/schuljahr-historie-import",
+            headers=HEADERS_SCHULLEITUNG,
+            data={"schuljahr_id": str(schuljahr.id)},
+            files={
+                "file": (
+                    "archiv.csv",
+                    _csv_bytes(['"a";"a";"ext-1";"N";"V";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"']),
+                    "text/csv",
+                )
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["zeilen_verarbeitet"] == 1
+    assert body["neu_angelegte_schueler"] == 1
+
+    schueler = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-1"))).scalar_one()
+    historie = (
+        await db_session.execute(select(SchuelerKlasseHistorie).where(SchuelerKlasseHistorie.schueler_id == schueler.id))
+    ).scalar_one()
+    assert historie.schuljahr_id == schuljahr.id
+
+    audit = (
+        await db_session.execute(select(AuditLog).where(AuditLog.aktion == "admin_schuljahr_historie_import"))
+    ).scalar_one()
+    assert audit.details["schuljahr_id"] == schuljahr.id
