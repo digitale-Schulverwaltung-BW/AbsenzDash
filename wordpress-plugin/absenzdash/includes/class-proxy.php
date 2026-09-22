@@ -85,12 +85,26 @@ class Absenzdash_Proxy {
 			// ging bisher verloren.
 			'timeout' => 120,
 		);
-		$body = $request->get_body();
-		if ( ! empty( $body ) ) {
-			$argumente['body'] = $body;
-			$content_type = $request->get_header( 'content_type' );
-			if ( ! empty( $content_type ) ) {
-				$argumente['headers']['Content-Type'] = $content_type;
+		$content_type   = $request->get_header( 'content_type' );
+		$ist_multipart  = ! empty( $content_type ) && 0 === stripos( $content_type, 'multipart/form-data' );
+
+		if ( $ist_multipart ) {
+			// php://input ist bei multipart/form-data-Requests immer leer - PHP hat den
+			// Rohkoerper bereits selbst in $_POST/$_FILES zerlegt, bevor dieser Callback
+			// laeuft. $request->get_body() liefert hier also nichts Verwertbares (leer),
+			// wodurch bisher weder Body noch Content-Type/Boundary durchgereicht wurden und
+			// das Backend mit 422 (fehlende Form-/File-Felder) antwortete. Body wird
+			// stattdessen aus den von WordPress bereits geparsten Feldern neu zusammengesetzt.
+			$multipart                            = $this->baue_multipart_body( $request->get_body_params(), $request->get_file_params() );
+			$argumente['body']                    = $multipart['body'];
+			$argumente['headers']['Content-Type'] = $multipart['content_type'];
+		} else {
+			$body = $request->get_body();
+			if ( ! empty( $body ) ) {
+				$argumente['body'] = $body;
+				if ( ! empty( $content_type ) ) {
+					$argumente['headers']['Content-Type'] = $content_type;
+				}
 			}
 		}
 
@@ -120,6 +134,51 @@ class Absenzdash_Proxy {
 		}
 
 		return new WP_REST_Response( json_decode( $antwort_body, true ), $status );
+	}
+
+	/**
+	 * Baut einen multipart/form-data-Request-Body aus bereits von WordPress geparsten
+	 * Text-/Datei-Feldern neu zusammen (siehe Kommentar in weiterleiten() zum php://input-
+	 * Problem). $felder ist ein assoziatives Array (Name => Wert, wie get_body_params()),
+	 * $dateien ist $_FILES-foermig (wie get_file_params()) - eine Datei pro Feldname,
+	 * Mehrfach-Uploads unter demselben Namen werden hier bewusst nicht unterstuetzt, da
+	 * aktuell keine Proxy-Route das braucht.
+	 */
+	private function baue_multipart_body( array $felder, array $dateien ): array {
+		$boundary = wp_generate_password( 24, false );
+		$teile    = array();
+
+		foreach ( $felder as $name => $wert ) {
+			$teile[] = "--{$boundary}\r\n"
+				. 'Content-Disposition: form-data; name="' . $this->escape_header_wert( (string) $name ) . '"' . "\r\n\r\n"
+				. $wert . "\r\n";
+		}
+
+		foreach ( $dateien as $name => $datei ) {
+			if ( UPLOAD_ERR_OK !== ( $datei['error'] ?? UPLOAD_ERR_NO_FILE ) ) {
+				continue;
+			}
+			$inhalt = file_get_contents( $datei['tmp_name'] );
+			$teile[] = "--{$boundary}\r\n"
+				. 'Content-Disposition: form-data; name="' . $this->escape_header_wert( (string) $name ) . '"; filename="' . $this->escape_header_wert( $datei['name'] ) . '"' . "\r\n"
+				. 'Content-Type: ' . ( ! empty( $datei['type'] ) ? $datei['type'] : 'application/octet-stream' ) . "\r\n\r\n"
+				. $inhalt . "\r\n";
+		}
+
+		$teile[] = "--{$boundary}--\r\n";
+
+		return array(
+			'body'         => implode( '', $teile ),
+			'content_type' => "multipart/form-data; boundary={$boundary}",
+		);
+	}
+
+	/**
+	 * Verhindert Header-/Boundary-Injection ueber Feld-/Dateinamen (z.B. Anfuehrungszeichen
+	 * oder eingebettete Zeilenumbrueche in einem hochgeladenen Dateinamen).
+	 */
+	private function escape_header_wert( string $wert ): string {
+		return str_replace( array( '"', "\r", "\n" ), '', $wert );
 	}
 
 	public function serviere_rohantwort( bool $serviert, $result, WP_REST_Request $request, WP_REST_Server $server ): bool {
