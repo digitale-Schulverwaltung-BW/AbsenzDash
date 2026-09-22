@@ -19,6 +19,7 @@ backend-tests:
     WEBUNTIS_USERNAME: "test-user"
     WEBUNTIS_PASSWORD: "test-password"
     ASV_CSV_PATH: "/tmp/test-schueler.csv"
+    ASV_CSV_ARCHIVE_DIR: "/tmp/test-asv-csv-archiv"
     SMTP_HOST: "test.smtp.local"
     SMTP_FROM_ADDRESS: "test@example.com"
     DASHBOARD_BASE_URL: "http://localhost:3000"
