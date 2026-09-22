@@ -33,7 +33,7 @@ services:
       start_period: 10s
     volumes:
       - ./data/schueler.csv:/tmp/schueler.csv:ro
-      - absenzdash-asv-csv-archiv-data:/data/asv-csv-archiv
+      - ./data/asv-csv-archiv:/data/asv-csv-archiv
     networks:
       - default
       - absenzflow-shared
@@ -41,7 +41,6 @@ services:
 
 volumes:
   absenzdash-db-data:
-  absenzdash-asv-csv-archiv-data:
 
 networks:
   default:
