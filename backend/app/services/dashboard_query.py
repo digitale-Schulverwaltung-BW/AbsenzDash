@@ -58,9 +58,22 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer, schuljahr_id: int | 
             query = query.where(Klasse.schuljahr_id == effektive_schuljahr_id)
         klassen = (await db.execute(query)).scalars().all()
 
-    klasse_bereich_map = dict(
-        (await db.execute(select(bereich_klasse.c.klasse_id, bereich_klasse.c.bereich_id))).all()
-    )
+    # Ueber klasse.abteilung_id/bereich.abteilung_id statt der bereich_klasse-Zuordnungstabelle
+    # abgeleitet: bereich_klasse ist nicht jahresgebunden (sync_bereiche baut sie bei jedem
+    # Sync-Lauf komplett fuer das jeweils aktuelle Schuljahr neu auf, siehe
+    # webuntis_bereich_sync.py), enthaelt also nie historische Klassen-IDs. Eine ueber
+    # bereich_klasse ermittelte Zuordnung liesse jede historische Klasse mit bereich_id=None
+    # dastehen und faellt dadurch aus dem Bereich-gefilterten Klassen-Dropdown im Frontend raus,
+    # obwohl der Drilldown (Bereich -> Klasse) sie gerade erst gezeigt hat (Live-Fund
+    # 2026-09-22). Die abteilung_id-Ableitung ist fuer beide Modi gleichermassen korrekt (Bundle
+    # D: Bereiche sind strukturell 1:1 aus Abteilungen abgeleitet), deshalb hier einheitlich
+    # verwendet statt nur im Historie-Modus zu verzweigen.
+    bereich_id_by_abteilung_id = {b.abteilung_id: b.id for b in bereiche if b.abteilung_id is not None}
+    klasse_bereich_map = {
+        k.id: bereich_id_by_abteilung_id[k.abteilung_id]
+        for k in klassen
+        if k.abteilung_id is not None and k.abteilung_id in bereich_id_by_abteilung_id
+    }
 
     historie_schuljahr_ids = select(SchuelerKlasseHistorie.schuljahr_id).distinct()
     schuljahre_query = select(Schuljahr).order_by(Schuljahr.start_datum.desc())

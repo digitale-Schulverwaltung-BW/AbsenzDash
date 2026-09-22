@@ -24,12 +24,14 @@ from app.services import dashboard_query
 
 @pytest.mark.asyncio
 async def test_get_nav_options_for_schulleitung_returns_all_bereiche_and_klassen(db_session, schuljahr):
-    bereich = Bereich(name="Ausbildung")
-    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    abteilung = Abteilung(webuntis_id=1, name="Ausbildung")
+    db_session.add(abteilung)
+    await db_session.flush()
+    bereich = Bereich(name="Ausbildung", abteilung_id=abteilung.id)
+    klasse_a = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id, abteilung_id=abteilung.id)
     klasse_b = Klasse(webuntis_id=2, name="BME12", schuljahr_id=schuljahr.id)
     db_session.add_all([bereich, klasse_a, klasse_b])
     await db_session.flush()
-    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse_a.id))
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
     db_session.add(nutzer)
     await db_session.commit()
@@ -188,6 +190,31 @@ async def test_get_nav_options_klassen_scoped_to_requested_historical_schuljahr(
     result = await dashboard_query.get_nav_options(db_session, nutzer, schuljahr_id=schuljahr_alt.id)
 
     assert [k.id for k in result.klassen] == [klasse_alt.id]
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_klassen_bereich_id_uses_abteilung_for_historical_schuljahr(db_session):
+    """klasse_bereich_map fuers Klassen-Dropdown darf sich fuer vergangene Schuljahre nicht auf
+    bereich_klasse verlassen (nicht jahresgebunden, siehe _bereich_klassen-Docstring) -- sonst
+    bekommt jede historische Klasse bereich_id=None und faellt aus dem Bereich-gefilterten
+    Klassen-Dropdown raus, obwohl der Drilldown (Bereich -> Klasse) sie gerade erst gezeigt hat.
+    Live-Fund 2026-09-22."""
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    abteilung = Abteilung(webuntis_id=1, name="Mechatronik")
+    db_session.add_all([schuljahr_alt, nutzer, abteilung])
+    await db_session.flush()
+    bereich = Bereich(name="Mechatronik", abteilung_id=abteilung.id)
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id, abteilung_id=abteilung.id)
+    db_session.add_all([bereich, klasse_alt])
+    # bewusst KEINE bereich_klasse-Zeile fuer klasse_alt -- die Tabelle spiegelt nur die aktuelle
+    # Struktur, hier soll die Zuordnung ausschliesslich ueber abteilung_id funktionieren.
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer, schuljahr_id=schuljahr_alt.id)
+
+    klasse_out = next(k for k in result.klassen if k.id == klasse_alt.id)
+    assert klasse_out.bereich_id == bereich.id
 
 
 @pytest.mark.asyncio
