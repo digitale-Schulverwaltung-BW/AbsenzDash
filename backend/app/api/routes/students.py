@@ -33,22 +33,9 @@ from app.schemas.students import (
     StudentOverviewOut,
 )
 from app.services import ausnahme_service, export_service, massnahme_service, student_query
+from app.services.schuljahr_zeitraum import resolve_schuljahr_zeitraum
 
 router = APIRouter(prefix="/students", tags=["students"])
-
-
-async def _resolve_schuljahr_zeitraum(db: AsyncSession, schuljahr_id: int | None) -> tuple[date | None, date | None]:
-    """None, None heisst "aktuelles Schuljahr, unveraendertes Verhalten". Ein konkretes
-    (von, bis)-Paar heisst "Historie-Modus fuer dieses vergangene Schuljahr"."""
-    if schuljahr_id is None:
-        return None, None
-    einstellung = (await db.execute(select(Einstellung))).scalars().first()
-    if einstellung is not None and schuljahr_id == einstellung.aktuelles_schuljahr_id:
-        return None, None
-    schuljahr = await db.get(Schuljahr, schuljahr_id)
-    if schuljahr is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekanntes Schuljahr")
-    return schuljahr.start_datum, schuljahr.end_datum
 
 
 async def _aktuelles_schuljahr_zeitraum(db: AsyncSession) -> tuple[date | None, date | None]:
@@ -97,7 +84,7 @@ async def get_students(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StudentListOut:
     scope = await resolve_scope(db, nutzer)
-    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    von, bis = await resolve_schuljahr_zeitraum(db, schuljahr_id)
     ist_historie = von is not None
     effektiv_von, effektiv_bis = (von, bis) if ist_historie else await _aktuelles_schuljahr_zeitraum(db)
 
@@ -194,7 +181,7 @@ async def get_student_detail(
     db: Annotated[AsyncSession, Depends(get_db)],
     schuljahr_id: int | None = None,
 ) -> StudentDetailOut:
-    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    von, bis = await resolve_schuljahr_zeitraum(db, schuljahr_id)
     ist_historie = von is not None
     if ist_historie and not await student_query.student_hat_historie_eintrag(db, schueler.id, schuljahr_id):
         raise HTTPException(
@@ -332,7 +319,7 @@ async def export_student_pdf(
     else:
         requested = set(_EXPORT_SECTIONS)
 
-    von, bis = await _resolve_schuljahr_zeitraum(db, schuljahr_id)
+    von, bis = await resolve_schuljahr_zeitraum(db, schuljahr_id)
     schuljahr_name = None
     if von is not None:
         schuljahr = await db.get(Schuljahr, schuljahr_id)
