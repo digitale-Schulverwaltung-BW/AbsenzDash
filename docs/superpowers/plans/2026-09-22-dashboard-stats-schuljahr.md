@@ -1193,43 +1193,43 @@ git commit -m "feat: pass the schuljahr URL param through to GET /dashboard/stat
 - Modify: `TECH-SPEC.md`
 - Modify: `SPECS.md`
 
-- [ ] **Step 1: Vollen Backend-Testlauf**
+- [x] **Step 1: Vollen Backend-Testlauf**
 
 Run: `docker exec absenzdash-backend python -m pytest -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 2: Vollen Frontend-Testlauf**
+- [x] **Step 2: Vollen Frontend-Testlauf**
 
 Run: `cd frontend && npm test`
 Expected: alle Tests PASS.
 
-- [ ] **Step 3: Manuelle Verifikation im Dev-Stack (optional, empfohlen)**
+- [x] **Step 3: Manuelle Verifikation im Dev-Stack (optional, empfohlen)**
 
 - Landing-Page mit einem vergangenen Schuljahr im Dropdown aufrufen und prüfen, dass sich die Ø-Werte/Balken tatsächlich ändern (nicht mehr identisch zum aktuellen Schuljahr).
 - Ein Schuljahr ganz ohne `schueler_klasse_historie`-Daten aus WebUntis anlegen (lassen) und prüfen, dass es NICHT im Schuljahr-Dropdown erscheint, das aktuelle Schuljahr aber immer.
 - Für einen Bereich mit historischen Klassen (per rückwirkendem Import aus Plan 17 befüllt) prüfen, dass die Vergleichsbalken im Historie-Modus sinnvolle, von 0 verschiedene Werte zeigen.
 
-- [ ] **Step 4: Commit (falls Step 1-3 Anpassungen erfordern)**
+- [x] **Step 4: Commit (falls Step 1-3 Anpassungen erfordern)**
 
 ```bash
 git add -A
 git commit -m "fix: address issues found during full-suite/manual verification"
 ```
 
-- [ ] **Step 5: TECH-SPEC.md aktualisieren**
+- [x] **Step 5: TECH-SPEC.md aktualisieren**
 
 - §1.3a oder §3 (API-Vertrag): ergänze einen Absatz analog zu den bestehenden "Ergänzung (Plan 16/...)"-Blöcken (Zeilen 181-185): `GET /dashboard/stats` akzeptiert seit diesem Plan zusätzlich einen optionalen Query-Param `schuljahr_id` (wie `GET /students`) — im Historie-Modus wird die Schülerbasis für die Ø-Werte aus `schueler_klasse_historie` ermittelt (statt der live `schueler`-Tabelle) und die Vergleichsbalken je Bereich gruppieren historische Klassen über `klasse.abteilung_id == bereich.abteilung_id` statt der (nicht jahresgebundenen) `bereich_klasse`-Tabelle. Erwähne, dass `GET /dashboard/nav-options`s `schuljahre`-Liste seither zusätzlich Schuljahre ohne jede `schueler_klasse_historie`-Zeile ausblendet (außer dem aktuellen Schuljahr).
 - §2 (Datenbank-Schema): kein neues Feld/keine neue Tabelle (keine Schema-Änderung durch diesen Plan).
 
-- [ ] **Step 6: SPECS.md aktualisieren**
+- [x] **Step 6: SPECS.md aktualisieren**
 
 - §7 (Dashboard-Funktionen): ergänze bei der Beschreibung des Schuljahr-Dropdowns/Historie-Modus (nach dem bestehenden Absatz zu "Wer im Historie-Modus überhaupt erscheint", Zeile 81), dass seit diesem Plan auch die Landing-Page-Kennzahlen (Ø Fehltage/-stunden/Klassenbuch, Maßnahmen-Anzahl, Vergleichsbalken) dem gewählten Schuljahr folgen — inkl. der Vergleichsbalken je Bereich, deren Klassenzuordnung im Historie-Modus über die WebUntis-Abteilung statt der aktuellen Bereichs-Struktur ermittelt wird. Ergänze, dass das Schuljahr-Dropdown nur Jahre mit tatsächlichen Historie-Daten (plus das aktuelle Schuljahr) zeigt.
 
-- [ ] **Step 7: ROADMAP.md aktualisieren**
+- [x] **Step 7: ROADMAP.md aktualisieren**
 
 Trage den Eintrag "Dashboard-Statistiken schuljahresbewusst + Dropdown-Filter" als **Plan 18** unter "Abgeschlossen" ein (nächste freie Nummer nach Plan 17), mit Link auf diesen Plan (`docs/superpowers/plans/2026-09-22-dashboard-stats-schuljahr.md`) und dessen [Design-Dok](../specs/2026-09-22-dashboard-stats-schuljahr-design.md). Ersetze den bisherigen "Design-Dok fertig, Umsetzungsplan offen"-Eintrag unter "Geplant" (aktuell Zeile 64 in `ROADMAP.md`) durch einen Verweis auf den jetzt abgeschlossenen Plan 18. Erwähne die während der Planung entdeckte Konsolidierung des `bereich_klasse`-Lookups in den gemeinsamen `_bereich_klassen`-Helfer (nicht im Design-Dok vorgesehen, aber eine naheliegende, risikoarme Code-Struktur-Verbesserung, analog zu Plan 16/17s jeweiligen "zusätzlich entdeckt"-Funden).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ROADMAP.md SPECS.md TECH-SPEC.md
