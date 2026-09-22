@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ausnahme import Ausnahme
 from app.models.benachrichtigung import Benachrichtigung
-from app.models.bereich import bereich_klasse
+from app.models.bereich import Bereich, bereich_klasse
 from app.models.classreg_category import ClassregCategory
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
@@ -79,7 +79,23 @@ async def list_students(
     if klasse_id is not None:
         conditions.append(klasse_id_col == klasse_id)
     if bereich_id is not None:
-        bereich_klassen = select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich_id)
+        if historie_schuljahr_id is None:
+            bereich_klassen = select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich_id)
+        else:
+            # bereich_klasse ist nicht jahresgebunden -- sync_bereiche baut sie bei jedem Lauf
+            # komplett fuer das jeweils aktuelle Schuljahr neu auf (webuntis_bereich_sync.py),
+            # enthaelt also nie historische Klassen-IDs. Im Historie-Modus muss die
+            # Bereich-Zuordnung deshalb wie in dashboard_query._bereich_klassen (Plan 18) ueber
+            # klasse.abteilung_id == bereich.abteilung_id laufen. Ein Bereich ohne abteilung_id
+            # (oder eine unbekannte bereich_id) liefert bewusst eine leere Teilmenge statt eines
+            # IS-NULL-Vergleichs, der faelschlich alle Klassen OHNE abteilung_id treffen wuerde.
+            bereich = (await db.execute(select(Bereich).where(Bereich.id == bereich_id))).scalar_one_or_none()
+            if bereich is not None and bereich.abteilung_id is not None:
+                bereich_klassen = select(Klasse.id).where(
+                    Klasse.schuljahr_id == historie_schuljahr_id, Klasse.abteilung_id == bereich.abteilung_id
+                )
+            else:
+                bereich_klassen = select(Klasse.id).where(Klasse.id.is_(None))
         conditions.append(klasse_id_col.in_(bereich_klassen))
 
     if min_stufe is not None or nur_auffaellige:

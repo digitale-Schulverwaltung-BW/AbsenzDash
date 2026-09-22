@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from app.models.abteilung import Abteilung
 from app.models.ausnahme import Ausnahme
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.benachrichtigung import Benachrichtigung
@@ -103,17 +104,25 @@ async def test_list_students_historie_mode_filters_by_klasse_id_via_historie_not
 
 
 @pytest.mark.asyncio
-async def test_list_students_historie_mode_filters_by_bereich_id_via_historie(db_session):
+async def test_list_students_historie_mode_filters_by_bereich_id_via_abteilung(db_session):
+    """bereich_klasse ist nicht jahresgebunden (wird von sync_bereiche bei jedem Lauf komplett
+    fuer das jeweils aktuelle Schuljahr neu aufgebaut, siehe webuntis_bereich_sync.py) - im
+    Historie-Modus muss die Bereich-Zuordnung deshalb wie in dashboard_query._bereich_klassen
+    (Plan 18) ueber klasse.abteilung_id == bereich.abteilung_id laufen, nicht ueber
+    bereich_klasse. Live-Fund 2026-09-22: /students?klasse=<historische-id>&bereich_id=<id> lieferte
+    dadurch immer leer, obwohl klasse_id allein Treffer hatte."""
     schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
     db_session.add(schuljahr)
     await db_session.flush()
-    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    abteilung = Abteilung(webuntis_id=1, name="MEC")
+    db_session.add(abteilung)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id, abteilung_id=abteilung.id)
     db_session.add(klasse)
     await db_session.flush()
-    bereich = Bereich(name="Mechatronik")
+    bereich = Bereich(name="Mechatronik", abteilung_id=abteilung.id)
     db_session.add(bereich)
     await db_session.flush()
-    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
     schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
     db_session.add(schueler)
     await db_session.flush()
@@ -125,6 +134,39 @@ async def test_list_students_historie_mode_filters_by_bereich_id_via_historie(db
     )
     assert total == 1
     assert [s.id for s in items] == [schueler.id]
+
+
+@pytest.mark.asyncio
+async def test_list_students_historie_mode_bereich_id_ignores_stale_bereich_klasse_entry(db_session):
+    """bereich_klasse kann eine Zeile enthalten, die zufaellig auf dieselbe klasse_id zeigt (weil
+    sie zu einem anderen, aktuellen Schuljahr gehoert) -- die historische Bereich-Filterung darf
+    sich davon nicht beeinflussen lassen, nur klasse.abteilung_id zaehlt."""
+    schuljahr = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    andere_abteilung = Abteilung(webuntis_id=1, name="AND")
+    db_session.add(andere_abteilung)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id, abteilung_id=andere_abteilung.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    bereich = Bereich(name="Mechatronik", abteilung_id=None)
+    db_session.add(bereich)
+    await db_session.flush()
+    # Stale/irrefuehrende bereich_klasse-Zeile fuer dieselbe klasse_id, die im Historie-Modus
+    # ignoriert werden muss (siehe Docstring oben).
+    await db_session.execute(bereich_klasse.insert().values(bereich_id=bereich.id, klasse_id=klasse.id))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr.id, klasse_id=klasse.id))
+    await db_session.commit()
+
+    items, total = await student_query.list_students(
+        db_session, scope=None, bereich_id=bereich.id, historie_schuljahr_id=schuljahr.id
+    )
+    assert total == 0
+    assert items == []
 
 
 @pytest.mark.asyncio
