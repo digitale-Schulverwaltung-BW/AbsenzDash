@@ -150,6 +150,33 @@ describe("Navigation", () => {
     expect(screen.getByLabelText("Klasse")).toHaveValue("");
   });
 
+  it("clears the klasse URL param when the Schuljahr selection changes", () => {
+    mockUseNavOptions.mockReturnValue({
+      data: {
+        bereiche: [],
+        klassen: [
+          { id: 1, name: "10a", bereich_id: null },
+          { id: 2, name: "10b", bereich_id: null },
+        ],
+        rolle: "klassenlehrkraft",
+        schuljahre: [{ id: 27, name: "2024/2025", start_datum: "2024-09-09", end_datum: "2025-07-30" }],
+        aktuelles_schuljahr_id: null,
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderNavigation(["/?klasse=1"]);
+
+    expect(screen.getByLabelText("Klasse")).toHaveValue("1");
+
+    fireEvent.change(screen.getByLabelText("Schuljahr"), { target: { value: "27" } });
+
+    expect(screen.getByLabelText("Schuljahr")).toHaveValue("27");
+    expect(screen.getByLabelText("Klasse")).toHaveValue("");
+  });
+
   it("renders navigation tabs that preserve the current search params", () => {
     mockUseNavOptions.mockReturnValue({
       data: {

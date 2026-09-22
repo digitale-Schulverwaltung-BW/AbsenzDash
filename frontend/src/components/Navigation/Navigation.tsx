@@ -3,9 +3,11 @@ import { useNavOptions } from "../../api/hooks/useNavOptions";
 import styles from "./Navigation.module.css";
 
 export function Navigation() {
-  const { data, isLoading, isError } = useNavOptions();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const schuljahrParam = searchParams.get("schuljahr");
+  const schuljahrId = schuljahrParam ? Number(schuljahrParam) : null;
+  const { data, isLoading, isError } = useNavOptions(schuljahrId);
 
   if (isLoading) {
     return <nav className={styles.nav}>Lädt Navigation…</nav>;
@@ -59,6 +61,10 @@ export function Navigation() {
     } else {
       next.set("schuljahr", value);
     }
+    // Klasse-IDs sind jahresgebunden (eigene DB-Zeile pro Schuljahr, siehe Plan 16) -- eine beim
+    // Schuljahrwechsel stehenbleibende Klasse-ID aus einem anderen Jahr traf serverseitig keine
+    // schueler_klasse_historie-Zeile mehr und zeigte faelschlich 0 ueberall (Live-Fund 2026-09-22).
+    next.delete("klasse");
     setSearchParams(next);
   }
 
