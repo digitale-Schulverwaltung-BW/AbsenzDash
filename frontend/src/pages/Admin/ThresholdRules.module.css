@@ -18,5 +18,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
+}
+
+.stufenRow fieldset {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.stufenRow fieldset label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
 }
