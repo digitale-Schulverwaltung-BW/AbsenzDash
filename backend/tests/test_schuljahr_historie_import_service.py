@@ -51,9 +51,26 @@ async def test_preview_import_counts_known_and_new_schueler(db_session):
 
 
 @pytest.mark.asyncio
-async def test_preview_import_reports_unknown_klasse_names(db_session):
+async def test_preview_import_reports_unknown_klasse_names(db_session, monkeypatch):
+    """Ein Klassenname ohne lokale klasse-Zeile loest zunaechst den WebUntis-Nachzug aus (siehe
+    test_preview_import_fetches_missing_klassen_from_webuntis) - hier liefert WebUntis dafuer
+    nichts Passendes, der Name bleibt also unbekannt. WebUntisClient muss deshalb wie im
+    Nachbartest gemockt werden, sonst versucht preview_import einen echten Netzwerk-Request."""
     schuljahr = await _seed_schuljahr(db_session)
     await db_session.commit()
+
+    async def _fake_sync_klassen(client, db, schoolyear_id):
+        return None
+
+    async def _fake_aenter(self):
+        return self
+
+    async def _fake_aexit(self, *args):
+        return None
+
+    monkeypatch.setattr(schuljahr_historie_import_service, "sync_klassen", _fake_sync_klassen)
+    monkeypatch.setattr(schuljahr_historie_import_service.WebUntisClient, "__aenter__", _fake_aenter)
+    monkeypatch.setattr(schuljahr_historie_import_service.WebUntisClient, "__aexit__", _fake_aexit)
 
     upload = _upload(['"a";"a";"ext-1";"N";"V";"";"UNBEKANNT";"01.01.1990";"";"17.03.2020";"ja"'])
 
