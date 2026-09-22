@@ -205,7 +205,7 @@ git commit -m "refactor: extract resolve_schuljahr_zeitraum into a shared servic
 - Neu (privat): `_zeitraum_filter(spalte, von, bis) -> list[Any]` — gemeinsamer Helfer für die drei `*.datum`-Filter, ersetzt die bisherige `datumsfilter`/`schuljahr_start`-Ad-hoc-Logik.
 - Alle `_stats_*`-Funktionen und `get_dashboard_stats` geben `von`/`bis`/`historie_schuljahr_id` statt `schuljahr_start` durch (Signaturänderungen, siehe Step 5).
 
-- [ ] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
+- [x] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
 
 Füge in `backend/tests/test_dashboard_query.py` nach `_seed_schueler_mit_fehlzeit` (Zeile 181-195) folgende Tests ein (nutzt die bereits vorhandenen Imports `Schuljahr`, plus neu `SchuelerKlasseHistorie`):
 
@@ -338,7 +338,7 @@ async def test_get_dashboard_stats_current_schuljahr_still_has_no_upper_date_bou
 
 Ergänze außerdem im Import-Block von `test_dashboard_query.py` `from app.models.schueler_klasse_historie import SchuelerKlasseHistorie` (oben bereits als Inline-Import im ersten neuen Test gezeigt — an den Datei-Kopf verschieben, Konvention der übrigen Imports).
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -k historie_mode -v`
 Expected: FAIL — `get_dashboard_stats()` akzeptiert noch kein fünftes Argument (`TypeError: takes from 4 to 4 positional arguments but 5 were given`) bzw. `_aggregate` kennt `historie_schuljahr_id` nicht.
@@ -346,7 +346,7 @@ Expected: FAIL — `get_dashboard_stats()` akzeptiert noch kein fünftes Argumen
 Run zusätzlich: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -k current_schuljahr_still_has_no_upper -v`
 Expected: PASS bereits vor der Implementierung (reiner Regressionstest auf bestehendes Verhalten) — dient hier nur als Ausgangs-Baseline, kein TDD-Fehlschlag nötig.
 
-- [ ] **Step 3: `_aggregate` und `_zeitraum_filter` umbauen**
+- [x] **Step 3: `_aggregate` und `_zeitraum_filter` umbauen**
 
 In `backend/app/services/dashboard_query.py`, ergänze die Imports:
 
@@ -461,7 +461,7 @@ async def _aggregate(
     )
 ```
 
-- [ ] **Step 4: Aufrufer anpassen (`_stats_*`, `get_dashboard_stats`)**
+- [x] **Step 4: Aufrufer anpassen (`_stats_*`, `get_dashboard_stats`)**
 
 Ersetze in `backend/app/services/dashboard_query.py` alle `schuljahr_start: date | None`-Parameter der `_stats_*`-Funktionen durch `von: date | None, bis: date | None, historie_schuljahr_id: int | None` und reiche sie an `_aggregate` durch (die `bereich_klasse`-Klassenauflösung bleibt in diesem Step unverändert — das ist Task 3):
 
@@ -615,12 +615,12 @@ async def get_dashboard_stats(
 
 Ergänze den Import `from app.services.schuljahr_zeitraum import resolve_schuljahr_zeitraum` (statt der bisher nur lokal in `students.py` lebenden Funktion — siehe Task 1).
 
-- [ ] **Step 5: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 5: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -v`
 Expected: alle Tests PASS (auch alle bestehenden — `historie_schuljahr_id=None`/unverändertes `schuljahr_id=None` reproduzieren exakt das alte Verhalten).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/dashboard_query.py backend/tests/test_dashboard_query.py

@@ -17,6 +17,7 @@ from app.models.nutzer_bereich import nutzer_bereich
 from app.models.nutzer_klasse import NutzerKlasse
 from app.models.schuljahr import Schuljahr
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.services import dashboard_query
 
 
@@ -193,6 +194,129 @@ async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
     )
     await db_session.commit()
     return schueler
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_historie_mode_uses_schueler_klasse_historie_not_live_klasse_id(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_live = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_live])
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    # Schueler ist heute (live) in klasse_live, war im betrachteten Schuljahr aber in klasse_alt.
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse_live.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_alt.id)
+    )
+    db_session.add(
+        Fehlzeit(
+            schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359
+        )
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(
+        db_session, nutzer, None, klasse_alt.id, schuljahr_alt.id
+    )
+    assert stats.own.anzahl_schueler == 1
+    assert stats.own.avg_fehltage == 1.0
+
+    # klasse_live ist nur die LIVE-Klasse, nicht die historische fuer schuljahr_alt -> kein Treffer.
+    stats_live_klasse = await dashboard_query.get_dashboard_stats(
+        db_session, nutzer, None, klasse_live.id, schuljahr_alt.id
+    )
+    assert stats_live_klasse.own.anzahl_schueler == 0
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_historie_mode_includes_inactive_students(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    # inzwischen abgemeldeter Schueler (aktiv=False) -- war im betrachteten Schuljahr eingeschrieben.
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=False)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse.id)
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse.id, schuljahr_alt.id)
+
+    assert stats.own.anzahl_schueler == 1
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_historie_mode_excludes_fehlzeiten_after_schuljahr_end(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse.id)
+    )
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359),
+            # liegt NACH schuljahr_alt.end_datum (2025-07-30) -- gehoert zum Folgejahr, muss ausgeschlossen werden.
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2025, 9, 20), start_zeit=0, end_zeit=2359),
+        ]
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse.id, schuljahr_alt.id)
+
+    assert stats.own.avg_fehltage == 1.0
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_current_schuljahr_still_has_no_upper_date_bound(db_session, schuljahr):
+    # Regressionstest fuer die Design-Dok-Vorgabe "aktuelles Schuljahr weiterhin (schuljahr_start_cache,
+    # None) -- keine Obergrenze noetig". Eine (theoretisch verfrueht importierte) Fehlzeit weit in der
+    # Zukunft darf im Normalmodus nicht durch eine neu eingefuehrte Obergrenze verschwinden.
+    klasse = Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    schuljahr_start = date(2025, 9, 15)
+    db_session.add(Einstellung(schuljahr_start_cache=schuljahr_start))
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2099, 1, 1), start_zeit=0, end_zeit=2359)
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse.id)
+
+    assert stats.own.avg_fehltage == 1.0
 
 
 @pytest.mark.asyncio

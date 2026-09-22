@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import resolve_bereich_scope, resolve_scope
 from app.services.fehlzeit_berechnung import fehlstunden_minuten_expr, minuten_zu_fehlstunden
+from app.services.schuljahr_zeitraum import resolve_schuljahr_zeitraum
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.einstellung import Einstellung
 from app.models.fehlzeit import Fehlzeit
@@ -17,6 +19,7 @@ from app.models.massnahme import Massnahme
 from app.models.nutzer import Nutzer
 from app.models.schuljahr import Schuljahr
 from app.models.schueler import Schueler
+from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.schemas.dashboard import (
     NavBereichOut,
     NavKlasseOut,
@@ -81,7 +84,34 @@ async def _get_schuljahr_start(db: AsyncSession) -> date | None:
     return einstellung.schuljahr_start_cache if einstellung else None
 
 
-async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_start: date | None) -> StatsOwn:
+def _zeitraum_filter(spalte: Any, von: date | None, bis: date | None) -> list[Any]:
+    filters: list[Any] = []
+    if von is not None:
+        filters.append(spalte >= von)
+    if bis is not None:
+        filters.append(spalte <= bis)
+    return filters
+
+
+async def _aggregate(
+    db: AsyncSession,
+    klasse_ids: list[int] | None,
+    von: date | None,
+    bis: date | None,
+    historie_schuljahr_id: int | None = None,
+) -> StatsOwn:
+    """Aggregiert Rohzahlen ueber alle Schueler der gegebenen Klassen (None = alle Klassen).
+    von/bis grenzen den Zeitraum beidseitig ein (None je Seite = unbegrenzt in diese Richtung) --
+    aktuelles Schuljahr uebergibt (schuljahr_start_cache, None), vergangenes Schuljahr
+    (schuljahr.start_datum, schuljahr.end_datum), siehe get_dashboard_stats.
+
+    historie_schuljahr_id (Default None) schaltet die Schuelerbasis von der live
+    Schueler.klasse_id/aktiv auf schueler_klasse_historie fuers gewaehlte Schuljahr um -- exakt
+    das Roster-Prinzip aus student_query.list_students' historie_schuljahr_id-Parameter (Plan 17),
+    hier lokal nachgebaut, da nur schueler_id's gebraucht werden, keine paginierten/sortierten
+    Schueler-Objekte. Kein aktiv-Filter im Historie-Modus -- ein Schueler mit Snapshot fuers
+    Schuljahr zaehlt unabhaengig vom heutigen aktiv-Status, siehe
+    docs/superpowers/specs/2026-09-22-dashboard-stats-schuljahr-design.md."""
     leer = StatsOwn(
         anzahl_schueler=0,
         avg_fehltage=0.0,
@@ -93,15 +123,20 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
     if klasse_ids is not None and not klasse_ids:
         return leer
 
-    schueler_query = select(Schueler.id).where(Schueler.aktiv.is_(True))
-    if klasse_ids is not None:
-        schueler_query = schueler_query.where(Schueler.klasse_id.in_(klasse_ids))
+    if historie_schuljahr_id is None:
+        schueler_query = select(Schueler.id).where(Schueler.aktiv.is_(True))
+        if klasse_ids is not None:
+            schueler_query = schueler_query.where(Schueler.klasse_id.in_(klasse_ids))
+    else:
+        schueler_query = select(SchuelerKlasseHistorie.schueler_id).where(
+            SchuelerKlasseHistorie.schuljahr_id == historie_schuljahr_id
+        )
+        if klasse_ids is not None:
+            schueler_query = schueler_query.where(SchuelerKlasseHistorie.klasse_id.in_(klasse_ids))
     schueler_ids = (await db.execute(schueler_query)).scalars().all()
     anzahl_schueler = len(schueler_ids)
     if anzahl_schueler == 0:
         return leer
-
-    datumsfilter = [] if schuljahr_start is None else [schuljahr_start]
 
     fehltage = (
         await db.execute(
@@ -109,7 +144,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
                 Fehlzeit.schueler_id.in_(schueler_ids),
                 Fehlzeit.typ == "tag",
                 Fehlzeit.invalid.is_(False),
-                *([Fehlzeit.datum >= schuljahr_start] if datumsfilter else []),
+                *_zeitraum_filter(Fehlzeit.datum, von, bis),
             )
         )
     ).scalar_one()
@@ -119,7 +154,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
                 Fehlzeit.schueler_id.in_(schueler_ids),
                 Fehlzeit.typ == "stunde",
                 Fehlzeit.invalid.is_(False),
-                *([Fehlzeit.datum >= schuljahr_start] if datumsfilter else []),
+                *_zeitraum_filter(Fehlzeit.datum, von, bis),
             )
         )
     ).scalar_one()
@@ -128,7 +163,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
         await db.execute(
             select(func.count()).select_from(KlassenbuchEintrag).where(
                 KlassenbuchEintrag.schueler_id.in_(schueler_ids),
-                *([KlassenbuchEintrag.datum >= schuljahr_start] if datumsfilter else []),
+                *_zeitraum_filter(KlassenbuchEintrag.datum, von, bis),
             )
         )
     ).scalar_one()
@@ -136,7 +171,7 @@ async def _aggregate(db: AsyncSession, klasse_ids: list[int] | None, schuljahr_s
         await db.execute(
             select(func.count()).select_from(Massnahme).where(
                 Massnahme.schueler_id.in_(schueler_ids),
-                *([Massnahme.datum >= schuljahr_start] if datumsfilter else []),
+                *_zeitraum_filter(Massnahme.datum, von, bis),
             )
         )
     ).scalar_one()
@@ -155,7 +190,9 @@ def _leerer_context() -> StatsContext:
     return StatsContext(bereich_id=None, bereich_name=None, klasse_id=None, klasse_name=None)
 
 
-async def _stats_for_bereich(db: AsyncSession, bereich: Bereich, schuljahr_start: date | None) -> StatsOut:
+async def _stats_for_bereich(
+    db: AsyncSession, bereich: Bereich, von: date | None, bis: date | None, historie_schuljahr_id: int | None
+) -> StatsOut:
     klassen = (
         await db.execute(
             select(Klasse)
@@ -164,10 +201,10 @@ async def _stats_for_bereich(db: AsyncSession, bereich: Bereich, schuljahr_start
             .order_by(Klasse.name)
         )
     ).scalars().all()
-    own = await _aggregate(db, [k.id for k in klassen], schuljahr_start)
+    own = await _aggregate(db, [k.id for k in klassen], von, bis, historie_schuljahr_id)
     vergleich = []
     for klasse in klassen:
-        stats = await _aggregate(db, [klasse.id], schuljahr_start)
+        stats = await _aggregate(db, [klasse.id], von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=klasse.id, name=klasse.name, **stats.model_dump()))
     return StatsOut(
         level="bereich",
@@ -177,8 +214,8 @@ async def _stats_for_bereich(db: AsyncSession, bereich: Bereich, schuljahr_start
     )
 
 
-async def _stats_schulweit(db: AsyncSession, schuljahr_start: date | None) -> StatsOut:
-    own = await _aggregate(db, None, schuljahr_start)
+async def _stats_schulweit(db: AsyncSession, von: date | None, bis: date | None, historie_schuljahr_id: int | None) -> StatsOut:
+    own = await _aggregate(db, None, von, bis, historie_schuljahr_id)
     bereiche = (
         await db.execute(select(Bereich).where(Bereich.ausgeblendet.is_(False)).order_by(Bereich.name))
     ).scalars().all()
@@ -187,12 +224,14 @@ async def _stats_schulweit(db: AsyncSession, schuljahr_start: date | None) -> St
         klasse_ids = (
             await db.execute(select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich.id))
         ).scalars().all()
-        stats = await _aggregate(db, list(klasse_ids), schuljahr_start)
+        stats = await _aggregate(db, list(klasse_ids), von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=bereich.id, name=bereich.name, **stats.model_dump()))
     return StatsOut(level="schule", context=_leerer_context(), own=own, vergleich=vergleich)
 
 
-async def _stats_eigene_bereiche(db: AsyncSession, bereich_ids: set[int], schuljahr_start: date | None) -> StatsOut:
+async def _stats_eigene_bereiche(
+    db: AsyncSession, bereich_ids: set[int], von: date | None, bis: date | None, historie_schuljahr_id: int | None
+) -> StatsOut:
     bereiche = (
         await db.execute(
             select(Bereich)
@@ -207,33 +246,44 @@ async def _stats_eigene_bereiche(db: AsyncSession, bereich_ids: set[int], schulj
             await db.execute(select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich.id))
         ).scalars().all()
         alle_klasse_ids.extend(klasse_ids)
-        stats = await _aggregate(db, list(klasse_ids), schuljahr_start)
+        stats = await _aggregate(db, list(klasse_ids), von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=bereich.id, name=bereich.name, **stats.model_dump()))
-    own = await _aggregate(db, alle_klasse_ids, schuljahr_start)
+    own = await _aggregate(db, alle_klasse_ids, von, bis, historie_schuljahr_id)
     return StatsOut(level="eigene_bereiche", context=_leerer_context(), own=own, vergleich=vergleich)
 
 
-async def _stats_eigene_klassen(db: AsyncSession, klasse_ids: set[int], schuljahr_start: date | None) -> StatsOut:
+async def _stats_eigene_klassen(
+    db: AsyncSession, klasse_ids: set[int], von: date | None, bis: date | None, historie_schuljahr_id: int | None
+) -> StatsOut:
     klassen = (
         await db.execute(select(Klasse).where(Klasse.id.in_(klasse_ids)).order_by(Klasse.name))
     ).scalars().all()
-    own = await _aggregate(db, list(klasse_ids), schuljahr_start)
+    own = await _aggregate(db, list(klasse_ids), von, bis, historie_schuljahr_id)
     vergleich = []
     for klasse in klassen:
-        stats = await _aggregate(db, [klasse.id], schuljahr_start)
+        stats = await _aggregate(db, [klasse.id], von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=klasse.id, name=klasse.name, **stats.model_dump()))
     return StatsOut(level="eigene_klassen", context=_leerer_context(), own=own, vergleich=vergleich)
 
 
 async def get_dashboard_stats(
-    db: AsyncSession, nutzer: Nutzer, bereich_id: int | None, klasse_id: int | None
+    db: AsyncSession,
+    nutzer: Nutzer,
+    bereich_id: int | None,
+    klasse_id: int | None,
+    schuljahr_id: int | None = None,
 ) -> StatsOut:
     if nutzer.rolle == "klassenlehrkraft" and bereich_id is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="klassenlehrkraft cannot pass bereich_id"
         )
 
-    schuljahr_start = await _get_schuljahr_start(db)
+    von, bis = await resolve_schuljahr_zeitraum(db, schuljahr_id)
+    ist_historie = von is not None
+    historie_schuljahr_id = schuljahr_id if ist_historie else None
+    if not ist_historie:
+        von = await _get_schuljahr_start(db)
+        bis = None
 
     if klasse_id is not None:
         klasse_scope = await resolve_scope(db, nutzer)
@@ -242,7 +292,7 @@ async def get_dashboard_stats(
         klasse = (await db.execute(select(Klasse).where(Klasse.id == klasse_id))).scalar_one_or_none()
         if klasse is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Klasse nicht gefunden")
-        own = await _aggregate(db, [klasse.id], schuljahr_start)
+        own = await _aggregate(db, [klasse.id], von, bis, historie_schuljahr_id)
         return StatsOut(
             level="klasse",
             context=StatsContext(bereich_id=None, bereich_name=None, klasse_id=klasse.id, klasse_name=klasse.name),
@@ -257,10 +307,10 @@ async def get_dashboard_stats(
         bereich = (await db.execute(select(Bereich).where(Bereich.id == bereich_id))).scalar_one_or_none()
         if bereich is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bereich nicht gefunden")
-        return await _stats_for_bereich(db, bereich, schuljahr_start)
+        return await _stats_for_bereich(db, bereich, von, bis, historie_schuljahr_id)
 
     if nutzer.rolle == "schulleitung":
-        return await _stats_schulweit(db, schuljahr_start)
+        return await _stats_schulweit(db, von, bis, historie_schuljahr_id)
 
     if nutzer.rolle == "bereichsleiter":
         bereich_scope = await resolve_bereich_scope(db, nutzer)
@@ -268,17 +318,17 @@ async def get_dashboard_stats(
             bereich = (
                 await db.execute(select(Bereich).where(Bereich.id == next(iter(bereich_scope))))
             ).scalar_one()
-            return await _stats_for_bereich(db, bereich, schuljahr_start)
-        return await _stats_eigene_bereiche(db, bereich_scope, schuljahr_start)
+            return await _stats_for_bereich(db, bereich, von, bis, historie_schuljahr_id)
+        return await _stats_eigene_bereiche(db, bereich_scope, von, bis, historie_schuljahr_id)
 
     klasse_scope = await resolve_scope(db, nutzer)
     if len(klasse_scope) == 1:
         klasse = (await db.execute(select(Klasse).where(Klasse.id == next(iter(klasse_scope))))).scalar_one()
-        own = await _aggregate(db, [klasse.id], schuljahr_start)
+        own = await _aggregate(db, [klasse.id], von, bis, historie_schuljahr_id)
         return StatsOut(
             level="klasse",
             context=StatsContext(bereich_id=None, bereich_name=None, klasse_id=klasse.id, klasse_name=klasse.name),
             own=own,
             vergleich=[],
         )
-    return await _stats_eigene_klassen(db, klasse_scope, schuljahr_start)
+    return await _stats_eigene_klassen(db, klasse_scope, von, bis, historie_schuljahr_id)
