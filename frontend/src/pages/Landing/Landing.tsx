@@ -11,8 +11,10 @@ export function Landing() {
   const klasseParam = searchParams.get("klasse");
   const bereichId = bereichParam ? Number(bereichParam) : null;
   const klasseId = klasseParam ? Number(klasseParam) : null;
+  const schuljahrParam = searchParams.get("schuljahr");
+  const schuljahrId = schuljahrParam ? Number(schuljahrParam) : null;
 
-  const { data, isLoading, isError } = useStats(bereichId, klasseId);
+  const { data, isLoading, isError } = useStats(bereichId, klasseId, schuljahrId);
 
   if (isLoading) {
     return <p>Lädt Kennzahlen…</p>;

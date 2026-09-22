@@ -87,6 +87,35 @@ describe("Landing", () => {
 
     expect(screen.getByText("Fehler beim Laden der Kennzahlen.")).toBeInTheDocument();
   });
+
+  it("reads schuljahr from the URL and passes it to useStats", () => {
+    mockUseStats.mockReturnValue({
+      data: {
+        level: "schule",
+        context: { bereich_id: null, bereich_name: null, klasse_id: null, klasse_name: null },
+        own: {
+          anzahl_schueler: 0,
+          avg_fehltage: 0,
+          avg_fehlstunden: 0,
+          avg_klassenbuch: 0,
+          anzahl_klassenbuch: 0,
+          anzahl_massnahmen: 0,
+        },
+        vergleich: [],
+      },
+      isLoading: false,
+      isError: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    render(
+      <MemoryRouter initialEntries={["/?schuljahr=27"]}>
+        <Landing />
+      </MemoryRouter>,
+    );
+
+    expect(mockUseStats).toHaveBeenLastCalledWith(null, null, 27);
+  });
 });
 
 // Die Bereich-vs-Klasse-Klick-Entscheidung (welcher URL-Param/welche Route ein Balken-Klick

@@ -1043,7 +1043,7 @@ git commit -m "fix: exclude schuljahre without any schueler_klasse_historie data
 **Interfaces:**
 - `useStats(bereichId: number | null, klasseId: number | null, schuljahrId: number | null)` — drittes Argument neu, analog zum bereits bestehenden `schuljahrId`-Feld in `StudentListParams` (`useStudents.ts`). Setzt `schuljahr_id` als Query-Param, wenn nicht `null`.
 
-- [ ] **Step 1: Fehlschlagende Tests schreiben**
+- [x] **Step 1: Fehlschlagende Tests schreiben**
 
 Neue Datei `frontend/src/api/hooks/useStats.test.tsx` (Muster: `useStudents.test.tsx`):
 
@@ -1132,12 +1132,12 @@ Ergänze in `frontend/src/pages/Landing/Landing.test.tsx` (nach dem letzten best
   });
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `cd frontend && npx vitest run src/api/hooks/useStats.test.tsx src/pages/Landing/Landing.test.tsx`
 Expected: FAIL — `useStats` akzeptiert noch kein drittes Argument (TypeScript-Kompilierfehler bzw. der neue Landing-Test scheitert, weil `mockUseStats` weiterhin nur mit zwei Argumenten aufgerufen wird).
 
-- [ ] **Step 3: `useStats` und `Landing.tsx` anpassen**
+- [x] **Step 3: `useStats` und `Landing.tsx` anpassen**
 
 `frontend/src/api/hooks/useStats.ts`:
 
@@ -1171,12 +1171,12 @@ export function useStats(bereichId: number | null, klasseId: number | null, schu
 
 (ersetzt die bisherige `useStats(bereichId, klasseId)`-Zeile.)
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `cd frontend && npx vitest run src/api/hooks/useStats.test.tsx src/pages/Landing/Landing.test.tsx`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api/hooks/useStats.ts frontend/src/api/hooks/useStats.test.tsx \
