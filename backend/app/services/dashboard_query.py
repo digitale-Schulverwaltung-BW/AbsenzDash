@@ -190,17 +190,37 @@ def _leerer_context() -> StatsContext:
     return StatsContext(bereich_id=None, bereich_name=None, klasse_id=None, klasse_name=None)
 
 
-async def _stats_for_bereich(
-    db: AsyncSession, bereich: Bereich, von: date | None, bis: date | None, historie_schuljahr_id: int | None
-) -> StatsOut:
-    klassen = (
-        await db.execute(
+async def _bereich_klassen(db: AsyncSession, bereich: Bereich, historie_schuljahr_id: int | None) -> list[Klasse]:
+    """Klassen eines Bereichs fuer die Vergleichsbalken. Im Normalmodus ueber die (nicht
+    jahresgebundene) bereich_klasse-Zuordnungstabelle -- unveraendert seit Plan 12. Im
+    Historie-Modus stattdessen ueber klasse.abteilung_id == bereich.abteilung_id (Bundle D:
+    Bereiche sind strukturell 1:1 aus WebUntis-Abteilungen abgeleitet, diese Zuordnung ist nicht
+    jahresabhaengig, bereich_klasse selbst spiegelt dagegen immer nur die aktuelle Struktur), siehe
+    docs/superpowers/specs/2026-09-22-dashboard-stats-schuljahr-design.md. Ein Bereich ohne
+    abteilung_id liefert bewusst eine leere Liste statt eines IS-NULL-Vergleichs, der faelschlich
+    alle Klassen OHNE abteilung_id treffen wuerde (siehe Wichtige Abweichungen im Plan)."""
+    if historie_schuljahr_id is None:
+        result = await db.execute(
             select(Klasse)
             .join(bereich_klasse, bereich_klasse.c.klasse_id == Klasse.id)
             .where(bereich_klasse.c.bereich_id == bereich.id)
             .order_by(Klasse.name)
         )
-    ).scalars().all()
+        return list(result.scalars().all())
+    if bereich.abteilung_id is None:
+        return []
+    result = await db.execute(
+        select(Klasse)
+        .where(Klasse.schuljahr_id == historie_schuljahr_id, Klasse.abteilung_id == bereich.abteilung_id)
+        .order_by(Klasse.name)
+    )
+    return list(result.scalars().all())
+
+
+async def _stats_for_bereich(
+    db: AsyncSession, bereich: Bereich, von: date | None, bis: date | None, historie_schuljahr_id: int | None
+) -> StatsOut:
+    klassen = await _bereich_klassen(db, bereich, historie_schuljahr_id)
     own = await _aggregate(db, [k.id for k in klassen], von, bis, historie_schuljahr_id)
     vergleich = []
     for klasse in klassen:
@@ -221,9 +241,8 @@ async def _stats_schulweit(db: AsyncSession, von: date | None, bis: date | None,
     ).scalars().all()
     vergleich = []
     for bereich in bereiche:
-        klasse_ids = (
-            await db.execute(select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich.id))
-        ).scalars().all()
+        klassen = await _bereich_klassen(db, bereich, historie_schuljahr_id)
+        klasse_ids = [k.id for k in klassen]
         stats = await _aggregate(db, list(klasse_ids), von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=bereich.id, name=bereich.name, **stats.model_dump()))
     return StatsOut(level="schule", context=_leerer_context(), own=own, vergleich=vergleich)
@@ -242,9 +261,8 @@ async def _stats_eigene_bereiche(
     alle_klasse_ids: list[int] = []
     vergleich = []
     for bereich in bereiche:
-        klasse_ids = (
-            await db.execute(select(bereich_klasse.c.klasse_id).where(bereich_klasse.c.bereich_id == bereich.id))
-        ).scalars().all()
+        klassen = await _bereich_klassen(db, bereich, historie_schuljahr_id)
+        klasse_ids = [k.id for k in klassen]
         alle_klasse_ids.extend(klasse_ids)
         stats = await _aggregate(db, list(klasse_ids), von, bis, historie_schuljahr_id)
         vergleich.append(StatsVergleichEintrag(id=bereich.id, name=bereich.name, **stats.model_dump()))

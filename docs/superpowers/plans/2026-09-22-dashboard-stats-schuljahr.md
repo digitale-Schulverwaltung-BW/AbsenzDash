@@ -639,7 +639,7 @@ git commit -m "feat: give dashboard_query._aggregate a (von, bis) window and a h
 - Neu (privat): `_bereich_klassen(db, bereich: Bereich, historie_schuljahr_id: int | None) -> list[Klasse]` — kapselt "welche Klassen gehören zu diesem Bereich" für beide Modi. Normalmodus (`historie_schuljahr_id is None`): unverändert über `bereich_klasse`. Historie-Modus: `Klasse.schuljahr_id == historie_schuljahr_id AND Klasse.abteilung_id == bereich.abteilung_id`; `bereich.abteilung_id is None` liefert sofort `[]` (siehe Abweichung 5).
 - `_stats_for_bereich`/`_stats_schulweit`/`_stats_eigene_bereiche` nutzen `_bereich_klassen` statt der bisherigen drei separaten `bereich_klasse`-Abfragen.
 
-- [ ] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
+- [x] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
 
 ```python
 @pytest.mark.asyncio
@@ -727,12 +727,12 @@ async def test_stats_for_bereich_historie_mode_uses_klasse_abteilung_id(db_sessi
 
 Ergänze den Import `from app.models.abteilung import Abteilung` am Datei-Kopf von `test_dashboard_query.py` (statt der Inline-Imports oben — Konvention der Datei, siehe bereits vorhandene Imports).
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -k "historie_mode_groups_by_abteilung or historie_mode_bereich_without_abteilung or historie_mode_uses_klasse_abteilung" -v`
 Expected: FAIL — `Mechatronik` fehlt in `vergleich` bzw. hat `anzahl_schueler == 0` (die Klassenauflösung läuft noch über `bereich_klasse`, das für die historische Klasse leer ist).
 
-- [ ] **Step 3: `_bereich_klassen`-Helfer einführen, `_stats_*` umstellen**
+- [x] **Step 3: `_bereich_klassen`-Helfer einführen, `_stats_*` umstellen**
 
 In `backend/app/services/dashboard_query.py`, füge vor `_stats_for_bereich` ein:
 
@@ -787,12 +787,12 @@ durch:
 
 (in `_stats_eigene_bereiche` bleibt die nachfolgende Zeile `alle_klasse_ids.extend(klasse_ids)` unverändert — `klasse_ids` ist weiterhin eine `list[int]`.)
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/dashboard_query.py backend/tests/test_dashboard_query.py

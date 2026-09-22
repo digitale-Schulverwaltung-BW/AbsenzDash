@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 from app.api.deps import resolve_bereich_scope, resolve_scope
+from app.models.abteilung import Abteilung
 from app.models.bereich import Bereich, bereich_klasse
 from app.models.classreg_category import ClassregCategory
 from app.models.einstellung import Einstellung
@@ -317,6 +318,85 @@ async def test_get_dashboard_stats_current_schuljahr_still_has_no_upper_date_bou
     stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, klasse.id)
 
     assert stats.own.avg_fehltage == 1.0
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_schulweit_historie_mode_groups_by_abteilung_not_bereich_klasse(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    abteilung = Abteilung(webuntis_id=1, name="Mechatronik")
+    db_session.add(abteilung)
+    await db_session.flush()
+    bereich = Bereich(name="Mechatronik", abteilung_id=abteilung.id)
+    db_session.add(bereich)
+    await db_session.flush()
+    # historische Klasse ist NICHT in bereich_klasse eingetragen (die Tabelle spiegelt nur die
+    # aktuelle Struktur) -- die Zuordnung muss ausschliesslich ueber abteilung_id funktionieren.
+    klasse_historisch = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id, abteilung_id=abteilung.id)
+    db_session.add(klasse_historisch)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_historisch.id)
+    )
+    db_session.add(
+        Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2024, 10, 1), start_zeit=0, end_zeit=2359)
+    )
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, None, schuljahr_alt.id)
+
+    vergleich_by_name = {v.name: v for v in stats.vergleich}
+    assert vergleich_by_name["Mechatronik"].anzahl_schueler == 1
+    assert vergleich_by_name["Mechatronik"].avg_fehltage == 1.0
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_stats_schulweit_historie_mode_bereich_without_abteilung_id_is_empty(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    bereich_ohne_abteilung = Bereich(name="Ohne Abteilung", abteilung_id=None)
+    db_session.add(bereich_ohne_abteilung)
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, None, None, schuljahr_alt.id)
+
+    vergleich_by_name = {v.name: v for v in stats.vergleich}
+    assert vergleich_by_name["Ohne Abteilung"].anzahl_schueler == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_for_bereich_historie_mode_uses_klasse_abteilung_id(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    abteilung = Abteilung(webuntis_id=1, name="Mechatronik")
+    db_session.add(abteilung)
+    await db_session.flush()
+    bereich = Bereich(name="Mechatronik", abteilung_id=abteilung.id)
+    db_session.add(bereich)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id, abteilung_id=abteilung.id)
+    db_session.add(klasse)
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    stats = await dashboard_query.get_dashboard_stats(db_session, nutzer, bereich.id, None, schuljahr_alt.id)
+
+    assert stats.level == "bereich"
+    assert [v.name for v in stats.vergleich] == ["10a"]
 
 
 @pytest.mark.asyncio
