@@ -810,7 +810,7 @@ git commit -m "feat: derive historical Bereich->Klassen grouping from abteilung_
 **Interfaces:**
 - `GET /dashboard/stats` akzeptiert einen zusätzlichen optionalen Query-Param `schuljahr_id: int | None`, durchgereicht an `dashboard_query.get_dashboard_stats(db, nutzer, bereich_id, klasse_id, schuljahr_id)`.
 
-- [ ] **Step 1: Fehlschlagenden Route-Test schreiben**
+- [x] **Step 1: Fehlschlagenden Route-Test schreiben**
 
 Füge in `backend/tests/test_api_dashboard.py` nach `test_get_stats_returns_klasse_level_for_own_klasse` an:
 
@@ -885,12 +885,12 @@ async def test_get_stats_schuljahr_id_for_aktuelles_schuljahr_behaves_like_omitt
 
 (Ergänze die dafür nötigen Imports `Einstellung` in `test_api_dashboard.py`, falls noch nicht vorhanden.)
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_dashboard.py -k schuljahr_id -v`
 Expected: FAIL — `422 Unprocessable Entity` (unbekannter Query-Param `schuljahr_id` wird von FastAPI zwar toleriert, aber `get_dashboard_stats` erhält ihn nicht, Response liefert weiterhin den kompletten Live-Roster statt des historischen).
 
-- [ ] **Step 3: Route anpassen**
+- [x] **Step 3: Route anpassen**
 
 In `backend/app/api/routes/dashboard.py`, ändere `get_stats`:
 
@@ -906,12 +906,12 @@ async def get_stats(
     return await dashboard_query.get_dashboard_stats(db, nutzer, bereich_id, klasse_id, schuljahr_id)
 ```
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_api_dashboard.py -v`
 Expected: alle Tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/api/routes/dashboard.py backend/tests/test_api_dashboard.py

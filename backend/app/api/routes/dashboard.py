@@ -29,5 +29,6 @@ async def get_stats(
     db: Annotated[AsyncSession, Depends(get_db)],
     bereich_id: int | None = None,
     klasse_id: int | None = None,
+    schuljahr_id: int | None = None,
 ) -> StatsOut:
-    return await dashboard_query.get_dashboard_stats(db, nutzer, bereich_id, klasse_id)
+    return await dashboard_query.get_dashboard_stats(db, nutzer, bereich_id, klasse_id, schuljahr_id)
