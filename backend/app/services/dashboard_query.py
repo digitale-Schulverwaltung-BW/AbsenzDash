@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import resolve_bereich_scope, resolve_scope
@@ -62,7 +62,15 @@ async def get_nav_options(db: AsyncSession, nutzer: Nutzer, schuljahr_id: int | 
         (await db.execute(select(bereich_klasse.c.klasse_id, bereich_klasse.c.bereich_id))).all()
     )
 
-    schuljahre_result = await db.execute(select(Schuljahr).order_by(Schuljahr.start_datum.desc()))
+    historie_schuljahr_ids = select(SchuelerKlasseHistorie.schuljahr_id).distinct()
+    schuljahre_query = select(Schuljahr).order_by(Schuljahr.start_datum.desc())
+    if aktuelles_schuljahr_id is not None:
+        schuljahre_query = schuljahre_query.where(
+            or_(Schuljahr.id == aktuelles_schuljahr_id, Schuljahr.id.in_(historie_schuljahr_ids))
+        )
+    else:
+        schuljahre_query = schuljahre_query.where(Schuljahr.id.in_(historie_schuljahr_ids))
+    schuljahre_result = await db.execute(schuljahre_query)
     schuljahre = [
         NavSchuljahrOut(id=s.id, name=s.name, start_datum=s.start_datum, end_datum=s.end_datum)
         for s in schuljahre_result.scalars().all()

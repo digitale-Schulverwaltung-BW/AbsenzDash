@@ -929,7 +929,7 @@ git commit -m "feat: accept schuljahr_id on GET /dashboard/stats"
 **Interfaces:**
 - `get_nav_options` filtert `schuljahre` so, dass ein Schuljahr nur enthalten ist, wenn `schuljahr.id == aktuelles_schuljahr_id` **oder** mindestens eine `schueler_klasse_historie`-Zeile mit diesem `schuljahr_id` existiert (per `EXISTS`/`IN`-Subquery).
 
-- [ ] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
+- [x] **Step 1: Fehlschlagende Tests in `test_dashboard_query.py` schreiben**
 
 ```python
 @pytest.mark.asyncio
@@ -985,12 +985,12 @@ async def test_get_nav_options_always_includes_aktuelles_schuljahr_even_without_
     assert schuljahr_neu.id in {s.id for s in result.schuljahre}
 ```
 
-- [ ] **Step 2: Tests ausführen, Fehlschlag verifizieren**
+- [x] **Step 2: Tests ausführen, Fehlschlag verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -k "excludes_schuljahr_without_historie or includes_schuljahr_with_at_least_one_historie" -v`
 Expected: FAIL — `test_get_nav_options_excludes_schuljahr_without_historie_rows` schlägt fehl (`schuljahr_ohne_daten.id` ist noch in der Liste, da bisher ungefiltert). Der dritte neue Test (`always_includes_aktuelles_schuljahr`) sollte bereits vor der Implementierung PASS sein (reiner Regressionsschutz).
 
-- [ ] **Step 3: Filter implementieren**
+- [x] **Step 3: Filter implementieren**
 
 In `backend/app/services/dashboard_query.py`, ergänze den Import `or_`:
 
@@ -1018,12 +1018,12 @@ from sqlalchemy import func, or_, select
 
 (ersetzt die bisherige, ungefilterte `schuljahre_result = await db.execute(select(Schuljahr).order_by(Schuljahr.start_datum.desc()))`.)
 
-- [ ] **Step 4: Tests ausführen, Erfolg verifizieren**
+- [x] **Step 4: Tests ausführen, Erfolg verifizieren**
 
 Run: `docker exec absenzdash-backend python -m pytest tests/test_dashboard_query.py -v`
 Expected: alle Tests PASS. Insbesondere die bestehenden `test_get_nav_options_includes_schuljahre_newest_first` und `test_get_nav_options_includes_aktuelles_schuljahr_id_when_set` bleiben grün — prüfe hier zusätzlich manuell, dass diese beiden bestehenden Tests entweder bereits eine `aktuelles_schuljahr_id`/passende `Einstellung`-Zeile setzen oder (falls nicht) um eine `SchuelerKlasseHistorie`-Zeile ergänzt werden müssen, damit ihre Schuljahre nach dem neuen Filter weiterhin auftauchen — beide Tests seeden aktuell **keine** Einstellung/Historie-Zeile und würden nach diesem Fix mit einer leeren `schuljahre`-Liste fehlschlagen. Ergänze in `test_get_nav_options_includes_schuljahre_newest_first` (Zeile 96-110) für beide Schuljahre je eine `SchuelerKlasseHistorie`-Zeile (mit einem beliebigen Dummy-Schüler), damit der Test weiterhin die Sortierreihenfolge prüft, ohne den neuen Filter zu unterlaufen.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/dashboard_query.py backend/tests/test_dashboard_query.py

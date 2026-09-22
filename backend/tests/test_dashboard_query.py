@@ -97,11 +97,21 @@ async def test_get_nav_options_includes_rolle(db_session):
 @pytest.mark.asyncio
 async def test_get_nav_options_includes_schuljahre_newest_first(db_session):
     nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add_all([nutzer, schuljahr_alt, schuljahr_neu])
+    await db_session.flush()
+    klasse_alt = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    klasse_neu = Klasse(webuntis_id=1, name="10b", schuljahr_id=schuljahr_neu.id)
+    db_session.add_all([klasse_alt, klasse_neu])
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
     db_session.add_all(
         [
-            nutzer,
-            Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30)),
-            Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29)),
+            SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse_alt.id),
+            SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_neu.id, klasse_id=klasse_neu.id),
         ]
     )
     await db_session.commit()
@@ -178,6 +188,59 @@ async def test_get_nav_options_klassen_scoped_to_requested_historical_schuljahr(
     result = await dashboard_query.get_nav_options(db_session, nutzer, schuljahr_id=schuljahr_alt.id)
 
     assert [k.id for k in result.klassen] == [klasse_alt.id]
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_excludes_schuljahr_without_historie_rows(db_session):
+    schuljahr_ohne_daten = Schuljahr(id=20, name="2017/2018", start_datum=date(2017, 9, 11), end_datum=date(2018, 7, 27))
+    db_session.add(schuljahr_ohne_daten)
+    await db_session.commit()
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert schuljahr_ohne_daten.id not in {s.id for s in result.schuljahre}
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_includes_schuljahr_with_at_least_one_historie_row(db_session):
+    schuljahr_alt = Schuljahr(id=27, name="2024/2025", start_datum=date(2024, 9, 9), end_datum=date(2025, 7, 30))
+    db_session.add(schuljahr_alt)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr_alt.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    schueler = Schueler(externe_id="ext-1", vorname="A", nachname="A", aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add(
+        SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=schuljahr_alt.id, klasse_id=klasse.id)
+    )
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert schuljahr_alt.id in {s.id for s in result.schuljahre}
+
+
+@pytest.mark.asyncio
+async def test_get_nav_options_always_includes_aktuelles_schuljahr_even_without_historie_rows(db_session):
+    schuljahr_neu = Schuljahr(id=28, name="2025/2026", start_datum=date(2025, 9, 15), end_datum=date(2026, 7, 29))
+    db_session.add(schuljahr_neu)
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr_neu.id))
+    nutzer = Nutzer(wp_user_id="u1", email="a@b.de", name="A", rolle="schulleitung")
+    db_session.add(nutzer)
+    await db_session.commit()
+    # keine schueler_klasse_historie-Zeile fuer schuljahr_neu -- z.B. direkt nach einem Rollover.
+
+    result = await dashboard_query.get_nav_options(db_session, nutzer)
+
+    assert schuljahr_neu.id in {s.id for s in result.schuljahre}
 
 
 async def _seed_schueler_mit_fehlzeit(db_session, klasse, schuljahr_start):
