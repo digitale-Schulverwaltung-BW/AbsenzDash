@@ -114,6 +114,55 @@ async def test_run_full_sync_gives_up_after_max_attempts(db_session, monkeypatch
     assert einstellung is None or einstellung.letzter_sync_am is None
 
 
+@pytest.mark.asyncio
+async def test_run_full_sync_runs_import_schueler_even_when_webuntis_step_fails(db_session, monkeypatch):
+    """Regression Live-Fund 2026-09-28: import_schueler haengt nur an der lokalen ASV-CSV. Faellt ein
+    WebUntis-Schritt (hier sync_klassen) aus, muss der Import trotzdem in JEDEM Versuch laufen,
+    der Sync-Lauf aber weiterhin als fehlgeschlagen gelten (Retry, letzter_sync_am bleibt leer)."""
+    monkeypatch.setattr(sync_orchestrator.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(settings, "webuntis_sync_retry_delay_minutes", 30)
+    monkeypatch.setattr(settings, "webuntis_sync_retry_max_attempts", 3)
+    sync_orchestrator.sync_klassen.side_effect = WebUntisError("boom")
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    assert sync_orchestrator.sync_klassen.await_count == settings.webuntis_sync_retry_max_attempts
+    assert sync_orchestrator.import_schueler.await_count == settings.webuntis_sync_retry_max_attempts
+    sync_orchestrator.sync_fehlzeiten.assert_not_awaited()
+    sync_orchestrator.pruefe_schwellwerte.assert_not_awaited()
+    result = await db_session.execute(select(Einstellung))
+    einstellung = result.scalars().first()
+    assert einstellung is None or einstellung.letzter_sync_am is None
+
+
+@pytest.mark.asyncio
+async def test_run_full_sync_runs_import_schueler_even_when_webuntis_login_fails(db_session, monkeypatch):
+    """Wie oben, aber schon der Verbindungsaufbau/Login (__aenter__) schlaegt fehl."""
+
+    class _FakeWebUntisClientLoginFehler:
+        def __init__(self, _settings):
+            pass
+
+        async def __aenter__(self):
+            raise WebUntisError("login boom")
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(sync_orchestrator, "WebUntisClient", _FakeWebUntisClientLoginFehler)
+    monkeypatch.setattr(sync_orchestrator.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(settings, "webuntis_sync_retry_delay_minutes", 30)
+    monkeypatch.setattr(settings, "webuntis_sync_retry_max_attempts", 2)
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    assert sync_orchestrator.import_schueler.await_count == 2
+    sync_orchestrator.sync_abteilungen.assert_not_awaited()
+    result = await db_session.execute(select(Einstellung))
+    einstellung = result.scalars().first()
+    assert einstellung is None or einstellung.letzter_sync_am is None
+
+
 def test_fehlzeiten_zeitraum_with_letzter_sync_am():
     """Branch 1: letzter_sync_am is set, von = letzter_sync_am - 1 day."""
     sync_date = datetime(2024, 7, 15, 10, 30, tzinfo=timezone.utc)

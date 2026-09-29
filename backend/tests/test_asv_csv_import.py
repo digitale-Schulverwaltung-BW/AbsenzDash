@@ -329,3 +329,61 @@ def test_lese_asv_csv_zeilen_raises_os_error_on_invalid_encoding(tmp_path):
 
     with pytest.raises(OSError):
         lese_asv_csv_zeilen(str(path))
+
+
+@pytest.mark.asyncio
+async def test_import_marks_schueler_inactive_when_missing_from_new_csv(db_session, tmp_path):
+    """Live-Fund 2026-09-28: Schueler ohne Austrittsdatum, die aus dem ASV-Export verschwinden
+    (z.B. in eine 'Papierkorb'-Klasse verschoben), muessen beim naechsten Import aktiv=False werden."""
+    schuljahr = await _seed_aktuelles_schuljahr(db_session)
+    db_session.add(Klasse(webuntis_id=1, name="AME56", schuljahr_id=schuljahr.id))
+    await db_session.commit()
+
+    csv_path = _write_csv(
+        tmp_path,
+        [
+            '"a";"a";"ext-uuid-bleibt";"Bleibt";"Anna";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"',
+            '"b";"b";"ext-uuid-weg";"Weg";"Bernd";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"',
+        ],
+    )
+    await import_schueler(db_session)
+    weg = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-weg"))).scalar_one()
+    assert weg.aktiv is True
+    klasse_id_vorher = weg.klasse_id
+
+    _write_csv(
+        tmp_path,
+        ['"a";"a";"ext-uuid-bleibt";"Bleibt";"Anna";"";"AME56";"01.01.1990";"";"17.03.2020";"ja"'],
+    )
+    stat = csv_path.stat()
+    os.utime(csv_path, (stat.st_atime, stat.st_mtime + 10))  # sonst wuerde der mtime-Check den Import ueberspringen
+
+    await import_schueler(db_session)
+
+    db_session.expire_all()
+    weg = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-weg"))).scalar_one()
+    bleibt = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-bleibt"))).scalar_one()
+    assert weg.aktiv is False
+    assert weg.vorname == "Bernd"
+    assert weg.nachname == "Weg"
+    assert weg.klasse_id == klasse_id_vorher
+    assert bleibt.aktiv is True
+
+
+@pytest.mark.asyncio
+async def test_import_does_not_deactivate_schueler_whose_row_is_skipped_for_malformed_date(db_session, tmp_path):
+    """Eine nur wegen fehlerhaftem Datum uebersprungene Zeile darf den Schueler nicht als
+    'aus der Datei verschwunden' erscheinen lassen."""
+    db_session.add(Schueler(externe_id="ext-uuid-kaputt", vorname="Karl", nachname="Kaputt", aktiv=True))
+    await db_session.commit()
+
+    _write_csv(
+        tmp_path,
+        ['"k";"k";"ext-uuid-kaputt";"Kaputt";"Karl";"";"AME56";"01.01.1990";"";"NICHT-EIN-DATUM";"ja"'],
+    )
+
+    await import_schueler(db_session)
+
+    db_session.expire_all()
+    schueler = (await db_session.execute(select(Schueler).where(Schueler.externe_id == "ext-uuid-kaputt"))).scalar_one()
+    assert schueler.aktiv is True

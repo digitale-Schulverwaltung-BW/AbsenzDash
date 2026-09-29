@@ -180,37 +180,57 @@ async def run_sync_once(db: AsyncSession) -> None:
 
 
 async def _run_sync_once_impl(db: AsyncSession) -> None:
+    einstellung = await get_or_create_einstellung(db)
+    heute = datetime.now(timezone.utc).date()
+
+    aktuelles_schuljahr: Schuljahr | None = None
+    webuntis_fehler: Exception | None = None
+    try:
+        async with WebUntisClient(settings) as client:
+            aktuelles_schuljahr = await resolve_aktuelles_schuljahr(client, db)
+            vorheriges_schuljahr_id = einstellung.aktuelles_schuljahr_id
+            einstellung.aktuelles_schuljahr_id = aktuelles_schuljahr.id
+            if aktuelles_schuljahr.start_datum != einstellung.schuljahr_start_cache:
+                einstellung.schuljahr_start_cache = aktuelles_schuljahr.start_datum
+
+            ist_rollover = vorheriges_schuljahr_id is not None and vorheriges_schuljahr_id != aktuelles_schuljahr.id
+            if ist_rollover:
+                await _snapshot_klassenzugehoerigkeit_bei_rollover(db, aktuelles_schuljahr.id)
+
+            await sync_abteilungen(client, db)
+            await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
+            await sync_bereiche(db, schuljahr_id=aktuelles_schuljahr.id)
+            await sync_kategorien(client, db)
+            await sync_stundenraster(client, db)
+    except (WebUntisError, OSError, ValueError) as exc:
+        # import_schueler haengt ausschliesslich an der lokalen ASV-CSV, nicht an WebUntis. Faellt ein
+        # WebUntis-Schritt aus (Auth/Verbindung, sync_klassen, ...), muss schueler.aktiv trotzdem
+        # aktualisiert werden, sonst bleiben Abgaenger waehrend eines WebUntis-Ausfalls im aktuellen
+        # Schuljahr sichtbar (Live-Fund 2026-09-28). Fehler wird nach dem Import erneut geworfen,
+        # damit Retry-Logik in run_full_sync unveraendert greift.
+        logger.warning(
+            "WebUntis-Teil des Sync-Laufs fehlgeschlagen (%s) -- ASV-CSV-Import laeuft trotzdem weiter, "
+            "da er unabhaengig von WebUntis ist",
+            exc,
+        )
+        webuntis_fehler = exc
+
+    await import_schueler(db)
+
+    if webuntis_fehler is not None:
+        raise webuntis_fehler
+
+    von, bis = _fehlzeiten_zeitraum(einstellung, heute, aktuelles_schuljahr.end_datum)
     async with WebUntisClient(settings) as client:
-        einstellung = await get_or_create_einstellung(db)
-
-        aktuelles_schuljahr = await resolve_aktuelles_schuljahr(client, db)
-        vorheriges_schuljahr_id = einstellung.aktuelles_schuljahr_id
-        einstellung.aktuelles_schuljahr_id = aktuelles_schuljahr.id
-        if aktuelles_schuljahr.start_datum != einstellung.schuljahr_start_cache:
-            einstellung.schuljahr_start_cache = aktuelles_schuljahr.start_datum
-
-        ist_rollover = vorheriges_schuljahr_id is not None and vorheriges_schuljahr_id != aktuelles_schuljahr.id
-        if ist_rollover:
-            await _snapshot_klassenzugehoerigkeit_bei_rollover(db, aktuelles_schuljahr.id)
-
-        await sync_abteilungen(client, db)
-        await sync_klassen(client, db, schoolyear_id=aktuelles_schuljahr.id)
-        await sync_bereiche(db, schuljahr_id=aktuelles_schuljahr.id)
-        await sync_kategorien(client, db)
-        await sync_stundenraster(client, db)
-        await import_schueler(db)
-
-        heute = datetime.now(timezone.utc).date()
-        von, bis = _fehlzeiten_zeitraum(einstellung, heute, aktuelles_schuljahr.end_datum)
         await sync_fehlzeiten(client, db, von, bis)
         await sync_klassenbuch(client, db, von, bis)
 
-        await pruefe_schwellwerte(db, heute, einstellung, settings)
+    await pruefe_schwellwerte(db, heute, einstellung, settings)
 
-        einstellung.letzter_sync_am = datetime.now(timezone.utc)
-        if not einstellung.initialer_import_abgeschlossen:
-            einstellung.initialer_import_abgeschlossen = True
-        await db.commit()
+    einstellung.letzter_sync_am = datetime.now(timezone.utc)
+    if not einstellung.initialer_import_abgeschlossen:
+        einstellung.initialer_import_abgeschlossen = True
+    await db.commit()
 
 
 async def run_full_sync(session_factory: async_sessionmaker[AsyncSession]) -> None:

@@ -104,6 +104,7 @@ async def import_schueler(db: AsyncSession) -> None:
     )
     existing = (await db.execute(select(Schueler))).scalars().all()
     by_externe_id = {schueler.externe_id: schueler for schueler in existing}
+    gesehene_externe_ids: set[str] = set()
 
     historie_by_schueler_id: dict[int, SchuelerKlasseHistorie] = {}
     if einstellung.aktuelles_schuljahr_id is not None:
@@ -124,6 +125,9 @@ async def import_schueler(db: AsyncSession) -> None:
     for zeilen_nr, row in enumerate(rows, start=2):
         try:
             externe_id = row[settings.asv_csv_column_externe_id]
+            # Vor den _parse_datum-Aufrufen, die die Zeile ueberspringen koennen: ein Schueler mit
+            # nur fehlerhaftem Datum gilt weiterhin als "in der Datei vorhanden", nicht als fehlend.
+            gesehene_externe_ids.add(externe_id)
             klasse_name = row[settings.asv_csv_column_klasse]
             eintrittsdatum = _parse_datum(row[settings.asv_csv_column_eintrittsdatum])
             austrittsdatum = _parse_datum(row[settings.asv_csv_column_austrittsdatum])
@@ -171,6 +175,19 @@ async def import_schueler(db: AsyncSession) -> None:
 
     if uebersprungene_zeilen:
         logger.warning("ASV-CSV: %d Zeile(n) wegen Fehlern übersprungen", uebersprungene_zeilen)
+
+    # Aus dem ASV-Export komplett verschwundene Schueler (z.B. in eine organisatorische
+    # "Papierkorb"-Klasse verschoben, ohne Austrittsdatum, und spaeter nicht mehr exportiert)
+    # tauchen in der Schleife oben nie auf und blieben sonst ewig aktiv=True (Live-Fund 2026-09-28).
+    # Nur aktiv wird umgestellt; Klasse/Name etc. bleiben als letzter bekannter Stand erhalten.
+    fehlende_externe_ids = set(by_externe_id) - gesehene_externe_ids
+    for externe_id in fehlende_externe_ids:
+        schueler = by_externe_id[externe_id]
+        if schueler.aktiv:
+            schueler.aktiv = False
+            logger.info(
+                "ASV-CSV: externe_id=%s nicht mehr in der Datei enthalten, als inaktiv markiert", externe_id
+            )
 
     if einstellung.aktuelles_schuljahr_id is not None:
         aktuelles_schuljahr = await db.get(Schuljahr, einstellung.aktuelles_schuljahr_id)
