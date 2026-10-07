@@ -234,7 +234,7 @@ describe("StudentList", () => {
       expect(arrows[1]).toHaveAttribute("title", "Letzte 14 Tage: 2, davor: 9");
     });
 
-    it("shows no arrow when richtung is null", () => {
+    it("shows a neutral dash with explanatory tooltip when richtung is null but a trend period is chosen", () => {
       mockData([
         {
           ...BASE_STUDENT,
@@ -246,6 +246,31 @@ describe("StudentList", () => {
       ]);
 
       renderList(["/schueler?trend_tage=7"]);
+
+      const marks = within(screen.getByRole("row", { name: /Muster, Max/ })).getAllByRole("img");
+      expect(marks).toHaveLength(2);
+      for (const mark of marks) {
+        expect(mark).toHaveTextContent("–");
+        expect(mark).toHaveAttribute("data-richtung", "unbekannt");
+        expect(mark).toHaveAttribute("title", "Zu wenig Daten seit Schuljahresbeginn für den Vergleich");
+        expect(mark).toHaveAccessibleName("Trend unbekannt. Zu wenig Daten seit Schuljahresbeginn für den Vergleich");
+        expect(mark.className).toContain("trendUnbekannt");
+        expect(mark.className).not.toContain("trendGleich");
+      }
+    });
+
+    it("shows no dash without trend data", () => {
+      mockData([BASE_STUDENT]);
+
+      renderList(["/schueler?trend_tage=7"]);
+
+      expect(screen.queryAllByRole("img")).toHaveLength(0);
+    });
+
+    it("shows no dash in history mode even if trend data were present", () => {
+      mockData([{ ...BASE_STUDENT, trend: { fehltage: { aktuell: 0, vorher: 0, richtung: null }, fehlstunden: { aktuell: 0, vorher: 0, richtung: null } } }]);
+
+      renderList(["/schueler?schuljahr=27&trend_tage=7"]);
 
       expect(screen.queryAllByRole("img")).toHaveLength(0);
     });
