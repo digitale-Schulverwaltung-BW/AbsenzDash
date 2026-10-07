@@ -281,6 +281,28 @@ async def _schreibe_benachrichtigung(
     )
 
 
+async def _setze_zaehlerstand_zurueck(
+    db: AsyncSession, schueler_id: int, typ: str, regel_loesen: bool = False
+) -> None:
+    """Setzt einen bereits vorhandenen Zaehlerstand auf 'keine Stufe' zurueck, wenn der Schueler in
+    diesem Lauf nicht eskaliert wird (aktive Ausnahme oder keine zutreffende Regel). Legt keine neue
+    Zeile an und loest bewusst keine Benachrichtigung aus - sonst bliebe die Stufe eines frueheren
+    Laufs (z.B. des Vorjahres) im Dashboard stehen."""
+    zaehlerstand = (
+        await db.execute(
+            select(SchuelerZaehlerstand).where(
+                SchuelerZaehlerstand.schueler_id == schueler_id, SchuelerZaehlerstand.typ == typ
+            )
+        )
+    ).scalar_one_or_none()
+    if zaehlerstand is None:
+        return
+    if regel_loesen:
+        zaehlerstand.regel_id = None
+    zaehlerstand.erreichte_stufe_nr = None
+    zaehlerstand.aktueller_stand = 0
+
+
 async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einstellung, settings: Settings) -> None:
     """Kernschleife: fuer jeden aktiven Schueler und Regel-Typ Zaehlerstand neu berechnen (SPECS.md Abschnitt 5)."""
     schueler_result = await db.execute(select(Schueler).where(Schueler.aktiv.is_(True)))
@@ -297,12 +319,23 @@ async def pruefe_schwellwerte(db: AsyncSession, heute: date, einstellung: Einste
         regel_cache: dict[int | None, SchwellwertRegel | None] = {}
         for schueler in alle_schueler:
             if await _hat_aktive_ausnahme(db, schueler.id, typ, heute):
+                await _setze_zaehlerstand_zurueck(db, schueler.id, typ)
                 continue
 
             if schueler.klasse_id not in regel_cache:
                 regel_cache[schueler.klasse_id] = await resolve_schwellwert_regel(db, schueler.klasse_id, typ)
+                if regel_cache[schueler.klasse_id] is None:
+                    anzahl = sum(1 for s in alle_schueler if s.klasse_id == schueler.klasse_id)
+                    logger.warning(
+                        "Keine Regel fuer Klasse %s, Typ %s aufloesbar - %d Schueler werden nicht eskaliert "
+                        "(bestehende Stufen werden zurueckgesetzt)",
+                        schueler.klasse_id,
+                        typ,
+                        anzahl,
+                    )
             regel = regel_cache[schueler.klasse_id]
             if regel is None:
+                await _setze_zaehlerstand_zurueck(db, schueler.id, typ, regel_loesen=True)
                 continue
 
             bestehender_result = await db.execute(

@@ -271,3 +271,71 @@ async def test_put_threshold_rules_accepts_klasse_specific_rule(db_session, schu
         response = await client.put("/admin/threshold-rules", headers=HEADERS_SCHULLEITUNG, json=payload)
     assert response.status_code == 200
     assert response.json()[0]["klasse_id"] == klasse.id
+
+
+async def _lege_klassen_an(db_session, schuljahr):
+    a1 = Abteilung(webuntis_id=1, name="A1")
+    a2 = Abteilung(webuntis_id=2, name="A2")
+    db_session.add_all([a1, a2])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Klasse(webuntis_id=1, name="1a", abteilung_id=a1.id, schuljahr_id=schuljahr.id),
+            Klasse(webuntis_id=2, name="2a", abteilung_id=a2.id, schuljahr_id=schuljahr.id),
+            Klasse(webuntis_id=3, name="3a", abteilung_id=a2.id, schuljahr_id=schuljahr.id),
+            Klasse(webuntis_id=4, name="4a", abteilung_id=None, schuljahr_id=schuljahr.id),
+        ]
+    )
+    await db_session.commit()
+    return a1.id
+
+
+async def _get_coverage():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/threshold-rules/coverage", headers=HEADERS_SCHULLEITUNG)
+    assert response.status_code == 200
+    return {eintrag["typ"]: eintrag for eintrag in response.json()}
+
+
+@pytest.mark.asyncio
+async def test_coverage_zaehlt_klassen_ohne_regel_bei_nur_abteilungsregel(db_session, schuljahr):
+    a1_id = await _lege_klassen_an(db_session, schuljahr)
+    db_session.add(SchwellwertRegel(typ="fehlzeiten", geltungsbereich="abteilung", abteilung_id=a1_id))
+    await db_session.commit()
+
+    coverage = await _get_coverage()
+
+    assert coverage["fehlzeiten"] == {"typ": "fehlzeiten", "hat_schulweite_regel": False, "klassen_ohne_regel": 3}
+    assert coverage["klassenbuch"]["klassen_ohne_regel"] == 4
+
+
+@pytest.mark.asyncio
+async def test_coverage_schulweite_regel_deckt_alles_ab(db_session, schuljahr):
+    await _lege_klassen_an(db_session, schuljahr)
+    db_session.add(SchwellwertRegel(typ="fehlzeiten", geltungsbereich="schulweit"))
+    await db_session.commit()
+
+    coverage = await _get_coverage()
+
+    assert coverage["fehlzeiten"] == {"typ": "fehlzeiten", "hat_schulweite_regel": True, "klassen_ohne_regel": 0}
+
+
+@pytest.mark.asyncio
+async def test_coverage_klassenregel_deckt_einzelne_klasse_ab(db_session, schuljahr):
+    await _lege_klassen_an(db_session, schuljahr)
+    klasse_id = (await db_session.execute(select(Klasse.id).where(Klasse.name == "4a"))).scalar_one()
+    db_session.add(SchwellwertRegel(typ="klassenbuch", geltungsbereich="klasse", klasse_id=klasse_id))
+    await db_session.commit()
+
+    coverage = await _get_coverage()
+
+    assert coverage["klassenbuch"]["klassen_ohne_regel"] == 3
+
+
+@pytest.mark.asyncio
+async def test_coverage_rejects_non_schulleitung(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/threshold-rules/coverage", headers=HEADERS_KLASSENLEHRKRAFT)
+    assert response.status_code == 403

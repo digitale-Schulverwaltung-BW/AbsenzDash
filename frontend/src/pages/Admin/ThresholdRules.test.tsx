@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAbteilungen } from "../../api/hooks/useAbteilungen";
+import { useThresholdCoverage } from "../../api/hooks/useThresholdCoverage";
 import { useThresholdRules } from "../../api/hooks/useThresholdRules";
 import { useUpdateThresholdRules } from "../../api/hooks/useUpdateThresholdRules";
 import { ThresholdRules } from "./ThresholdRules";
@@ -9,6 +10,11 @@ import { ThresholdRules } from "./ThresholdRules";
 vi.mock("../../api/hooks/useThresholdRules");
 vi.mock("../../api/hooks/useUpdateThresholdRules");
 vi.mock("../../api/hooks/useAbteilungen");
+vi.mock("../../api/hooks/useThresholdCoverage");
+
+beforeEach(() => {
+  vi.mocked(useThresholdCoverage).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+});
 
 describe("ThresholdRules", () => {
   it("renders an existing schulweite Regel with its Stufen", () => {
@@ -206,5 +212,43 @@ describe("ThresholdRules", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     const rules = mutate.mock.calls[0][0];
     expect(rules[0].stufen[0].schwellenwert).toBe(5.5);
+  });
+
+  it("warns when a Typ has no schulweite Regel and Klassen are not covered", () => {
+    vi.mocked(useThresholdRules).mockReturnValue({
+      data: [{ id: 1, typ: "fehlzeiten", geltungsbereich: "abteilung", abteilung_id: 16, stufen: [] }],
+      isLoading: false,
+      isError: false,
+    } as any);
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+    vi.mocked(useThresholdCoverage).mockReturnValue({
+      data: [
+        { typ: "fehlzeiten", hat_schulweite_regel: false, klassen_ohne_regel: 12 },
+        { typ: "klassenbuch", hat_schulweite_regel: true, klassen_ohne_regel: 0 },
+      ],
+    } as any);
+
+    render(<ThresholdRules />);
+
+    expect(
+      screen.getByText(
+        "Für Fehlzeiten gibt es keine schulweite Regel; 12 Klassen haben keine Regel und werden nicht eskaliert.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Für Klassenbuch/)).not.toBeInTheDocument();
+  });
+
+  it("shows no coverage warning when every Klasse is covered", () => {
+    vi.mocked(useThresholdRules).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+    vi.mocked(useUpdateThresholdRules).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null } as any);
+    vi.mocked(useAbteilungen).mockReturnValue({ data: [], isLoading: false, isError: false } as any);
+    vi.mocked(useThresholdCoverage).mockReturnValue({
+      data: [{ typ: "fehlzeiten", hat_schulweite_regel: false, klassen_ohne_regel: 0 }],
+    } as any);
+
+    render(<ThresholdRules />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

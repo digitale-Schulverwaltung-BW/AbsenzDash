@@ -29,6 +29,8 @@ Jede Regel hat mehrere Stufen (Stufe 1, 2, 3, …) mit steigenden Schwellenwerte
 
 Der Zähler pro Schüler und Regel läuft ab Schuljahresbeginn bzw. ab dem letzten Reset durch eine zurücksetzende Maßnahme (siehe unten). Änderungen an einer Regel wirken erst ab dem nächsten Sync-Lauf — über **Sync jetzt ausführen** (siehe unten) können Sie das beschleunigen.
 
+**Klassen ohne Regel:** Eine Klasse wird nur eskaliert, wenn für den Typ (Fehlzeiten bzw. Klassenbuch) eine Regel für sie gilt — eine Klassen-, Abteilungs- oder die schulweite Regel. Gibt es keine schulweite Regel und decken die Abteilungs-Regeln nicht alle Klassen ab (z.B. Regel nur für eine einzelne Abteilung), erscheint oben auf der Seite eine rote Warnung, z.B. „Für Fehlzeiten gibt es keine schulweite Regel; 12 Klassen haben keine Regel und werden nicht eskaliert." Schüler solcher Klassen (und Schüler mit aktiver Ausnahme) haben keine Eskalationsstufe: ein früher erreichter Stand wird beim nächsten Sync-Lauf auf „keine Stufe"/0 zurückgesetzt, es wird dabei keine Benachrichtigung versendet. Abhilfe: schulweite Regel anlegen oder weitere Abteilungs-Regeln ergänzen und danach **Sync jetzt ausführen**.
+
 ### Maßnahmen-Katalog
 
 ![Maßnahmen-Katalog](Screenshots/05-2-Admin-Massnahmen-Katalog.png)

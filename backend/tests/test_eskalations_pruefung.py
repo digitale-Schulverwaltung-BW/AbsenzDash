@@ -687,7 +687,8 @@ async def test_pruefe_schwellwerte_selects_existing_zaehlerstand_only_once(db_se
     with _zaehle_zaehlerstand_selects() as get_count:
         await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
-    assert get_count() == 1
+    # 1 SELECT fuer fehlzeiten + 1 Lookup fuer den Reset beim Typ klassenbuch (dafuer existiert keine Regel)
+    assert get_count() == 2
 
 
 @pytest.mark.asyncio
@@ -703,7 +704,8 @@ async def test_pruefe_schwellwerte_selects_zaehlerstand_only_once_when_none_exis
     with _zaehle_zaehlerstand_selects() as get_count:
         await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
 
-    assert get_count() == 1
+    # 1 SELECT fuer fehlzeiten + 1 Lookup fuer den Reset beim Typ klassenbuch (keine Regel)
+    assert get_count() == 2
 
 
 @pytest.mark.asyncio
@@ -980,3 +982,90 @@ async def test_pruefe_schwellwerte_initial_import_does_not_call_send_email(db_se
     await db_session.commit()
 
     mock_send_email.assert_not_awaited()
+
+
+async def _lege_zaehlerstand_an(db_session, schueler, regel_id=None, stufe=2, stand=7) -> None:
+    db_session.add(
+        SchuelerZaehlerstand(
+            schueler_id=schueler.id, typ="fehlzeiten", regel_id=regel_id, aktueller_stand=stand, erreichte_stufe_nr=stufe
+        )
+    )
+    await db_session.commit()
+
+
+async def _lade_zaehlerstaende(db_session, schueler_id: int) -> list[SchuelerZaehlerstand]:
+    db_session.expire_all()
+    result = await db_session.execute(
+        select(SchuelerZaehlerstand).where(SchuelerZaehlerstand.schueler_id == schueler_id)
+    )
+    return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_setzt_stufe_zurueck_wenn_keine_regel_mehr_aufloesbar(db_session):
+    """Regression: Klasse ohne zutreffende Regel behielt die Stufe aus einem frueheren Lauf/Vorjahr."""
+    schueler = await _make_schueler(db_session)
+    schueler_id = schueler.id
+    await _lege_zaehlerstand_an(db_session, schueler)  # keine Regel in der DB
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    (zaehlerstand,) = await _lade_zaehlerstaende(db_session, schueler_id)
+    assert zaehlerstand.erreichte_stufe_nr is None
+    assert zaehlerstand.aktueller_stand == 0
+    assert zaehlerstand.regel_id is None
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_setzt_stufe_zurueck_bei_aktiver_ausnahme_ohne_benachrichtigung(
+    db_session, mock_send_email
+):
+    schueler = await _make_schueler(db_session)
+    schueler_id = schueler.id
+    regel = await _make_fehlzeiten_regel(db_session, schwellenwert=1)
+    await _lege_zaehlerstand_an(db_session, schueler, regel_id=regel.id)
+    db_session.add(Ausnahme(schueler_id=schueler.id, kategorie="fehlzeiten", grund="Testgrund", aktiv=True))
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    (zaehlerstand,) = await _lade_zaehlerstaende(db_session, schueler_id)
+    assert zaehlerstand.erreichte_stufe_nr is None
+    assert zaehlerstand.aktueller_stand == 0
+    assert (await db_session.execute(select(Benachrichtigung))).first() is None
+    mock_send_email.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_legt_ohne_regel_keinen_zaehlerstand_an(db_session):
+    schueler = await _make_schueler(db_session)
+    schueler_id = schueler.id
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+    await db_session.commit()
+
+    assert await _lade_zaehlerstaende(db_session, schueler_id) == []
+
+
+@pytest.mark.asyncio
+async def test_pruefe_schwellwerte_warnt_einmal_je_klasse_und_typ_ohne_regel(db_session, schuljahr, caplog):
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    for i in range(2):
+        db_session.add(Schueler(externe_id=f"ext-{i}", vorname="A", nachname="B", aktiv=True, klasse_id=klasse.id))
+    await db_session.commit()
+
+    einstellung = Einstellung(initialer_import_abgeschlossen=True, schuljahr_start_cache=datetime.date(2025, 9, 1))
+    with caplog.at_level(logging.WARNING, logger=eskalations_pruefung.logger.name):
+        await pruefe_schwellwerte(db_session, datetime.date(2026, 1, 20), einstellung, settings)
+
+    warnungen = [r.getMessage() for r in caplog.records if "Keine Regel" in r.getMessage()]
+    assert len(warnungen) == 2  # einmal je Typ (fehlzeiten, klassenbuch), nicht je Schueler
+    assert all(f"Klasse {klasse.id}" in w and "2 Schueler" in w for w in warnungen)
+    assert any("fehlzeiten" in w for w in warnungen) and any("klassenbuch" in w for w in warnungen)

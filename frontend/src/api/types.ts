@@ -41,6 +41,12 @@ export interface ThresholdRule {
   stufen: SchwellwertStufe[];
 }
 
+export interface ThresholdCoverage {
+  typ: "fehlzeiten" | "klassenbuch";
+  hat_schulweite_regel: boolean;
+  klassen_ohne_regel: number;
+}
+
 export interface MeasureType {
   id?: number;
   name: string;

@@ -41,6 +41,12 @@ class ThresholdRuleOut(BaseModel):
     stufen: list[SchwellwertStufeOut]
 
 
+class ThresholdCoverageOut(BaseModel):
+    typ: str
+    hat_schulweite_regel: bool
+    klassen_ohne_regel: int
+
+
 class MeasureTypeIn(BaseModel):
     id: int | None = None
     name: str
