@@ -33,8 +33,23 @@ const TREND_DARSTELLUNG: Record<TrendRichtung, { pfeil: string; label: string; k
   fallend: { pfeil: "↘", label: "fallend", klasse: styles.trendFallend },
 };
 
+const TREND_UNBEKANNT_HINWEIS = "Zu wenig Daten seit Schuljahresbeginn für den Vergleich";
+
 function TrendPfeil({ trend, tage }: { trend: TrendWert | null | undefined; tage: TrendTage | null }) {
-  if (!trend || trend.richtung === null || tage === null) return null;
+  if (!trend || tage === null) return null;
+  if (trend.richtung === null) {
+    return (
+      <span
+        role="img"
+        aria-label={`Trend unbekannt. ${TREND_UNBEKANNT_HINWEIS}`}
+        title={TREND_UNBEKANNT_HINWEIS}
+        data-richtung="unbekannt"
+        className={`${styles.trend} ${styles.trendUnbekannt}`}
+      >
+        –
+      </span>
+    );
+  }
   const darstellung = TREND_DARSTELLUNG[trend.richtung];
   const text = `Letzte ${tage} Tage: ${trend.aktuell}, davor: ${trend.vorher}`;
   return (

@@ -53,6 +53,7 @@ Mit **Mindeststufe** und **Nur auffällige** können Sie die Liste filtern, z.B.
 | ↗ | steigend | rot |
 | → | gleich | grau |
 | ↘ | fallend | grün |
+| – | unbekannt: zu wenig Daten seit Schuljahresbeginn | hellgrau |
 
 Die Pfeilform trägt die Information auch ohne Farbe. Beim Darüberfahren zeigt der Tooltip die Rohzahlen, z.B. „Letzte 7 Tage: 3, davor: 1". Gezählt werden alle Fehlzeiten (entschuldigt und unentschuldigt). Ohne Auswahl im Dropdown werden keine Pfeile berechnet; im Schuljahr-Archiv (vergangene Schuljahre) gibt es keinen Trend.
 
@@ -62,7 +63,7 @@ Die Pfeilform trägt die Information auch ohne Farbe. Beim Darüberfahren zeigt 
 
 - **Ferien, Feiertage und Wochenenden werden nicht berücksichtigt.** Die Fenster zählen Kalendertage, nicht Unterrichtstage; z.B. in der ersten Woche nach den Ferien fällt der Trend durch das ferienbedingt leere Vorfenster verzerrt aus (meist „steigend").
 - **Nachträge in WebUntis** (z.B. nachträglich eingetragene oder entschuldigte/korrigierte Fehlzeiten) ändern das Vorfenster rückwirkend; derselbe Schüler kann nach dem nächsten Sync einen anderen Pfeil haben.
-- **Zu Schuljahresbeginn gibt es keinen Trend:** Liegt das Vorfenster (teilweise) vor dem Schuljahresbeginn, wird kein Pfeil angezeigt, da der Sync nur Fehlzeiten ab Schuljahresbeginn holt und der Vergleich unfair wäre.
+- **Zu Schuljahresbeginn gibt es keinen Trend:** Liegt das Vorfenster (teilweise) vor dem Schuljahresbeginn, wird statt eines Pfeils ein graues „–" angezeigt (Tooltip: „Zu wenig Daten seit Schuljahresbeginn für den Vergleich"), da der Sync nur Fehlzeiten ab Schuljahresbeginn holt und der Vergleich unfair wäre. Ein Zeitraum von N Tagen braucht dafür mindestens 2N Tage Daten seit Schuljahresbeginn; ein größerer Zeitraum (z.B. 30 Tage) steht also erst entsprechend später im Schuljahr zur Verfügung als ein kleinerer (z.B. 7 Tage).
 - Der Trend steht nur in der Schülerliste, nicht in der Detailansicht oder den Dashboard-Kacheln, und ist weder filter- noch sortierbar.
 
 ## Schüler-Detail

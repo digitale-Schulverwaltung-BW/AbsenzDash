@@ -61,6 +61,11 @@
   color: #6b7280;
 }
 
+.trendUnbekannt {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
 .trendFallend {
   color: #15803d;
 }
