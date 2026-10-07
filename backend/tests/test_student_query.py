@@ -799,3 +799,185 @@ async def test_student_hat_historie_eintrag_false_for_other_schuljahr(db_session
     await db_session.commit()
 
     assert await student_query.student_hat_historie_eintrag(db_session, schueler.id, schuljahr_b.id) is False
+
+
+# --- load_trend_map (Trend-Anzeige, Plan 2026-10-07) -------------------------------------------
+# Festes "heute"; tage=7 -> aktuelles Fenster 2026-10-01..2026-10-07, Vorfenster 2026-09-24..2026-09-30.
+
+TREND_HEUTE = date(2026, 10, 7)
+TREND_SCHULJAHR_START = date(2026, 8, 31)
+
+
+async def _trend_schueler(db_session) -> Schueler:
+    schueler = Schueler(externe_id="ext-trend", vorname="T", nachname="T")
+    db_session.add(schueler)
+    await db_session.flush()
+    return schueler
+
+
+def _tage(schueler_id: int, datum: date, anzahl: int, invalid: bool = False) -> list[Fehlzeit]:
+    """anzahl Ganztags-Fehlzeiten an aufeinanderfolgenden Tagen ab datum (uq_fehlzeit_identity)."""
+    return [
+        Fehlzeit(
+            schueler_id=schueler_id, typ="tag", datum=datum + datetime.timedelta(days=i),
+            start_zeit=0, end_zeit=2359, invalid=invalid,
+        )
+        for i in range(anzahl)
+    ]
+
+
+def _stunden(schueler_id: int, datum: date, anzahl: int) -> list[Fehlzeit]:
+    """anzahl Einzelstunden a 45 Min. (= je 1.00 Fehlstunde) am selben Tag, versetzt (730-815, 830-915, ...)."""
+    return [
+        Fehlzeit(
+            schueler_id=schueler_id, typ="stunde", datum=datum,
+            start_zeit=730 + 100 * i, end_zeit=815 + 100 * i,
+        )
+        for i in range(anzahl)
+    ]
+
+
+async def _trend(db_session, schueler_id, tage=7, schuljahr_start=TREND_SCHULJAHR_START, heute=TREND_HEUTE):
+    result = await student_query.load_trend_map(db_session, [schueler_id], heute, tage, schuljahr_start)
+    return result[schueler_id]
+
+
+def test_trend_konstanten():
+    assert student_query.TREND_MIN_DIFF_FEHLTAGE == 2
+    assert student_query.TREND_MIN_DIFF_FEHLSTUNDEN == 4
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_empty_input(db_session):
+    assert await student_query.load_trend_map(db_session, [], TREND_HEUTE, 7, TREND_SCHULJAHR_START) == {}
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_leere_fenster_sind_gleich(db_session):
+    schueler = await _trend_schueler(db_session)
+    await db_session.commit()
+    trend = await _trend(db_session, schueler.id)
+    assert trend["fehltage"] == {"aktuell": 0, "vorher": 0, "richtung": "gleich"}
+    assert trend["fehlstunden"] == {"aktuell": Decimal("0.00"), "vorher": Decimal("0.00"), "richtung": "gleich"}
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_fehltage_steigend_gleich_fallend(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(_tage(schueler.id, date(2026, 10, 3), 3) + _tage(schueler.id, date(2026, 9, 28), 1))
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"] == {"aktuell": 3, "vorher": 1, "richtung": "steigend"}
+
+    db_session.add_all(_tage(schueler.id, date(2026, 9, 29), 1))  # vorher 2 -> diff 1 = gleich
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"] == {"aktuell": 3, "vorher": 2, "richtung": "gleich"}
+
+    db_session.add_all(_tage(schueler.id, date(2026, 9, 25), 2))  # vorher 4 -> diff -1 = gleich
+    db_session.add_all(_tage(schueler.id, date(2026, 9, 30), 1))  # vorher 5 -> diff -2 = fallend
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"] == {"aktuell": 3, "vorher": 5, "richtung": "fallend"}
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_fehltage_genau_an_mindestdifferenz(db_session):
+    schueler = await _trend_schueler(db_session)
+    # vorher 2, aktuell 3 -> diff +1 (darunter) -> gleich; aktuell 4 -> diff +2 (darauf) -> steigend
+    db_session.add_all(_tage(schueler.id, date(2026, 9, 28), 2) + _tage(schueler.id, date(2026, 10, 3), 3))
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"]["richtung"] == "gleich"
+    db_session.add_all(_tage(schueler.id, date(2026, 10, 6), 1))
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"]["richtung"] == "steigend"
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_fehlstunden_genau_an_mindestdifferenz(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(_stunden(schueler.id, date(2026, 10, 3), 3))
+    await db_session.commit()
+    trend = (await _trend(db_session, schueler.id))["fehlstunden"]
+    assert trend == {"aktuell": Decimal("3.00"), "vorher": Decimal("0.00"), "richtung": "gleich"}  # diff 3 < 4
+    db_session.add_all(_stunden(schueler.id, date(2026, 10, 4), 1))
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehlstunden"]["richtung"] == "steigend"  # diff 4 = Schwelle
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_fehlstunden_fallend_und_getrennt_von_fehltagen(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(_stunden(schueler.id, date(2026, 9, 25), 5) + _tage(schueler.id, date(2026, 10, 2), 1))
+    await db_session.commit()
+    trend = await _trend(db_session, schueler.id)
+    assert trend["fehlstunden"] == {"aktuell": Decimal("0.00"), "vorher": Decimal("5.00"), "richtung": "fallend"}
+    assert trend["fehltage"] == {"aktuell": 1, "vorher": 0, "richtung": "gleich"}  # Stunden zaehlen nicht als Tage
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_ignoriert_invalid_und_zaehlt_alle_excuse_status(db_session):
+    schueler = await _trend_schueler(db_session)
+    status = ExcuseStatus(id=1, name="entsch", long_name="entschuldigt", zaehlt_als_entschuldigt=True)
+    db_session.add(status)
+    await db_session.flush()
+    db_session.add_all(
+        _tage(schueler.id, date(2026, 10, 1), 5, invalid=True)
+        + _tage(schueler.id, date(2026, 10, 6), 1)
+        + [
+            Fehlzeit(
+                schueler_id=schueler.id, typ="tag", datum=date(2026, 10, 7), start_zeit=0, end_zeit=2359,
+                excuse_status_id=status.id,
+            )
+        ]
+    )
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"] == {"aktuell": 2, "vorher": 0, "richtung": "steigend"}
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_fenstergrenzen(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(
+        _tage(schueler.id, date(2026, 10, 7), 1)  # heute -> aktuell
+        + _tage(schueler.id, date(2026, 10, 1), 1)  # heute-6 -> aktuell
+        + _tage(schueler.id, date(2026, 9, 30), 1)  # heute-7 -> vorher
+        + _tage(schueler.id, date(2026, 9, 24), 1)  # heute-13 -> vorher
+        + _tage(schueler.id, date(2026, 9, 20), 4)  # bis heute-14 -> ausserhalb
+        + _tage(schueler.id, date(2026, 10, 8), 4)  # Zukunft -> ausserhalb
+    )
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id))["fehltage"] == {"aktuell": 2, "vorher": 2, "richtung": "gleich"}
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_vorfenster_vor_schuljahresbeginn_keine_richtung(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(_tage(schueler.id, date(2026, 10, 3), 5))
+    await db_session.commit()
+    # Vorfenster beginnt am 2026-09-24; Schuljahresbeginn 2026-09-25 -> Vorfenster teilweise davor
+    trend = await _trend(db_session, schueler.id, schuljahr_start=date(2026, 9, 25))
+    assert trend["fehltage"] == {"aktuell": 5, "vorher": 0, "richtung": None}
+    assert trend["fehlstunden"]["richtung"] is None
+    # Schuljahresbeginn genau am Vorfenster-Start -> fairer Vergleich moeglich
+    trend = await _trend(db_session, schueler.id, schuljahr_start=date(2026, 9, 24))
+    assert trend["fehltage"]["richtung"] == "steigend"
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_ohne_schuljahr_start_wird_berechnet(db_session):
+    schueler = await _trend_schueler(db_session)
+    db_session.add_all(_tage(schueler.id, date(2026, 10, 3), 5))
+    await db_session.commit()
+    assert (await _trend(db_session, schueler.id, schuljahr_start=None))["fehltage"]["richtung"] == "steigend"
+
+
+@pytest.mark.asyncio
+async def test_load_trend_map_tage_14_und_mehrere_schueler(db_session):
+    a = await _trend_schueler(db_session)
+    b = Schueler(externe_id="ext-trend-b", vorname="B", nachname="B")
+    db_session.add(b)
+    await db_session.flush()
+    # tage=14: aktuell 2026-09-24..10-07, vorher 2026-09-10..09-23
+    db_session.add_all(_tage(a.id, date(2026, 9, 24), 3) + _tage(b.id, date(2026, 9, 10), 3))
+    await db_session.commit()
+    result = await student_query.load_trend_map(db_session, [a.id, b.id], TREND_HEUTE, 14, TREND_SCHULJAHR_START)
+    assert result[a.id]["fehltage"] == {"aktuell": 3, "vorher": 0, "richtung": "steigend"}
+    assert result[b.id]["fehltage"] == {"aktuell": 0, "vorher": 3, "richtung": "fallend"}
