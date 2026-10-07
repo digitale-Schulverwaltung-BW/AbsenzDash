@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+from enum import IntEnum
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -31,9 +32,19 @@ from app.schemas.students import (
     StudentDetailOut,
     StudentListOut,
     StudentOverviewOut,
+    TrendOut,
 )
 from app.services import ausnahme_service, export_service, massnahme_service, student_query
 from app.services.schuljahr_zeitraum import resolve_schuljahr_zeitraum
+
+class TrendTage(IntEnum):
+    """Erlaubte Trend-Fenstergroessen in Tagen (Query-Parameter trend_tage); alles andere -> 422.
+    Literal[7, 14, 30] koennte den Query-String "7" nicht in einen int umwandeln."""
+
+    WOCHE = 7
+    ZWEI_WOCHEN = 14
+    MONAT = 30
+
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -49,6 +60,11 @@ async def _aktuelles_schuljahr_zeitraum(db: AsyncSession) -> tuple[date | None, 
     if schuljahr is None:
         return None, None
     return schuljahr.start_datum, schuljahr.end_datum
+
+
+def _heute() -> date:
+    """Kalenderdatum (UTC, wie in sync_orchestrator); als eigene Funktion, damit Tests es festsetzen koennen."""
+    return datetime.now(timezone.utc).date()
 
 
 def _benachrichtigung_out(
@@ -82,6 +98,7 @@ async def get_students(
     sort_dir: Literal["asc", "desc"] = "asc",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    trend_tage: TrendTage | None = None,
 ) -> StudentListOut:
     scope = await resolve_scope(db, nutzer)
     von, bis = await resolve_schuljahr_zeitraum(db, schuljahr_id)
@@ -107,6 +124,13 @@ async def get_students(
     )
     schueler_ids = [schueler.id for schueler in schueler_list]
     rohzahlen = await student_query.load_schueler_rohzahlen(db, schueler_ids, effektiv_von, effektiv_bis)
+
+    # Trend nur im Normalmodus (aktuelles Schuljahr), nur bei gesetztem trend_tage.
+    trend_map: dict[int, dict] = {}
+    if trend_tage is not None and not ist_historie:
+        einstellung = (await db.execute(select(Einstellung))).scalars().first()
+        schuljahr_start = einstellung.schuljahr_start_cache if einstellung else None
+        trend_map = await student_query.load_trend_map(db, schueler_ids, _heute(), int(trend_tage), schuljahr_start)
 
     if ist_historie:
         klasse_map_historie = await student_query.load_historische_klasse_map(db, schueler_ids, schuljahr_id)
@@ -148,6 +172,7 @@ async def get_students(
             fehltage=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehltage"]),
             fehlstunden=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehlstunden"]),
             klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
+            trend=TrendOut(**trend_map[schueler.id]) if schueler.id in trend_map else None,
         )
         for schueler in schueler_list
     ]

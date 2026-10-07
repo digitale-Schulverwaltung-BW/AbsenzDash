@@ -44,6 +44,27 @@ Zeigt jeden Schüler Ihrer Klasse mit:
 
 Mit **Mindeststufe** und **Nur auffällige** können Sie die Liste filtern, z.B. um nur Schüler zu sehen, die mindestens Stufe 1 erreicht haben. Klick auf einen Namen öffnet die Detailansicht.
 
+### Trend-Pfeile (Fehltage / Fehlstunden)
+
+Über das Dropdown **Trend-Zeitraum** (Aus / 7 / 14 / 30 Tage) blenden Sie hinter den Zahlen in den Spalten **Fehltage** und **Fehlstunden** je einen Pfeil ein. Er vergleicht die letzten N Tage (inkl. heute) mit den N Tagen davor; die Auswahl steht in der URL (`trend_tage`) und bleibt so beim Teilen/Neuladen erhalten.
+
+| Pfeil | Bedeutung | Farbe |
+|---|---|---|
+| ↗ | steigend | rot |
+| → | gleich | grau |
+| ↘ | fallend | grün |
+
+Die Pfeilform trägt die Information auch ohne Farbe. Beim Darüberfahren zeigt der Tooltip die Rohzahlen, z.B. „Letzte 7 Tage: 3, davor: 1". Gezählt werden alle Fehlzeiten (entschuldigt und unentschuldigt). Ohne Auswahl im Dropdown werden keine Pfeile berechnet; im Schuljahr-Archiv (vergangene Schuljahre) gibt es keinen Trend.
+
+**Schwelle:** Erst ab einer Differenz von **2 Fehltagen** bzw. **4 Fehlstunden** zeigt der Pfeil steigend/fallend, kleinere Änderungen gelten als „gleich". Die Schwelle ist fest (im Backend `TREND_MIN_DIFF_FEHLTAGE` / `TREND_MIN_DIFF_FEHLSTUNDEN`) und nicht konfigurierbar.
+
+**Bekannte Grenzen:**
+
+- **Ferien, Feiertage und Wochenenden werden nicht berücksichtigt.** Die Fenster zählen Kalendertage, nicht Unterrichtstage; z.B. in der ersten Woche nach den Ferien fällt der Trend durch das ferienbedingt leere Vorfenster verzerrt aus (meist „steigend").
+- **Nachträge in WebUntis** (z.B. nachträglich eingetragene oder entschuldigte/korrigierte Fehlzeiten) ändern das Vorfenster rückwirkend; derselbe Schüler kann nach dem nächsten Sync einen anderen Pfeil haben.
+- **Zu Schuljahresbeginn gibt es keinen Trend:** Liegt das Vorfenster (teilweise) vor dem Schuljahresbeginn, wird kein Pfeil angezeigt, da der Sync nur Fehlzeiten ab Schuljahresbeginn holt und der Vergleich unfair wäre.
+- Der Trend steht nur in der Schülerliste, nicht in der Detailansicht oder den Dashboard-Kacheln, und ist weder filter- noch sortierbar.
+
 ## Schüler-Detail
 
 ![Schüler-Detail](Screenshots/03-Schueler-Details.png)

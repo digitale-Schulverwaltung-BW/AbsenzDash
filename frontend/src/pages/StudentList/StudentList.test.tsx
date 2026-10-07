@@ -198,4 +198,103 @@ describe("StudentList", () => {
       expect.objectContaining({ sortBy: "fehlstunden", sortDir: "desc" }),
     );
   });
+  describe("Trend-Pfeile", () => {
+    const TREND = {
+      fehltage: { aktuell: 3, vorher: 1, richtung: "steigend" },
+      fehlstunden: { aktuell: 2, vorher: 9, richtung: "fallend" },
+    };
+
+    it.each([
+      ["steigend", "↗", "trendSteigend"],
+      ["gleich", "→", "trendGleich"],
+      ["fallend", "↘", "trendFallend"],
+    ])("shows the %s arrow shape, color class and raw numbers as tooltip behind Fehltage", (richtung, pfeil, klasse) => {
+      mockData([{ ...BASE_STUDENT, trend: { ...TREND, fehltage: { aktuell: 3, vorher: 1, richtung } } }]);
+
+      renderList(["/schueler?trend_tage=7"]);
+
+      const row = screen.getByRole("row", { name: /Muster, Max/ });
+      const arrow = within(row).getAllByRole("img")[0];
+      expect(arrow).toHaveTextContent(pfeil);
+      expect(arrow).toHaveAttribute("data-richtung", richtung);
+      expect(arrow.className).toContain(klasse);
+      expect(arrow).toHaveAttribute("title", "Letzte 7 Tage: 3, davor: 1");
+      expect(arrow).toHaveAccessibleName(expect.stringContaining(richtung));
+    });
+
+    it("shows a separate arrow behind Fehlstunden with its own numbers", () => {
+      mockData([{ ...BASE_STUDENT, trend: TREND }]);
+
+      renderList(["/schueler?trend_tage=14"]);
+
+      const arrows = within(screen.getByRole("row", { name: /Muster, Max/ })).getAllByRole("img");
+      expect(arrows).toHaveLength(2);
+      expect(arrows[0]).toHaveTextContent("↗");
+      expect(arrows[1]).toHaveTextContent("↘");
+      expect(arrows[1]).toHaveAttribute("title", "Letzte 14 Tage: 2, davor: 9");
+    });
+
+    it("shows no arrow when richtung is null", () => {
+      mockData([
+        {
+          ...BASE_STUDENT,
+          trend: {
+            fehltage: { aktuell: 3, vorher: 0, richtung: null },
+            fehlstunden: { aktuell: 0, vorher: 0, richtung: null },
+          },
+        },
+      ]);
+
+      renderList(["/schueler?trend_tage=7"]);
+
+      expect(screen.queryAllByRole("img")).toHaveLength(0);
+    });
+
+    it("shows no arrow without trend data", () => {
+      mockData([BASE_STUDENT]);
+
+      renderList();
+
+      expect(screen.queryAllByRole("img")).toHaveLength(0);
+    });
+
+    it("keeps the existing split tooltip on the value cell", () => {
+      mockData([{ ...BASE_STUDENT, trend: TREND }]);
+
+      renderList(["/schueler?trend_tage=7"]);
+
+      const cell = within(screen.getByRole("row", { name: /Muster, Max/ })).getByText("3");
+      expect(cell).toHaveAttribute("title", expect.stringContaining("2 entschuldigt"));
+    });
+
+    it("passes trend_tage from the URL to useStudents, and null by default or for invalid values", () => {
+      mockData([]);
+      renderList(["/schueler?trend_tage=30"]);
+      expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ trendTage: 30 }));
+
+      renderList(["/schueler?trend_tage=5"]);
+      expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ trendTage: null }));
+    });
+
+    it("triggers a request with trend_tage via the Trend-Zeitraum select and can switch it off", () => {
+      mockData([]);
+
+      renderList();
+      expect(screen.getByLabelText("Trend-Zeitraum")).toHaveValue("");
+      fireEvent.change(screen.getByLabelText("Trend-Zeitraum"), { target: { value: "14" } });
+      expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ trendTage: 14 }));
+
+      fireEvent.change(screen.getByLabelText("Trend-Zeitraum"), { target: { value: "" } });
+      expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ trendTage: null }));
+    });
+
+    it("hides the Trend-Zeitraum select and sends no trend in history mode", () => {
+      mockData([]);
+
+      renderList(["/schueler?schuljahr=27&trend_tage=7"]);
+
+      expect(screen.queryByLabelText("Trend-Zeitraum")).not.toBeInTheDocument();
+      expect(mockUseStudents).toHaveBeenLastCalledWith(expect.objectContaining({ trendTage: null }));
+    });
+  });
 });

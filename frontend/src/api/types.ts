@@ -136,6 +136,19 @@ export interface Benachrichtigung {
   status: string;
 }
 
+export type TrendRichtung = "steigend" | "gleich" | "fallend";
+
+export interface TrendWert {
+  aktuell: number;
+  vorher: number;
+  richtung: TrendRichtung | null;
+}
+
+export interface Trend {
+  fehltage: TrendWert;
+  fehlstunden: TrendWert;
+}
+
 export interface StudentOverview {
   id: number;
   vorname: string;
@@ -147,6 +160,7 @@ export interface StudentOverview {
   fehltage: FehlzeitSplit | null;
   fehlstunden: FehlzeitSplit | null;
   klassenbuch_anzahl: number | null;
+  trend?: Trend | null;
 }
 
 export interface StudentList {

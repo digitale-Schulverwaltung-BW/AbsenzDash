@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -26,6 +26,11 @@ from app.models.stundenraster_periode import StundenrasterPeriode
 from app.services.fehlzeit_berechnung import dauer_anzeige, fehlstunden_minuten_expr, minuten_zu_fehlstunden
 
 ZAEHLERSTAND_TYPEN = ("fehlzeiten", "klassenbuch")
+
+# Trend-Anzeige (Plan 2026-10-07): kleinere Differenzen zwischen aktuellem Fenster und Vorfenster
+# zaehlen als "gleich". Bewusst fest, nicht konfigurierbar.
+TREND_MIN_DIFF_FEHLTAGE = 2
+TREND_MIN_DIFF_FEHLSTUNDEN = 4
 
 SORTIERBARE_FELDER = ("nachname", "klasse", "fehltage", "fehlstunden", "klassenbuch_anzahl")
 
@@ -446,6 +451,82 @@ async def load_schueler_rohzahlen(
     for schueler_id, anzahl in klassenbuch_result.all():
         ergebnis[schueler_id]["klassenbuch_anzahl"] = anzahl
 
+    return ergebnis
+
+
+def _trend_richtung(aktuell: int | Decimal, vorher: int | Decimal, min_diff: int, fair: bool) -> str | None:
+    if not fair:
+        return None
+    differenz = aktuell - vorher
+    if differenz >= min_diff:
+        return "steigend"
+    if differenz <= -min_diff:
+        return "fallend"
+    return "gleich"
+
+
+async def load_trend_map(
+    db: AsyncSession,
+    schueler_ids: list[int],
+    heute: date,
+    tage: int,
+    schuljahr_start: date | None,
+) -> dict[int, dict[str, Any]]:
+    """Trend je Schueler: aktuelles Fenster [heute-tage+1, heute] gegen Vorfenster
+    [heute-2*tage+1, heute-tage]. Gezaehlt wie in load_schueler_rohzahlen (invalid=false;
+    Fehltage = typ 'tag', Fehlstunden = Summe der Minuten ueber typ 'stunde', gerundet via
+    minuten_zu_fehlstunden), alle Fehlzeiten unabhaengig vom Entschuldigungsstatus. Keine
+    Ferien-/Feiertags-Normierung. Liegt das Vorfenster (teilweise) vor schuljahr_start, ist
+    kein fairer Vergleich moeglich: richtung=None (Zahlen werden trotzdem geliefert).
+    Ergebnis: {schueler_id: {"fehltage": {aktuell, vorher, richtung}, "fehlstunden": {...}}}.
+    heute wird als Parameter durchgereicht (keine Zeitabhaengigkeit in der Logik)."""
+    if not schueler_ids:
+        return {}
+
+    aktuell_start = heute - timedelta(days=tage - 1)
+    vorher_start = heute - timedelta(days=2 * tage - 1)
+    vorher_ende = heute - timedelta(days=tage)
+    fair = schuljahr_start is None or vorher_start >= schuljahr_start
+
+    im_aktuell = (Fehlzeit.datum >= aktuell_start) & (Fehlzeit.datum <= heute)
+    im_vorher = (Fehlzeit.datum >= vorher_start) & (Fehlzeit.datum <= vorher_ende)
+    minuten = fehlstunden_minuten_expr()
+
+    rows = await db.execute(
+        select(
+            Fehlzeit.schueler_id,
+            func.count().filter(Fehlzeit.typ == "tag", im_aktuell),
+            func.count().filter(Fehlzeit.typ == "tag", im_vorher),
+            func.coalesce(func.sum(minuten).filter(Fehlzeit.typ == "stunde", im_aktuell), 0),
+            func.coalesce(func.sum(minuten).filter(Fehlzeit.typ == "stunde", im_vorher), 0),
+        )
+        .where(
+            Fehlzeit.schueler_id.in_(schueler_ids),
+            Fehlzeit.invalid.is_(False),
+            Fehlzeit.datum >= vorher_start,
+            Fehlzeit.datum <= heute,
+        )
+        .group_by(Fehlzeit.schueler_id)
+    )
+    roh = {row[0]: row[1:] for row in rows.all()}
+
+    ergebnis: dict[int, dict[str, Any]] = {}
+    for sid in schueler_ids:
+        tage_aktuell, tage_vorher, min_aktuell, min_vorher = roh.get(sid, (0, 0, 0, 0))
+        std_aktuell = minuten_zu_fehlstunden(min_aktuell)
+        std_vorher = minuten_zu_fehlstunden(min_vorher)
+        ergebnis[sid] = {
+            "fehltage": {
+                "aktuell": tage_aktuell,
+                "vorher": tage_vorher,
+                "richtung": _trend_richtung(tage_aktuell, tage_vorher, TREND_MIN_DIFF_FEHLTAGE, fair),
+            },
+            "fehlstunden": {
+                "aktuell": std_aktuell,
+                "vorher": std_vorher,
+                "richtung": _trend_richtung(std_aktuell, std_vorher, TREND_MIN_DIFF_FEHLSTUNDEN, fair),
+            },
+        }
     return ergebnis
 
 

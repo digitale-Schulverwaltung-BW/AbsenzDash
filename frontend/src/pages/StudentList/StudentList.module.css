@@ -47,3 +47,20 @@
 .anonymisierenToggle {
   margin-left: auto;
 }
+
+.trend {
+  margin-left: 0.35rem;
+  font-weight: 700;
+}
+
+.trendSteigend {
+  color: #b91c1c;
+}
+
+.trendGleich {
+  color: #6b7280;
+}
+
+.trendFallend {
+  color: #15803d;
+}

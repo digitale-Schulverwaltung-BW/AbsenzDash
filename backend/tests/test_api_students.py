@@ -895,3 +895,112 @@ async def test_get_student_detail_history_mode_returns_404_without_historie_snap
         )
 
     assert response.status_code == 404
+
+
+# --- trend_tage (Trend-Anzeige, Plan 2026-10-07) ------------------------------------------------
+
+TREND_HEUTE = date(2026, 10, 7)
+
+
+async def _seed_trend_szenario(db_session, schuljahr_start=date(2026, 8, 31)):
+    schuljahr = Schuljahr(id=31, name="2026/2027", start_datum=schuljahr_start, end_datum=date(2027, 7, 30))
+    db_session.add(schuljahr)
+    await db_session.flush()
+    klasse = Klasse(webuntis_id=1, name="10a", schuljahr_id=schuljahr.id)
+    db_session.add(klasse)
+    await db_session.flush()
+    db_session.add(Einstellung(aktuelles_schuljahr_id=schuljahr.id, schuljahr_start_cache=schuljahr_start))
+    await _seed_klassenlehrkraft(db_session, [klasse.id])
+    schueler = Schueler(externe_id="ext-t", vorname="A", nachname="A", klasse_id=klasse.id, aktiv=True)
+    db_session.add(schueler)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 10, d), start_zeit=0, end_zeit=2359)
+            for d in (2, 3, 4)
+        ]
+        + [Fehlzeit(schueler_id=schueler.id, typ="tag", datum=date(2026, 9, 28), start_zeit=0, end_zeit=2359)]
+        + [
+            Fehlzeit(
+                schueler_id=schueler.id, typ="stunde", datum=date(2026, 9, 28),
+                start_zeit=730 + 100 * i, end_zeit=815 + 100 * i,
+            )
+            for i in range(5)
+        ]
+    )
+    await db_session.commit()
+    return schueler
+
+
+async def _get_students(params: str = ""):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get(f"/students{params}", headers=HEADERS_KLASSENLEHRKRAFT)
+
+
+@pytest.fixture
+def _fixes_heute(monkeypatch):
+    from app.api.routes import students as students_routes
+
+    monkeypatch.setattr(students_routes, "_heute", lambda: TREND_HEUTE)
+
+
+@pytest.mark.asyncio
+async def test_get_students_with_trend_tage_returns_trend(db_session, _fixes_heute):
+    schueler = await _seed_trend_szenario(db_session)
+    response = await _get_students("?trend_tage=7")
+    assert response.status_code == 200
+    item = next(i for i in response.json()["items"] if i["id"] == schueler.id)
+    assert item["trend"] == {
+        "fehltage": {"aktuell": 3, "vorher": 1, "richtung": "steigend"},
+        "fehlstunden": {"aktuell": 0.0, "vorher": 5.0, "richtung": "fallend"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_students_without_trend_tage_has_no_trend(db_session, _fixes_heute):
+    schueler = await _seed_trend_szenario(db_session)
+    response = await _get_students()
+    assert response.status_code == 200
+    item = next(i for i in response.json()["items"] if i["id"] == schueler.id)
+    assert item["trend"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wert", ["0", "5", "8", "60", "abc", "-7"])
+async def test_get_students_rejects_invalid_trend_tage(db_session, wert):
+    await _seed_trend_szenario(db_session)
+    response = await _get_students(f"?trend_tage={wert}")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wert", [7, 14, 30])
+async def test_get_students_accepts_valid_trend_tage(db_session, _fixes_heute, wert):
+    await _seed_trend_szenario(db_session)
+    response = await _get_students(f"?trend_tage={wert}")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["trend"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_students_trend_richtung_null_wenn_vorfenster_vor_schuljahresbeginn(db_session, _fixes_heute):
+    schueler = await _seed_trend_szenario(db_session, schuljahr_start=date(2026, 9, 29))
+    response = await _get_students("?trend_tage=7")
+    item = next(i for i in response.json()["items"] if i["id"] == schueler.id)
+    assert item["trend"]["fehltage"] == {"aktuell": 3, "vorher": 1, "richtung": None}
+    assert item["trend"]["fehlstunden"]["richtung"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_students_historie_ignores_trend_tage(db_session, _fixes_heute):
+    schueler = await _seed_trend_szenario(db_session)
+    db_session.add(Schuljahr(id=30, name="2025/2026", start_datum=date(2025, 9, 8), end_datum=date(2026, 7, 30)))
+    await db_session.flush()
+    klasse_id = (await db_session.get(Schueler, schueler.id)).klasse_id
+    db_session.add(SchuelerKlasseHistorie(schueler_id=schueler.id, schuljahr_id=30, klasse_id=klasse_id))
+    await db_session.commit()
+    response = await _get_students("?trend_tage=7&schuljahr_id=30")
+    assert response.status_code == 200
+    item = next(i for i in response.json()["items"] if i["id"] == schueler.id)
+    assert item["trend"] is None

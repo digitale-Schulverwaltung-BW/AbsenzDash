@@ -1,11 +1,13 @@
 import { Link, useSearchParams } from "react-router-dom";
 import type { StudentSortField } from "../../api/hooks/useStudents";
 import { useStudents } from "../../api/hooks/useStudents";
-import type { FehlzeitSplit, StudentOverview } from "../../api/types";
+import type { FehlzeitSplit, StudentOverview, TrendRichtung, TrendWert } from "../../api/types";
 import { EskalationsBadge } from "../../components/EskalationsBadge/EskalationsBadge";
 import { NotificationFlyout } from "../../components/NotificationFlyout/NotificationFlyout";
 import { anonymisiereName, istAnonymisierungAktiv, istAnonymisierungErlaubt } from "../../utils/anonymize";
 import { valueToColor } from "../../utils/colorScale";
+import { parseTrendTage, TREND_TAGE_OPTIONEN } from "../../utils/trend";
+import type { TrendTage } from "../../utils/trend";
 import styles from "./StudentList.module.css";
 
 interface SpalteConfig {
@@ -23,6 +25,29 @@ const SORTIERBARE_SPALTEN: SpalteConfig[] = [
 
 function splitTitle(split: FehlzeitSplit): string {
   return `${split.entschuldigt} entschuldigt, ${split.unentschuldigt} unentschuldigt`;
+}
+
+const TREND_DARSTELLUNG: Record<TrendRichtung, { pfeil: string; label: string; klasse: string }> = {
+  steigend: { pfeil: "↗", label: "steigend", klasse: styles.trendSteigend },
+  gleich: { pfeil: "→", label: "gleich", klasse: styles.trendGleich },
+  fallend: { pfeil: "↘", label: "fallend", klasse: styles.trendFallend },
+};
+
+function TrendPfeil({ trend, tage }: { trend: TrendWert | null | undefined; tage: TrendTage | null }) {
+  if (!trend || trend.richtung === null || tage === null) return null;
+  const darstellung = TREND_DARSTELLUNG[trend.richtung];
+  const text = `Letzte ${tage} Tage: ${trend.aktuell}, davor: ${trend.vorher}`;
+  return (
+    <span
+      role="img"
+      aria-label={`Trend ${darstellung.label}. ${text}`}
+      title={text}
+      data-richtung={trend.richtung}
+      className={`${styles.trend} ${darstellung.klasse}`}
+    >
+      {darstellung.pfeil}
+    </span>
+  );
 }
 
 function extremwerte(items: StudentOverview[], feld: "fehltage" | "fehlstunden"): [number, number] {
@@ -44,6 +69,7 @@ export function StudentList() {
   const isHistoryMode = schuljahrId !== null;
   const sortByParam = searchParams.get("sort_by") as StudentSortField | null;
   const sortDirParam = searchParams.get("sort_dir") === "desc" ? "desc" : "asc";
+  const trendTage = isHistoryMode ? null : parseTrendTage(searchParams.get("trend_tage"));
   const anonymisierungErlaubt = istAnonymisierungErlaubt();
   const anonymisieren = anonymisierungErlaubt && istAnonymisierungAktiv(searchParams);
 
@@ -56,6 +82,7 @@ export function StudentList() {
     schuljahrId,
     sortBy: sortByParam,
     sortDir: sortDirParam,
+    trendTage,
   });
 
   function updateParam(name: string, value: string) {
@@ -120,6 +147,19 @@ export function StudentList() {
             <option value="3">3</option>
           </select>
         </label>
+        {isHistoryMode ? null : (
+          <label>
+            Trend-Zeitraum{" "}
+            <select value={trendTage ?? ""} onChange={(event) => updateParam("trend_tage", event.target.value)}>
+              <option value="">Aus</option>
+              {TREND_TAGE_OPTIONEN.map((tage) => (
+                <option key={tage} value={tage}>
+                  {tage} Tage
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           <input
             type="checkbox"
@@ -171,6 +211,7 @@ export function StudentList() {
                   }}
                 >
                   {student.fehltage?.gesamt ?? "—"}
+                  <TrendPfeil trend={student.trend?.fehltage} tage={trendTage} />
                 </td>
                 <td
                   title={student.fehlstunden ? splitTitle(student.fehlstunden) : undefined}
@@ -181,6 +222,7 @@ export function StudentList() {
                   }}
                 >
                   {student.fehlstunden?.gesamt ?? "—"}
+                  <TrendPfeil trend={student.trend?.fehlstunden} tage={trendTage} />
                 </td>
                 <td>{student.klassenbuch_anzahl ?? "—"}</td>
                 {isHistoryMode ? null : (

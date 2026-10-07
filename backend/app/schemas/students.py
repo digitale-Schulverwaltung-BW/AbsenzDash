@@ -36,6 +36,17 @@ class BenachrichtigungOut(BaseModel):
     status: str
 
 
+class TrendWertOut(BaseModel):
+    aktuell: float
+    vorher: float
+    richtung: Literal["steigend", "gleich", "fallend"] | None
+
+
+class TrendOut(BaseModel):
+    fehltage: TrendWertOut
+    fehlstunden: TrendWertOut
+
+
 class StudentOverviewOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,6 +60,7 @@ class StudentOverviewOut(BaseModel):
     fehltage: FehlzeitSplitOut | None = None
     fehlstunden: FehlzeitSplitOut | None = None
     klassenbuch_anzahl: int | None = None
+    trend: TrendOut | None = None
 
 
 class StudentListOut(BaseModel):
