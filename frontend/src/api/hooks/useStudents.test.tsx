@@ -107,4 +107,25 @@ describe("useStudents", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(spy).toHaveBeenCalledWith("students?offset=0");
   });
+
+  it("includes trend_tage in the query string when set", async () => {
+    const spy = vi.spyOn(client, "apiGet").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+
+    const { result } = renderHook(
+      () =>
+        useStudents({
+          bereichId: null,
+          klasseId: null,
+          minStufe: null,
+          nurAuffaellige: false,
+          offset: 0,
+          schuljahrId: null,
+          trendTage: 14,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith("students?trend_tage=14&offset=0");
+  });
 });

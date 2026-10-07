@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../client";
 import type { StudentList } from "../types";
+import type { TrendTage } from "../../utils/trend";
 
 export const STUDENT_LIST_LIMIT = 50;
 
@@ -16,6 +17,7 @@ export interface StudentListParams {
   schuljahrId: number | null;
   sortBy?: StudentSortField | null;
   sortDir?: StudentSortDir;
+  trendTage?: TrendTage | null;
 }
 
 function buildQuery(params: StudentListParams): string {
@@ -29,6 +31,7 @@ function buildQuery(params: StudentListParams): string {
     query.set("sort_by", params.sortBy);
     query.set("sort_dir", params.sortDir ?? "asc");
   }
+  if (params.trendTage) query.set("trend_tage", String(params.trendTage));
   query.set("offset", String(params.offset));
   return query.toString();
 }
