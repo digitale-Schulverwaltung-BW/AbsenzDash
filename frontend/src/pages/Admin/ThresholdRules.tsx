@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAbteilungen } from "../../api/hooks/useAbteilungen";
+import { useThresholdCoverage } from "../../api/hooks/useThresholdCoverage";
 import { useThresholdRules } from "../../api/hooks/useThresholdRules";
 import { useUpdateThresholdRules } from "../../api/hooks/useUpdateThresholdRules";
 import type { SchwellwertStufe, ThresholdRule } from "../../api/types";
 import styles from "./ThresholdRules.module.css";
 import sectionStyles from "../../components/StudentDetail/StudentDetail.module.css";
 import { validateThresholdRules } from "./thresholdRuleValidation";
+
+const TYP_LABEL: Record<ThresholdRule["typ"], string> = { fehlzeiten: "Fehlzeiten", klassenbuch: "Klassenbuch" };
 
 const ROLLEN = ["klassenlehrkraft", "bereichsleiter", "schulleitung"] as const;
 
@@ -33,6 +36,7 @@ function renumberStufen(stufen: SchwellwertStufe[]): SchwellwertStufe[] {
 export function ThresholdRules() {
   const { data, isLoading, isError } = useThresholdRules();
   const { data: abteilungen } = useAbteilungen();
+  const { data: coverage } = useThresholdCoverage();
   const { mutate, isPending, error } = useUpdateThresholdRules();
   const [rules, setRules] = useState<ThresholdRule[]>([]);
   const [attemptedSave, setAttemptedSave] = useState(false);
@@ -144,6 +148,15 @@ export function ThresholdRules() {
   return (
     <section className={sectionStyles.section}>
       <h3>Schwellwert-Regeln</h3>
+      {(coverage ?? [])
+        .filter((eintrag) => !eintrag.hat_schulweite_regel && eintrag.klassen_ohne_regel > 0)
+        .map((eintrag) => (
+          <p key={eintrag.typ} role="alert" className={sectionStyles.formError}>
+            Für {TYP_LABEL[eintrag.typ]} gibt es keine schulweite Regel; {eintrag.klassen_ohne_regel}{" "}
+            {eintrag.klassen_ohne_regel === 1 ? "Klasse hat" : "Klassen haben"} keine Regel und{" "}
+            {eintrag.klassen_ohne_regel === 1 ? "wird" : "werden"} nicht eskaliert.
+          </p>
+        ))}
       {rules.map((rule, ruleIndex) => (
         <div className={styles.rule} key={rule.id ?? `neu-${ruleIndex}`}>
           <label>

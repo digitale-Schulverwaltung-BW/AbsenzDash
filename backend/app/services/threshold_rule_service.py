@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.abteilung import Abteilung
 from app.models.audit_log import AuditLog
+from app.models.einstellung import Einstellung
 from app.models.klasse import Klasse
 from app.models.nutzer import ROLLEN
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
-from app.schemas.admin import SchwellwertStufeIn, SchwellwertStufeOut, ThresholdRuleIn, ThresholdRuleOut
+from app.schemas.admin import SchwellwertStufeIn, SchwellwertStufeOut, ThresholdCoverageOut, ThresholdRuleIn, ThresholdRuleOut
 
 TYPEN = ("fehlzeiten", "klassenbuch")
 GELTUNGSBEREICHE = ("schulweit", "abteilung", "klasse")
@@ -47,6 +48,32 @@ async def _regel_out(db: AsyncSession, regel: SchwellwertRegel) -> ThresholdRule
 async def list_rules(db: AsyncSession) -> list[ThresholdRuleOut]:
     result = await db.execute(select(SchwellwertRegel).order_by(SchwellwertRegel.id))
     return [await _regel_out(db, r) for r in result.scalars().all()]
+
+
+async def coverage(db: AsyncSession) -> list[ThresholdCoverageOut]:
+    """Je Typ: gibt es eine schulweite Regel, und wie viele Klassen des aktuellen Schuljahres haben
+    keine zutreffende Regel (klassen-, abteilungs- oder schulweit; gleiche Praezedenz wie
+    eskalations_pruefung.resolve_schwellwert_regel)? Solche Klassen werden nicht eskaliert."""
+    einstellung = (await db.execute(select(Einstellung))).scalars().first()
+    klassen_query = select(Klasse.id, Klasse.abteilung_id)
+    if einstellung is not None and einstellung.aktuelles_schuljahr_id is not None:
+        klassen_query = klassen_query.where(Klasse.schuljahr_id == einstellung.aktuelles_schuljahr_id)
+    klassen = (await db.execute(klassen_query)).all()
+    regeln = (await db.execute(select(SchwellwertRegel))).scalars().all()
+
+    result: list[ThresholdCoverageOut] = []
+    for typ in TYPEN:
+        typ_regeln = [r for r in regeln if r.typ == typ]
+        schulweit = any(r.geltungsbereich == "schulweit" for r in typ_regeln)
+        klasse_ids = {r.klasse_id for r in typ_regeln if r.klasse_id is not None}
+        abteilung_ids = {r.abteilung_id for r in typ_regeln if r.abteilung_id is not None}
+        ohne_regel = (
+            0
+            if schulweit
+            else sum(1 for kid, aid in klassen if kid not in klasse_ids and aid not in abteilung_ids)
+        )
+        result.append(ThresholdCoverageOut(typ=typ, hat_schulweite_regel=schulweit, klassen_ohne_regel=ohne_regel))
+    return result
 
 
 def _validate_no_duplicate_ids(payload: list[ThresholdRuleIn]) -> None:

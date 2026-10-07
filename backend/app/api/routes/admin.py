@@ -15,6 +15,7 @@ from app.models.audit_log import AuditLog
 from app.models.nutzer import Nutzer
 from app.schemas.admin import (
     AbteilungOut,
+    ThresholdCoverageOut,
     BereichIn,
     BereichOut,
     ExcuseStatusIn,
@@ -70,6 +71,11 @@ async def put_bereiche(
 @router.get("/threshold-rules")
 async def get_threshold_rules(db: Annotated[AsyncSession, Depends(get_db)]) -> list[ThresholdRuleOut]:
     return await threshold_rule_service.list_rules(db)
+
+
+@router.get("/threshold-rules/coverage")
+async def get_threshold_rules_coverage(db: Annotated[AsyncSession, Depends(get_db)]) -> list[ThresholdCoverageOut]:
+    return await threshold_rule_service.coverage(db)
 
 
 @router.put("/threshold-rules")

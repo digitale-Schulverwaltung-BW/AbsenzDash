@@ -19,6 +19,9 @@ vi.mock("./api/hooks/useStudentDetail");
 vi.mock("./api/hooks/useStudentCatalog");
 vi.mock("./api/hooks/useThresholdRules");
 vi.mock("./api/hooks/useAbteilungen");
+vi.mock("./api/hooks/useThresholdCoverage", () => ({
+  useThresholdCoverage: () => ({ data: [], isLoading: false, isError: false }),
+}));
 // StudentDetail renders MassnahmenSection/AusnahmenSection/BenachrichtigungenTable, which call these
 // mutation hooks. They need a QueryClient unless mocked directly, so mock them the same way
 // StudentDetail.test.tsx does rather than wrapping this test file's tree in a QueryClientProvider.
