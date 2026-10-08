@@ -1075,3 +1075,42 @@ def test_parse_args_abgleich_und_mit_db():
     assert args.abgleich_klasse_id is None and args.mit_db is False
     args = probe.parse_args(["--klasse-id", "3836", "--abgleich-klasse-id", "3836", "--abgleich-klasse-id", "3837", "--mit-db"])
     assert args.abgleich_klasse_id == [3836, 3837] and args.mit_db is True
+
+
+# --- getStudentDutyOptions (Dienst-Liste) ---
+
+
+def test_optionen_struktur_liste_zeigt_laenge_und_drei_eintraege_mit_id_label():
+    result = [{"id": i, "label": f"Dienst {i}", "x": 1} for i in range(1, 6)]
+    zeilen = probe.optionen_struktur(result)
+    assert zeilen[0] == "Top-Level: Liste" and "Laenge: 5" in zeilen
+    eintraege = [z for z in zeilen if z.startswith("Eintrag:")]
+    assert len(eintraege) == 3 and '"label": "Dienst 1"' in eintraege[0]
+
+
+def test_optionen_struktur_objekt_mit_liste_und_unbekannte_form():
+    zeilen = probe.optionen_struktur({"dutyOptions": [{"id": 26, "label": "Entschuldigungspflicht"}], "andere": 1})
+    assert "Keys: ['andere', 'dutyOptions']" in zeilen[0]
+    assert "Liste gefunden unter Key: dutyOptions" in zeilen and "Laenge: 1" in zeilen
+    assert probe.optionen_struktur("text") == ["Top-Level: str"]
+    assert "keine Liste enthalten" in probe.optionen_struktur({"a": 1})[-1]
+
+
+@pytest.mark.asyncio
+async def test_sonde_duty_bezeichnungen_postet_leere_params_mit_csrf():
+    req: list = []
+    antwort = httpx.Response(200, json={"jsonrpc": "2.0", "id": "x", "result": [{"id": 26, "label": "Entschuldigungspflicht"}]})
+    async with _http_mit(_duty_handler(req, antwort)) as http:
+        sonde = await probe.sonde_duty_bezeichnungen(http, _kontext(), "CSRF123456789012345")
+    body = json.loads(req[0].content)
+    assert body["method"] == "getStudentDutyOptions" and body["params"] == []
+    assert req[0].headers["x-csrf-token"] == "CSRF123456789012345"
+    assert sonde.ok and any("Entschuldigungspflicht" in z for z in sonde.zeilen)
+    assert "CSRF1234567" not in _text(sonde)
+
+
+@pytest.mark.asyncio
+async def test_sonde_duty_bezeichnungen_ohne_csrf_wird_uebersprungen():
+    async with _http_mit(lambda r: httpx.Response(500)) as http:
+        sonde = await probe.sonde_duty_bezeichnungen(http, _kontext(), None)
+    assert not sonde.ok and "uebersprungen" in sonde.zeilen[0]

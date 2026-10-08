@@ -42,6 +42,17 @@ Hier pflegen Sie, welche Maßnahmen-Typen Klassenlehrkräften und Bereichsleitun
 
 Über **Neuer Maßnahmen-Typ** legen Sie einen weiteren Typ an, **Speichern** übernimmt alle Änderungen dieser Seite.
 
+### Klassendienste
+
+Hier legen Sie fest, welche WebUntis-Klassendienste (z. B. Entschuldigungspflicht, Pflicht zur Vorlage ärztl. Atteste) in AbsenzDash angezeigt werden. Je Dienst:
+
+- **Dienst-ID** — stammt aus den WebUntis-Stammdaten Ihrer Schule. Am einfachsten über das Dropdown **Dienst aus WebUntis wählen** (füllt ID, Bezeichnung und einen Kürzel-Vorschlag vor); ist die Liste leer, zeigt die Seite einen Hinweis und Sie tragen den Dienst über **Dienst hinzufügen (manuell)** ein.
+- **Kürzel** — erscheint als Badge in der Schülerliste (Vorschlag: erster Buchstabe, z. B. „E“, „A“; höchstens 10 Zeichen).
+- **Erklärung** — optionaler Hover-Text zum Badge (höchstens 300 Zeichen).
+- **Aktiv** — deaktivierte Dienste werden weder importiert noch angezeigt, bleiben aber gespeichert.
+
+**Entfernen** löscht den Dienst beim Speichern samt aller importierten Zuordnungen (die Seite fragt vorher nach); wollen Sie ihn nur ausblenden, schalten Sie stattdessen **Aktiv** ab. **Nur Anzeige:** Die Dienste haben keinen Einfluss auf Zähler, Eskalation oder Benachrichtigungen. Der Import läuft höchstens einmal täglich; neue Einstellungen wirken daher mit dem nächsten Tagesimport. Technische Hinweise (interner WebUntis-Dienst, nicht zuordenbare Schüler im Log): [ADMIN.md](ADMIN.md). Die Badges selbst sind in [KL.md](KL.md) erklärt.
+
 ### Entschuldigungsstatus
 
 ![Entschuldigungsstatus](Screenshots/05-3-Admin-Entschuldigungsstatus.png)
