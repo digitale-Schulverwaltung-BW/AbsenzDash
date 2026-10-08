@@ -72,6 +72,28 @@ Der Sync-Ablauf (Klassen/Kategorien → ASV-BW-CSV-Import → Fehlzeiten/Klassen
 - **PDF-Export-Abhängigkeit:** WeasyPrint benötigt Pango/Cairo/GDK-Pixbuf, bereits im mitgelieferten `Dockerfile` installiert — nach einem Image-Rebuild ist nichts weiter zu tun.
 - **Deep Links auf `/schueler` und `/schueler/:id`:** funktionieren nur bei In-App-Navigation. Ein direkter Aufruf, Reload oder weitergegebener Link auf diese Pfade liefert aktuell ein WordPress-404, da keine passende Rewrite-Regel existiert (siehe [deployment.md](deployment.md)).
 
+## Recherche-Sonde: Klassendienste und Ferien (`probe_webuntis_klassendienste`)
+
+Rein **lesendes** Diagnose-Skript, das auf der echten Schul-Instanz klärt, ob WebUntis Klassendienste (Klassensprecher, Entschuldigungspflicht, Attestpflicht) und Ferien/Feiertage (`getHolidays`) per API liefert. Es nutzt nur JSON-RPC-Methoden `get*` und HTTP-GET, plus POST ausschließlich als JSON-RPC-Transport gegen den internen Dienst `jsonrpc_web/jsonStudentDutyService` mit Methoden, die mit `get`, `list` oder `find` beginnen (und `system.listMethods`). Kein DB-Zugriff, keine Schreibzugriffe. Die REST-Pfade unter `/WebUntis/api/` und die Methodennamen des Duty-Dienstes sind **geraten** bzw. inoffiziell; die Ausgabe kennzeichnet das.
+
+```bash
+# Alle Sonden (Standard)
+docker exec -it absenzdash-backend python -m scripts.probe_webuntis_klassendienste
+
+# Zusätzlich vollständige, maskierte Ausgabe in eine Datei
+docker exec -it absenzdash-backend python -m scripts.probe_webuntis_klassendienste --json /tmp/probe.json
+
+# Gezielt nur einen Aufruf gegen den Duty-Dienst (Methode/Params aus dem Browser)
+docker exec -it absenzdash-backend python -m scripts.probe_webuntis_klassendienste \
+  --rpc-method getStudentDuties --rpc-params '{}' \
+  --rpc-path jsonrpc_web/jsonStudentDutyService
+```
+
+- `--rpc-method` muss mit `get`, `list` oder `find` beginnen, sonst bricht das Skript mit Fehlermeldung ab. `--rpc-path` muss unter `/WebUntis/` liegen (Default `jsonrpc_web/jsonStudentDutyService`). `--rpc-params` ist JSON (Objekt oder Array).
+- **Methodennamen und Params aus dem Browser holen:** in WebUntis die Seite mit den Klassendiensten öffnen, Entwicklertools (F12) → Netzwerk → Request an `jsonStudentDutyService` anklicken → Reiter „Nutzlast"/„Request" → nur den **Request-Body** kopieren (`method` und `params`). Keine Cookies, Header oder Tokens kopieren oder weitergeben.
+- **Ausgabe:** lesbarer Text; Namensfelder (`name`, `longName`, `firstName`, `lastName`, `teacher*`, `student*`, `email`, `phone` u. ä.) sind auf 2 Zeichen + „…" maskiert, IDs, Datumsfelder, Kürzel und Keys bleiben lesbar; Listen sind auf 3 Beispiele gekürzt. Bei Ferien-, Klassen- und Kategorielisten bleiben `name`/`longName` lesbar (Bezeichnungen, keine Personen). Am Ende steht ein „Befund" (✔/✖ je Sonde, Klassendienst-Indizien mit Fundort, Erreichbarkeit des `jsonrpc_web`-Dienstes: HTTP 401/403, Redirect auf Login-HTML oder JSON-RPC-Fehler).
+- **Was tun mit dem Ergebnis:** die maskierte Ausgabe vor dem Weitergeben kurz durchsehen und dann in den Chat einfügen; daraus wird entschieden, ob und wie Klassendienste und Ferien in AbsenzDash übernommen werden.
+
 ## Netzwerk & Absicherung
 
 ### Accepted Risk: Klartext-HTTP zwischen Plugin und Backend (Audit-Finding H-2)
