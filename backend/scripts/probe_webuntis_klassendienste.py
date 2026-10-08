@@ -9,10 +9,15 @@ maskiert (siehe `maskiere`), damit sie in einen Chat eingefuegt werden kann.
 Nutzung (im laufenden Backend-Container):
     python -m scripts.probe_webuntis_klassendienste [--json DATEI]
     python -m scripts.probe_webuntis_klassendienste --rpc-method getXyz [--rpc-params '{"a": 1}'] [--rpc-path PFAD]
+    python -m scripts.probe_webuntis_klassendienste --klasse-id 3821 --duty-id 26 --duty-id 27
 
 Mit --rpc-method wird gezielt nur dieser eine Aufruf gegen den internen Dienst (Default
 jsonrpc_web/jsonStudentDutyService) abgesetzt. Erlaubt sind nur Methoden, die mit get, list oder
 find beginnen (zusaetzlich system.listMethods); Pfade muessen unter /WebUntis/ liegen.
+
+Der Standardlauf prueft zusaetzlich: token/new (nur Form/Claim-NAMEN), Cookie-NAMEN, die Suche nach
+einer CSRF-Token-Quelle (nur Fundort-Art, Laenge, Form) und eine Matrix von Header-Kombinationen fuer
+`getStudentDutySchedulerData [klasseId, dutyId]`. Token-, Cookie- und CSRF-WERTE werden nie ausgegeben.
 """
 
 from __future__ import annotations
@@ -20,10 +25,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import html as html_lib
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -114,6 +122,8 @@ class Sonde:
     treffer: list[tuple[str, str]] = field(default_factory=list)
     roh: Any = None  # maskierte, gekuerzte Antwort fuer --json
     kategorie: str | None = None  # nur bei jsonrpc_web-Sonden: Ergebnis von klassifiziere_antwort
+    tag: str | None = None  # z. B. "token", "csrf", "duty:a" - fuer den Befund
+    extra: dict[str, Any] = field(default_factory=dict)  # interne Metadaten, nie in der Ausgabe
 
 
 def _fmt(obj: Any, ausnahmen: set[str] | None = None) -> str:
@@ -191,7 +201,8 @@ async def sonde_klassen(client: Any, schuljahr: dict[str, Any] | None) -> Sonde:
         "Beispiel: " + _fmt(daten[0], ausnahmen),
         "Key mit Dienst/Rolle/Sprecher-Bezug: " + (", ".join(sorted({f for f, _ in treffer})) if treffer else "keiner"),
     ]
-    return Sonde(name, True, zeilen, treffer, kuerze(maskiere(daten[:3], ausnahmen)))
+    erste_id = daten[0].get("id") if isinstance(daten[0], dict) else None
+    return Sonde(name, True, zeilen, treffer, kuerze(maskiere(daten[:3], ausnahmen)), extra={"erste_klasse_id": erste_id})
 
 
 RPC_KANDIDATEN = ("getClassregCategories", "getClassregCategoryGroups", "getRemarkCategories", "getStatusData")
@@ -271,23 +282,14 @@ def _datums_varianten(schuljahr: dict[str, Any] | None) -> list[dict[str, str]]:
     ]
 
 
-async def hole_bearer_token(http: httpx.AsyncClient, cookie_headers: dict[str, str]) -> str | None:
-    """GET /WebUntis/api/token/new (nur lesend). Das Token wird nie ausgegeben."""
-    try:
-        r = await http.get("/WebUntis/api/token/new", headers=cookie_headers)
-        if r.is_success and r.text.strip():
-            return r.text.strip().strip('"')
-    except Exception:  # noqa: BLE001
-        pass
-    return None
-
-
-async def sonde_rest(http: httpx.AsyncClient, session_id: str | None, schule: str, schuljahr: dict[str, Any] | None) -> list[Sonde]:
-    cookie_headers = _cookie_headers(session_id, schule)
-    token = await hole_bearer_token(http, cookie_headers)
+async def sonde_rest(http: httpx.AsyncClient, kontext: Kontext, token: str | None, schuljahr: dict[str, Any] | None) -> list[Sonde]:
+    """REST-GETs in drei Auth-Varianten: nur Cookies, nur Bearer (OHNE Cookie, wie die urspruengliche
+    Sonde) und Bearer + Cookie. `token` stammt aus `diagnose_token` (None = nicht geholt)."""
+    cookie_headers = kontext.header()
     varianten: list[tuple[str, dict[str, str]]] = [("Cookie", cookie_headers)]
     if token:
         varianten.append(("Bearer", {"Authorization": f"Bearer {token}"}))
+        varianten.append(("Bearer+Cookie", {**cookie_headers, "Authorization": f"Bearer {token}"}))
     kandidaten: list[tuple[str, dict[str, str]]] = [
         ("classreg/classservices", {}),
         ("classreg/classroles", {}),
@@ -302,6 +304,301 @@ async def sonde_rest(http: httpx.AsyncClient, session_id: str | None, schule: st
     # public/classreg/... nur, wenn Antworten darauf hindeuten (z. B. Links in Fehler-/Erfolgs-Bodies)
     # -> hier bewusst nicht geraten; Hinweise tauchen ggf. in den Body-Auszuegen oben auf.
     return sonden
+
+
+# --- Cookies, token/new, CSRF-Quellensuche (nie Werte ausgeben) ---
+
+
+def _norm_cookie(name: str) -> str:
+    return name.lower().replace("-", "").replace("_", "")
+
+
+@dataclass
+class Kontext:
+    """Cookies der Sonde (Namen -> Werte, nur intern) samt Herkunft: jar (aus dem Client-Jar),
+    selbst (von der Sonde gesetzt), abgeleitet (aus Antwort/JWT)."""
+
+    schule: str
+    cookies: dict[str, str] = field(default_factory=dict, repr=False)
+    herkunft: dict[str, str] = field(default_factory=dict)
+
+    def setze(self, name: str, wert: str, herkunft: str = "jar") -> None:
+        self.cookies[name] = wert
+        self.herkunft[name] = herkunft
+
+    def hat(self, name: str) -> bool:
+        return any(_norm_cookie(n) == _norm_cookie(name) for n in self.cookies)
+
+    def herkunft_von(self, name: str) -> str:
+        for n, h in self.herkunft.items():
+            if _norm_cookie(n) == _norm_cookie(name):
+                return h
+        return "fehlt"
+
+    def setze_schoolname(self) -> None:
+        if not self.hat("schoolname"):
+            self.setze("schoolname", '"_' + base64.b64encode(self.schule.encode()).decode() + '"', "selbst")
+
+    def uebernimm_set_cookie(self, response: httpx.Response) -> None:
+        for roh in response.headers.get_list("set-cookie"):
+            name, sep, rest = roh.partition("=")
+            wert = rest.split(";", 1)[0].strip()
+            if sep and name.strip() and wert:
+                self.setze(name.strip(), wert, "jar" if name.strip() in self.cookies else "abgeleitet")
+
+    def setze_tenant(self, tenant: str, herkunft: str = "abgeleitet") -> None:
+        if not self.hat("Tenant-Id"):
+            self.setze("Tenant-Id", tenant, herkunft)
+
+    def header(self) -> dict[str, str]:
+        return {"Cookie": "; ".join(f"{n}={v}" for n, v in self.cookies.items())} if self.cookies else {}
+
+    @classmethod
+    def aus_client(cls, client: Any, schule: str) -> Kontext:
+        k = cls(schule)
+        jar = getattr(getattr(client, "_http", None), "cookies", None)
+        if isinstance(jar, httpx.Cookies):
+            for c in jar.jar:
+                if c.value is not None:
+                    k.setze(c.name, c.value, "jar")
+        session_id = getattr(client, "_session_id", None)
+        if isinstance(session_id, str) and session_id:
+            k.setze("JSESSIONID", session_id, k.herkunft.get("JSESSIONID", "client"))
+        return k
+
+
+def cookie_uebersicht(k: Kontext) -> Sonde:
+    namen = sorted(k.cookies)
+    zeilen = [
+        f"Cookies im Client-Jar nach dem Login (nur Namen): {', '.join(namen) if namen else 'keine'}",
+        f"Tenant-Id: {'ja' if k.hat('Tenant-Id') else 'nein'}",
+        f"schoolname: {'ja' if k.hat('schoolname') else 'nein'}",
+    ]
+    return Sonde("Cookie-Namen nach Login", True, zeilen)
+
+
+_HERKUNFT_TEXT = {"jar": "vorhanden", "client": "vorhanden", "selbst": "selbst gesetzt", "abgeleitet": "aus Antwort/JWT abgeleitet", "fehlt": "fehlt"}
+
+
+def cookie_status_sonde(k: Kontext) -> Sonde:
+    """Cookies, die fuer die Duty-Aufrufe tatsaechlich gesendet werden (nur Namen + Herkunft)."""
+    status = {n: k.herkunft_von(n) for n in ("Tenant-Id", "schoolname")}
+    zeilen = [f"Gesendete Cookies (nur Namen): {', '.join(sorted(k.cookies))}"]
+    zeilen += [f"{n}: {_HERKUNFT_TEXT.get(h, h)}" for n, h in status.items()]
+    if status["Tenant-Id"] == "fehlt":
+        zeilen.append("Tenant-Id nicht ableitbar -> bei den Duty-Aufrufen weggelassen")
+    return Sonde("Cookies fuer Duty-Aufrufe", status["Tenant-Id"] != "fehlt", zeilen, tag="cookies", extra=status)
+
+
+@dataclass(frozen=True)
+class JwtInfo:
+    claim_namen: list[str]
+    gueltig_min: float | None
+    tenant_id: str | None
+    token: str = field(repr=False, default="")
+
+
+_B64URL = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def analysiere_jwt(text: str, jetzt: float | None = None) -> JwtInfo | None:
+    """Erkennt ein JWT (drei Base64url-Teile, beginnt mit eyJ). Liefert NUR Claim-Namen, die
+    verbleibende Gueltigkeit in Minuten und (intern) eine numerische Tenant-ID, nie Claim-Werte."""
+    t = text.strip().strip('"')
+    teile = t.split(".")
+    if len(teile) != 3 or not t.startswith("eyJ") or not all(_B64URL.fullmatch(x) for x in teile):
+        return None
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(teile[1] + "=" * (-len(teile[1]) % 4)))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(payload, dict):
+        return None
+    gueltig = None
+    exp = payload.get("exp")
+    if isinstance(exp, (int, float)) and not isinstance(exp, bool):
+        gueltig = (exp - (time.time() if jetzt is None else jetzt)) / 60
+    tenant = next(
+        (str(v) for k, v in payload.items() if _norm(str(k)) in ("tenantid", "tenant") and str(v).isdigit()), None
+    )
+    return JwtInfo(sorted(payload), gueltig, tenant, t)
+
+
+def _ziel(location: str) -> str:
+    u = urlsplit(location)
+    return f"{u.netloc}{u.path}" if u.netloc else u.path
+
+
+async def diagnose_token(http: httpx.AsyncClient, k: Kontext, jetzt: float | None = None) -> tuple[Sonde, str | None]:
+    """GET /WebUntis/api/token/new mit Cookie-Auth (Redirects werden nicht gefolgt). Gibt (Sonde,
+    verwendbares Token oder None) zurueck; das Token selbst wird nie ausgegeben."""
+    name = "GET /WebUntis/api/token/new [Cookie]"
+    try:
+        r = await http.get("/WebUntis/api/token/new", headers=k.header(), follow_redirects=False)
+    except Exception as exc:  # noqa: BLE001
+        sonde = _fehler(name, exc)
+        sonde.tag, sonde.extra = "token", {"jwt": False, "klasse": "netzwerkfehler"}
+        return sonde, None
+    k.uebernimm_set_cookie(r)
+    ctype = r.headers.get("content-type", "?")
+    text = r.text.strip() if 200 <= r.status_code < 300 else ""
+    zeilen = [f"Status {r.status_code}, Content-Type {ctype}, Laenge {len(r.content)}"]
+    info = analysiere_jwt(text, jetzt) if text else None
+    token: str | None = None
+    if 300 <= r.status_code < 400:
+        klasse = "redirect"
+        zeilen.append(f"Redirect (nicht gefolgt) -> {_ziel(r.headers.get('location', '?'))}")
+    elif r.status_code in (401, 403):
+        klasse = "http_auth"
+    elif not r.is_success:
+        klasse = "http_fehler"
+    elif not text:
+        klasse = "leer"
+    elif info:
+        klasse, token = "jwt", info.token
+    elif "html" in ctype.lower() or "<html" in text[:500].lower():
+        klasse = "login_html"
+    else:
+        klasse = "kein_jwt"
+        if len(text) <= 4096 and not re.search(r"\s", text.strip('"')):
+            token = text.strip('"')  # opakes Token: fuer Bearer-Tests trotzdem verwendbar
+    zeilen.append(f"Klasse: {klasse}")
+    zeilen.append(f"JWT-Form: {'ja' if info else 'nein'}")
+    if info:
+        zeilen.append(f"Claim-Namen: {', '.join(info.claim_namen)}")
+        if info.gueltig_min is None:
+            zeilen.append("Gueltigkeit: kein exp-Claim")
+        elif info.gueltig_min >= 0:
+            zeilen.append(f"Gueltigkeit: noch {info.gueltig_min:.0f} Minuten")
+        else:
+            zeilen.append(f"Gueltigkeit: abgelaufen seit {-info.gueltig_min:.0f} Minuten")
+        if info.tenant_id:
+            k.setze_tenant(info.tenant_id, "abgeleitet")
+    sonde = Sonde(name, token is not None, zeilen, tag="token", extra={"jwt": info is not None, "klasse": klasse})
+    return sonde, token
+
+
+@dataclass(frozen=True)
+class Fund:
+    ort: str
+    laenge: int
+    form: str
+    wert: str = field(repr=False, default="")
+
+
+def beschreibe_form(wert: str) -> str:
+    if re.fullmatch(r"[0-9a-fA-F]+", wert):
+        return "hex"
+    if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", wert):
+        return "UUID"
+    if re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", wert):
+        return "url-safe base64"
+    if re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", wert):
+        return "base64"
+    if re.fullmatch(r"[A-Za-z0-9_\-+/=.]+", wert):
+        return "base64-aehnlich (gemischt)"
+    return "sonstige Zeichen"
+
+
+_CSRF_WORT = re.compile(r"csrf|xsrf", re.IGNORECASE)
+_TOKEN_ZEICHEN = re.compile(r"[A-Za-z0-9_\-+/=.]{16,}")
+_SKRIPT_VAR = re.compile(r"""([\w$.\-]*(?:csrf|xsrf)[\w$\-]*)["']?\s*[:=]\s*["']([^"'\s]{8,})["']""", re.IGNORECASE)
+_ATTR = re.compile(r"""([\w:-]+)\s*=\s*["']([^"']*)["']""")
+
+
+def _fund(ort: str, wert: str) -> Fund:
+    return Fund(ort, len(wert), beschreibe_form(wert), wert)
+
+
+def _json_csrf(obj: Any, pfad: str, out: list[Fund]) -> None:
+    if isinstance(obj, dict):
+        for key, v in obj.items():
+            p = f"{pfad}.{key}" if pfad else str(key)
+            if _CSRF_WORT.search(str(key)) and isinstance(v, str) and v:
+                out.append(_fund(f"JSON-Key {p}", v))
+            _json_csrf(v, p, out)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _json_csrf(v, f"{pfad}[{i}]", out)
+
+
+def suche_csrf(response: httpx.Response) -> list[Fund]:
+    """Sucht CSRF/XSRF-Kandidaten in Headern, Set-Cookie-Namen und Body. Die Fund-Objekte tragen den
+    Wert nur intern (nicht in repr); ausgegeben werden Fundort-Art, Laenge und Form."""
+    funde: list[Fund] = []
+    for hname, wert in response.headers.items():
+        if _CSRF_WORT.search(hname) and wert:
+            funde.append(_fund(f"Header {hname}", wert))
+    for roh in response.headers.get_list("set-cookie"):
+        cname, _, rest = roh.partition("=")
+        if _CSRF_WORT.search(cname):
+            wert = rest.split(";", 1)[0].strip().strip('"')
+            if wert:
+                funde.append(_fund(f"Cookie {cname.strip()}", wert))
+    text = response.text
+    daten: Any = None
+    if text.lstrip()[:1] in ("{", "["):
+        try:
+            daten = json.loads(text)
+        except Exception:  # noqa: BLE001
+            daten = None
+    if daten is not None:
+        _json_csrf(daten, "", funde)
+    else:
+        for tag in re.findall(r"<(?:meta|input)\b[^>]*>", text, re.IGNORECASE):
+            attrs = {k.lower(): v for k, v in _ATTR.findall(tag)}
+            name = attrs.get("name") or attrs.get("property") or attrs.get("id") or ""
+            wert = attrs.get("content") if tag.lower().startswith("<meta") else attrs.get("value")
+            if _CSRF_WORT.search(name) and wert:
+                art = "meta" if tag.lower().startswith("<meta") else "input"
+                funde.append(_fund(f"{art}[name={name}]", wert))
+        for var, wert in _SKRIPT_VAR.findall(text):
+            funde.append(_fund(f"Skriptvariable {var}", wert))
+    eindeutig: dict[tuple[str, str], Fund] = {}
+    for f in funde:
+        eindeutig.setdefault((f.ort, f.wert), f)
+    return list(eindeutig.values())
+
+
+CSRF_KANDIDATEN = (
+    ("/WebUntis/embedded.do?showSidebar=true", False),
+    ("/WebUntis/index.do", False),
+    ("/WebUntis/", False),
+    ("/WebUntis/api/csrf", True),
+    ("/WebUntis/api/token/csrf", True),
+)
+
+
+async def csrf_quellensuche(http: httpx.AsyncClient, k: Kontext) -> tuple[list[Sonde], str | None]:
+    """GET auf Kandidatenseiten (Redirects werden NICHT gefolgt). Gibt (Sonden, intern gemerktes
+    Token oder None) zurueck; Werte werden nie ausgegeben."""
+    sonden: list[Sonde] = []
+    token: str | None = None
+    for pfad, geraten in CSRF_KANDIDATEN:
+        name = f"GET {pfad}" + (" [GERATEN]" if geraten else "")
+        try:
+            r = await http.get(pfad, headers=k.header(), follow_redirects=False)
+        except Exception as exc:  # noqa: BLE001
+            sonde = _fehler(name, exc)
+            sonde.tag, sonde.extra = "csrf", {"fundorte": []}
+            sonden.append(sonde)
+            continue
+        k.uebernimm_set_cookie(r)
+        zeilen = [f"Status {r.status_code}, Content-Type {r.headers.get('content-type', '?')}, Laenge {len(r.content)}"]
+        if 300 <= r.status_code < 400:
+            zeilen.append(f"Redirect (nicht gefolgt) -> {_ziel(r.headers.get('location', '?'))}")
+        funde = suche_csrf(r)
+        for f in funde:
+            zeilen.append(f"Fund: {f.ort} - {f.form}, {f.laenge} Zeichen")
+        if not funde:
+            erwaehnungen = len(_CSRF_WORT.findall(r.text))
+            zeilen.append(
+                f"Erwaehnung von csrf/xsrf im Body: {erwaehnungen}x (kein Wert extrahierbar)" if erwaehnungen else "kein CSRF-Fund"
+            )
+        if token is None:
+            token = next((f.wert for f in funde if _TOKEN_ZEICHEN.fullmatch(f.wert)), None)
+        sonden.append(Sonde(name, bool(funde), zeilen, tag="csrf", extra={"fundorte": [f.ort for f in funde]}))
+    return sonden, token
 
 
 # --- Interner JSON-RPC-Dienst (jsonrpc_web/jsonStudentDutyService), Methodennamen GERATEN ---
@@ -368,39 +665,147 @@ def klassifiziere_antwort(response: httpx.Response) -> tuple[str, str]:
     return "unerwartet", f"HTTP {status}: JSON ohne result/error, Keys {sorted(body.keys())}"
 
 
+DUTY_METHODE = "getStudentDutySchedulerData"
+MAX_HINT_BODY = 200
+
+
+def kuerze_body(text: str, maximal: int = MAX_HINT_BODY) -> str:
+    """Body fuer die Ausgabe: Skript/Style und Tags entfernt, Whitespace normalisiert, lange
+    token-artige Zeichenfolgen ersetzt, auf `maximal` Zeichen gekuerzt."""
+    t = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", text)
+    t = re.sub(r"<[^>]*>", " ", t)
+    t = re.sub(r"[A-Za-z0-9_\-+/=.]{40,}", "[...]", html_lib.unescape(t))
+    t = re.sub(r"\s+", " ", t).strip()
+    return t if len(t) <= maximal else t[:maximal] + "…"
+
+
+def _finde(obj: Any, key: str) -> tuple[bool, Any]:
+    """Breitensuche: erster Wert zum Key `key` (case-insensitiv)."""
+    queue = [obj]
+    while queue:
+        o = queue.pop(0)
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if str(k).lower() == key.lower():
+                    return True, v
+            queue.extend(o.values())
+        elif isinstance(o, list):
+            queue.extend(o)
+    return False, None
+
+
+def _wochen_ids(werte: Any) -> list[str]:
+    if not isinstance(werte, list):
+        return []
+    return [str(w) for w in werte if (isinstance(w, int) and not isinstance(w, bool)) or (isinstance(w, str) and re.fullmatch(r"\d{6,8}", w))]
+
+
+def _bereich(werte: Any) -> str:
+    ids = _wochen_ids(werte)
+    return f" ({ids[0]} .. {ids[-1]})" if ids else ""
+
+
+def _anzahl(werte: Any) -> int:
+    return len(werte) if isinstance(werte, (list, dict)) else 0
+
+
+def struktur_bericht(result: Any) -> tuple[list[str], dict[str, Any]]:
+    """Nur STRUKTUR der Antwort von getStudentDutySchedulerData: keine Schuelernamen, kein studentDTO,
+    Schueler nur als laufende Nummer."""
+    if not isinstance(result, dict):
+        return [f"Ergebnis ist kein Objekt: {type(result).__name__}"], {"typ": type(result).__name__}
+    daten: dict[str, Any] = {}
+    zeilen: list[str] = []
+    for key in ("klasseName", "dutyName"):
+        _, wert = _finde(result, key)
+        daten[key] = wert if isinstance(wert, str) else None
+        zeilen.append(f"{key}: {daten[key] if daten[key] is not None else 'nicht vorhanden'}")
+    ok, matrix = _finde(result, "matrix")
+    matrix = matrix if ok and isinstance(matrix, dict) else {}
+    columns = matrix.get("columns") if isinstance(matrix.get("columns"), list) else []
+    rows = matrix.get("rows") if isinstance(matrix.get("rows"), list) else []
+    spalten_ids = [c.get("id") for c in columns if isinstance(c, dict)]
+    daten["columns"], daten["rows"] = len(columns), len(rows)
+    zeilen.append(f"columns: {len(columns)}" + (f" (erste {_wochen_ids(spalten_ids)[0]}, letzte {_wochen_ids(spalten_ids)[-1]})" if _wochen_ids(spalten_ids) else ""))
+    zeilen.append(f"rows: {len(rows)}")
+    daten["zeilen"] = []
+    for i, row in enumerate(rows, 1):
+        row = row if isinstance(row, dict) else {}
+        rel, abw = row.get("relations"), row.get("absences")
+        daten["zeilen"].append({"nr": i, "relations": _anzahl(rel), "absences": _anzahl(abw)})
+        if i <= 60:
+            zeilen.append(f"  Schueler {i}: relations={_anzahl(rel)}{_bereich(rel)}, absences={_anzahl(abw)}{_bereich(abw)}")
+    if len(rows) > 60:
+        zeilen.append(f"  ... {len(rows) - 60} weitere Zeilen")
+    _, optionen = _finde(result, "dutyOptions")
+    duties = [
+        f"{o.get('id')}={o.get('label', o.get('name', '?'))}" for o in (optionen if isinstance(optionen, list) else []) if isinstance(o, dict)
+    ]
+    daten["dutyOptions"] = duties
+    zeilen.append("dutyOptions: " + (", ".join(duties) if duties else "nicht vorhanden"))
+    for key in ("klasseOptions", "studentOptions"):
+        _, wert = _finde(result, key)
+        daten[key] = _anzahl(wert)
+        zeilen.append(f"{key}: {daten[key]}")
+    vorhanden, can_write = _finde(result, "canWrite")
+    daten["canWrite"] = can_write if vorhanden and isinstance(can_write, (bool, int)) else vorhanden
+    zeilen.append("canWrite: " + (f"vorhanden (Wert {str(can_write).lower()})" if vorhanden and isinstance(can_write, (bool, int)) else "vorhanden" if vorhanden else "nicht vorhanden"))
+    return zeilen, daten
+
+
 async def rpc_web_sonde(
-    http: httpx.AsyncClient, pfad: str, methode: str, params: Any, headers: dict[str, str], geraten: bool = True
+    http: httpx.AsyncClient,
+    pfad: str,
+    methode: str,
+    params: Any,
+    headers: dict[str, str],
+    geraten: bool = True,
+    name: str | None = None,
+    tag: str | None = None,
 ) -> Sonde:
     """Ein JSON-RPC-2.0-POST gegen einen internen /WebUntis/jsonrpc_web/-Dienst. Nur Methoden, die
-    `pruefe_methode` bestehen (lesend)."""
+    `pruefe_methode` bestehen (lesend). Fuer `getStudentDutySchedulerData` wird bei Erfolg nur die
+    Struktur ausgegeben."""
     pruefe_methode(methode)
     pfad = pruefe_pfad(pfad)
-    name = f"RPC {pfad} {methode}{' (Name GERATEN)' if geraten else ''}"
+    name = name or f"RPC {pfad} {methode}{' (Name GERATEN)' if geraten else ''}"
     payload = {"id": methode, "method": methode, "params": params, "jsonrpc": "2.0"}
     try:
         response = await http.post(pfad, json=payload, headers=headers)
     except Exception as exc:  # noqa: BLE001
-        return _fehler(name, exc)
+        sonde = _fehler(name, exc)
+        sonde.tag = tag
+        return sonde
     kategorie, text = klassifiziere_antwort(response)
     zeilen = [f"Status {response.status_code}, Content-Type {response.headers.get('content-type', '?')}, "
               f"Laenge {len(response.content)}", f"Einordnung: {kategorie} - {text}"]  # fmt: skip
+    extra: dict[str, Any] = {"status": response.status_code, "body_csrf": False}
     treffer: list[tuple[str, str]] = []
     roh: Any = None
     if kategorie == "ok":
         result = response.json().get("result")
-        zeilen.append(_beschreibe(result))
-        if isinstance(result, list):
-            zeilen.append(f"Keys: {sorted({k for e in result if isinstance(e, dict) for k in e})}")
-            zeilen.append("Beispiele: " + _fmt(result[:3]))
-        elif isinstance(result, dict):
-            zeilen.append("Beispiel: " + _fmt(result))
+        if methode == DUTY_METHODE:
+            struktur_zeilen, roh = struktur_bericht(result)
+            zeilen += struktur_zeilen
         else:
-            zeilen.append("Wert: " + _fmt(result)[:MAX_BODY])
-        treffer = suche_stichworte(result, f"{methode}")[:10]
-        roh = kuerze(maskiere(result))
+            zeilen.append(_beschreibe(result))
+            if isinstance(result, list):
+                zeilen.append(f"Keys: {sorted({k for e in result if isinstance(e, dict) for k in e})}")
+                zeilen.append("Beispiele: " + _fmt(result[:3]))
+            elif isinstance(result, dict):
+                zeilen.append("Beispiel: " + _fmt(result))
+            else:
+                zeilen.append("Wert: " + _fmt(result)[:MAX_BODY])
+            treffer = suche_stichworte(result, f"{methode}")[:10]
+            roh = kuerze(maskiere(result))
     elif kategorie == "unerwartet":
         zeilen.append("Body: " + response.text[:MAX_BODY])
-    return Sonde(name, kategorie == "ok" and not _ist_leer(roh), zeilen, treffer, roh, kategorie)
+    elif kategorie in ("http_auth", "login_umleitung") and response.text.strip():
+        hinweis = kuerze_body(response.text)
+        if hinweis:
+            zeilen.append("Body (gekuerzt): " + hinweis)
+            extra["body_csrf"] = bool(_CSRF_WORT.search(hinweis))
+    return Sonde(name, kategorie == "ok" and not _ist_leer(roh), zeilen, treffer, roh, kategorie, tag, extra)
 
 
 async def sonde_duty_service(
@@ -416,20 +821,146 @@ async def sonde_gezielt(
     return [await rpc_web_sonde(http, pfad, methode, params, _cookie_headers(session_id, schule), geraten=False)]
 
 
-async def fuehre_alle_sonden_aus(client: Any, http: httpx.AsyncClient, rpc_path: str = DEFAULT_RPC_PATH) -> list[Sonde]:
-    schuljahr = await hole_schuljahr(client)
-    sonden = [await sonde_holidays(client, schuljahr), await sonde_klassen(client, schuljahr)]
-    sonden += await sonde_rpc_kandidaten(client)
-    session_id = getattr(client, "_session_id", None)
-    sonden += await sonde_rest(http, session_id, settings.webuntis_school, schuljahr)
-    sonden += await sonde_duty_service(http, session_id, settings.webuntis_school, rpc_path)
+DUTY_KOMBINATIONEN = (
+    ("a", "nur Cookies", False, False),
+    ("b", "Cookies + X-CSRF-TOKEN", True, False),
+    ("c", "Cookies + Authorization Bearer (JWT von token/new)", False, True),
+    ("d", "Cookies + X-CSRF-TOKEN + Bearer", True, True),
+)
+
+
+async def sonde_duty_matrix(
+    http: httpx.AsyncClient,
+    k: Kontext,
+    klasse_id: int,
+    duty_ids: list[int],
+    csrf: str | None,
+    jwt: str | None,
+    pfad: str = DEFAULT_RPC_PATH,
+) -> list[Sonde]:
+    """getStudentDutySchedulerData [klasseId, dutyId] in mehreren Header-Kombinationen. Kombinationen,
+    deren Zutat (CSRF-Token / JWT) fehlt, werden uebersprungen (kein Request)."""
+    basis = str(http.base_url).rstrip("/")
+    fest = {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": basis,
+        "Referer": f"{basis}/WebUntis/embedded.do?showSidebar=true",
+    }
+    kombis: list[tuple[str, str, dict[str, str] | None, str | None]] = []
+    for key, text, braucht_csrf, braucht_jwt in DUTY_KOMBINATIONEN:
+        extra: dict[str, str] = {}
+        fehlt = [n for n, noetig, da in (("CSRF-Token", braucht_csrf, csrf), ("JWT", braucht_jwt, jwt)) if noetig and not da]
+        if braucht_csrf and csrf:
+            extra["X-CSRF-TOKEN"] = csrf
+        if braucht_jwt and jwt:
+            extra["Authorization"] = f"Bearer {jwt}"
+        kombis.append((key, text, None if fehlt else extra, ", ".join(fehlt) or None))
+    hyp = "HYPOTHESE: JWT als X-CSRF-TOKEN"
+    kombis.append(("e", f"{hyp} statt CSRF-Token", {"X-CSRF-TOKEN": jwt} if jwt else None, None if jwt else "JWT"))
+    kombis.append(("e+", f"{hyp} zusaetzlich zu Bearer", {"X-CSRF-TOKEN": jwt, "Authorization": f"Bearer {jwt}"} if jwt else None, None if jwt else "JWT"))
+    sonden: list[Sonde] = []
+    for key, text, extra, fehlt in kombis:
+        for duty_id in duty_ids:
+            name = f"Duty ({key}) {text}, klasseId={klasse_id}, dutyId={duty_id}"
+            if extra is None:
+                sonden.append(Sonde(name, False, [f"uebersprungen: {fehlt} nicht vorhanden"], tag=f"duty:{key}"))
+                continue
+            headers = {**k.header(), **fest, **extra}
+            sonden.append(
+                await rpc_web_sonde(http, pfad, DUTY_METHODE, [klasse_id, duty_id], headers, geraten=False, name=name, tag=f"duty:{key}")
+            )
     return sonden
+
+
+async def fuehre_alle_sonden_aus(
+    client: Any,
+    http: httpx.AsyncClient,
+    rpc_path: str = DEFAULT_RPC_PATH,
+    klasse_id: int | None = None,
+    duty_ids: list[int] | None = None,
+) -> list[Sonde]:
+    schuljahr = await hole_schuljahr(client)
+    klassen = await sonde_klassen(client, schuljahr)
+    sonden = [await sonde_holidays(client, schuljahr), klassen]
+    sonden += await sonde_rpc_kandidaten(client)
+    k = Kontext.aus_client(client, settings.webuntis_school)
+    sonden.append(cookie_uebersicht(k))
+    k.setze_schoolname()
+    token_sonde, token = await diagnose_token(http, k)
+    sonden.append(token_sonde)
+    sonden += await sonde_rest(http, k, token, schuljahr)
+    csrf_sonden, csrf = await csrf_quellensuche(http, k)
+    sonden += csrf_sonden
+    sonden += await sonde_duty_service(http, getattr(client, "_session_id", None), settings.webuntis_school, rpc_path)
+    sonden.append(cookie_status_sonde(k))
+    klasse = klasse_id if klasse_id is not None else klassen.extra.get("erste_klasse_id")
+    if isinstance(klasse, int):
+        sonden += await sonde_duty_matrix(http, k, klasse, duty_ids or [26], csrf, token, rpc_path)
+    else:
+        sonden.append(Sonde("Duty-Matrix", False, ["uebersprungen: keine Klassen-ID (getKlassen leer, --klasse-id nicht angegeben)"]))
+    return sonden
+
+
+_DUTY_ERKLAERUNG = {
+    "a": "Cookies genuegen",
+    "b": "CSRF-Token genuegt",
+    "c": "Bearer-JWT genuegt",
+    "d": "CSRF-Token plus Bearer-JWT noetig",
+    "e": "JWT als X-CSRF-TOKEN genuegt (Hypothese bestaetigt)",
+    "e+": "JWT als X-CSRF-TOKEN plus Bearer genuegt (Hypothese bestaetigt)",
+}
+
+
+def _duty_schluessel(s: Sonde) -> str:
+    return (s.tag or "")[5:]
+
+
+def _duty_befund(sonden: list[Sonde]) -> list[str]:
+    duty = [s for s in sonden if (s.tag or "").startswith("duty:") and s.kategorie is not None]
+    if not duty:
+        return []
+    schluessel = _duty_schluessel
+    ohne_403 = [s for s in duty if s.extra.get("status") != 403]
+    zeilen = ["Duty-Kombinationen ohne HTTP 403: " + (", ".join(f"{schluessel(s)} ({s.kategorie})" for s in ohne_403) or "keine")]
+    ok = [s for s in duty if s.kategorie == "ok"]
+    if ok:
+        key = schluessel(ok[0])
+        zeilen.append(f"Schlussfolgerung: Kombination ({key}) liefert Daten → {_DUTY_ERKLAERUNG.get(key, 'siehe Strukturbericht')}")
+    elif ohne_403:
+        liste = ", ".join(f"{schluessel(s)} ({s.kategorie})" for s in ohne_403)
+        zeilen.append(f"Schlussfolgerung: Kein 403 bei Kombination {liste}, aber keine Daten → Auth-Huerde evtl. genommen, Einordnung/Body oben pruefen")
+    else:
+        getestet = {schluessel(s) for s in duty}
+        csrf_da = "b" in getestet or "d" in getestet
+        jwt_da = "c" in getestet
+        hinweis = "; 403-Body erwaehnt CSRF" if any(s.extra.get("body_csrf") for s in duty) else ""
+        if csrf_da and jwt_da:
+            zeilen.append("Schlussfolgerung: 403 unabhaengig von Token/CSRF → vermutlich Rechte-Problem des Service-Accounts" + hinweis)
+        else:
+            fehlt = " und ".join(n for n, da in (("CSRF-Token (keine Quelle gefunden)", csrf_da), ("JWT (token/new ohne Token)", jwt_da)) if not da)
+            zeilen.append(
+                f"Schlussfolgerung: 403 in allen getesteten Kombinationen, aber ohne {fehlt} → CSRF-/Token-Hypothese nicht abschliessend pruefbar, sonst vermutlich Rechte-Problem{hinweis}"
+            )
+    return zeilen
 
 
 def befund(sonden: list[Sonde]) -> list[str]:
     zeilen = ["", "=== Befund ==="]
     for s in sonden:
         zeilen.append(f"{'✔' if s.ok else '✖'} {s.name}")
+    token = [s for s in sonden if s.tag == "token"]
+    csrf = [s for s in sonden if s.tag == "csrf"]
+    cookies = [s for s in sonden if s.tag == "cookies"]
+    for s in token:
+        jwt = "ja" if s.extra.get("jwt") else "nein"
+        zeilen.append(f"token/new: ✔ (JWT: {jwt})" if s.ok else f"token/new: ✖ (JWT: nein, Klasse: {s.extra.get('klasse', '?')})")
+    for s in cookies:
+        tenant, schule = (_HERKUNFT_TEXT.get(s.extra.get(n, "fehlt"), "fehlt") for n in ("Tenant-Id", "schoolname"))
+        zeilen.append(f"Cookies: Tenant-Id {tenant}, schoolname {schule}")
+    if csrf:
+        orte = sorted({o for s in csrf for o in s.extra.get("fundorte", [])})
+        zeilen.append(f"CSRF-Quelle gefunden: ja ({', '.join(orte)})" if orte else "CSRF-Quelle gefunden: nein")
     web = [s for s in sonden if s.kategorie is not None]
     if web:
         kats = sorted({s.kategorie for s in web if s.kategorie})
@@ -447,12 +978,13 @@ def befund(sonden: list[Sonde]) -> list[str]:
         zeilen.append(f"Klassendienst-Indizien: ja - Fundorte: {fundorte}")
     else:
         zeilen.append("Klassendienst-Indizien: nein (keine Stichwort-Treffer)")
+    zeilen += _duty_befund(sonden)
     return zeilen
 
 
 def _ausgabe(sonden: list[Sonde]) -> None:
     print("HINWEIS: REST-Pfade unter /WebUntis/api/ sind GERATEN/inoffiziell; nur lesend (get*/GET).")
-    print("Personenbezogene Namensfelder sind maskiert.")
+    print("Personenbezogene Namensfelder sind maskiert; Token-, Cookie- und CSRF-Werte werden nie ausgegeben.")
     for s in sonden:
         print(f"\n--- {s.name} --- {'✔' if s.ok else '✖'}")
         for z in s.zeilen:
@@ -461,7 +993,14 @@ def _ausgabe(sonden: list[Sonde]) -> None:
         print(z)
 
 
-async def _main(json_pfad: str | None, rpc_path: str, rpc_method: str | None, rpc_params: Any) -> None:
+async def _main(
+    json_pfad: str | None,
+    rpc_path: str,
+    rpc_method: str | None,
+    rpc_params: Any,
+    klasse_id: int | None = None,
+    duty_ids: list[int] | None = None,
+) -> None:
     async with WebUntisClient(settings) as client:
         async with httpx.AsyncClient(base_url=f"https://{settings.webuntis_server}", timeout=TIMEOUT) as http:
             if rpc_method:
@@ -469,7 +1008,7 @@ async def _main(json_pfad: str | None, rpc_path: str, rpc_method: str | None, rp
                     http, getattr(client, "_session_id", None), settings.webuntis_school, rpc_path, rpc_method, rpc_params
                 )
             else:
-                sonden = await fuehre_alle_sonden_aus(client, http, rpc_path)
+                sonden = await fuehre_alle_sonden_aus(client, http, rpc_path, klasse_id, duty_ids)
     _ausgabe(sonden)
     if json_pfad:
         with open(json_pfad, "w", encoding="utf-8") as f:
@@ -486,7 +1025,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--rpc-path", default=DEFAULT_RPC_PATH, help=f"Dienstpfad unter /WebUntis/ (Default {DEFAULT_RPC_PATH})")
     parser.add_argument("--rpc-method", default=None, help="gezielt nur diese Methode aufrufen (nur get*/list*/find*)")
     parser.add_argument("--rpc-params", default="{}", help="JSON-Params fuer --rpc-method (Default {})")
+    parser.add_argument("--klasse-id", type=int, default=None, help="Klassen-ID fuer getStudentDutySchedulerData (Default: erste Klasse aus getKlassen)")
+    parser.add_argument("--duty-id", type=int, action="append", default=None, help="Dienst-ID (Default 26; mehrfach angebbar)")
     args = parser.parse_args(argv)
+    args.duty_id = args.duty_id or [26]
     try:
         args.rpc_path = pruefe_pfad(args.rpc_path)
         if args.rpc_method:
@@ -501,4 +1043,4 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     _args = parse_args()
-    asyncio.run(_main(_args.json, _args.rpc_path, _args.rpc_method, _args.rpc_params))
+    asyncio.run(_main(_args.json, _args.rpc_path, _args.rpc_method, _args.rpc_params, _args.klasse_id, _args.duty_id))
