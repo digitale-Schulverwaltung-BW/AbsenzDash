@@ -10,6 +10,7 @@ Nutzung (im laufenden Backend-Container):
     python -m scripts.probe_webuntis_klassendienste [--json DATEI]
     python -m scripts.probe_webuntis_klassendienste --rpc-method getXyz [--rpc-params '{"a": 1}'] [--rpc-path PFAD]
     python -m scripts.probe_webuntis_klassendienste --klasse-id 3821 --duty-id 26 --duty-id 27
+    python -m scripts.probe_webuntis_klassendienste --klasse-id 3836 --duty-id 26 --abgleich-klasse-id 3836 --mit-db
 
 Mit --rpc-method wird gezielt nur dieser eine Aufruf gegen den internen Dienst (Default
 jsonrpc_web/jsonStudentDutyService) abgesetzt. Erlaubt sind nur Methoden, die mit get, list oder
@@ -18,6 +19,11 @@ find beginnen (zusaetzlich system.listMethods); Pfade muessen unter /WebUntis/ l
 Der Standardlauf prueft zusaetzlich: token/new (nur Form/Claim-NAMEN), Cookie-NAMEN, die Suche nach
 einer CSRF-Token-Quelle (nur Fundort-Art, Laenge, Form) und eine Matrix von Header-Kombinationen fuer
 `getStudentDutySchedulerData [klasseId, dutyId]`. Token-, Cookie- und CSRF-WERTE werden nie ausgegeben.
+
+ID-Abgleich: `getStudents` (Formprofil je Key, UUID-Kandidat fuer Schueler.externe_id), Abgleich der
+numerischen Matrix-Schueler-IDs mit `getStudents` (Zahlen, keine Namen), Suche nach `dutyOptions`
+(Parameter-Varianten GERATEN) und mit `--mit-db` ein ausschliesslich lesender Abgleich gegen
+`SELECT externe_id, vorname, nachname, klasse_id FROM schueler` (nur Zahlen in der Ausgabe).
 """
 
 from __future__ import annotations
@@ -29,6 +35,8 @@ import html as html_lib
 import json
 import re
 import time
+import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -714,8 +722,8 @@ def struktur_bericht(result: Any) -> tuple[list[str], dict[str, Any]]:
     Schueler nur als laufende Nummer."""
     if not isinstance(result, dict):
         return [f"Ergebnis ist kein Objekt: {type(result).__name__}"], {"typ": type(result).__name__}
-    daten: dict[str, Any] = {}
-    zeilen: list[str] = []
+    daten: dict[str, Any] = {"result_keys": sorted(str(k) for k in result)}
+    zeilen: list[str] = [f"result-Top-Level-Keys: {daten['result_keys']}"]
     for key in ("klasseName", "dutyName"):
         _, wert = _finde(result, key)
         daten[key] = wert if isinstance(wert, str) else None
@@ -787,6 +795,8 @@ async def rpc_web_sonde(
         if methode == DUTY_METHODE:
             struktur_zeilen, roh = struktur_bericht(result)
             zeilen += struktur_zeilen
+            extra["result"] = result  # nur intern (fuer den ID-Abgleich), nie in Ausgabe/--json
+            extra["duty_options"] = roh.get("dutyOptions") if isinstance(roh, dict) else None
         else:
             zeilen.append(_beschreibe(result))
             if isinstance(result, list):
@@ -829,6 +839,16 @@ DUTY_KOMBINATIONEN = (
 )
 
 
+def _duty_fest(http: httpx.AsyncClient) -> dict[str, str]:
+    basis = str(http.base_url).rstrip("/")
+    return {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": basis,
+        "Referer": f"{basis}/WebUntis/embedded.do?showSidebar=true",
+    }
+
+
 async def sonde_duty_matrix(
     http: httpx.AsyncClient,
     k: Kontext,
@@ -840,13 +860,7 @@ async def sonde_duty_matrix(
 ) -> list[Sonde]:
     """getStudentDutySchedulerData [klasseId, dutyId] in mehreren Header-Kombinationen. Kombinationen,
     deren Zutat (CSRF-Token / JWT) fehlt, werden uebersprungen (kein Request)."""
-    basis = str(http.base_url).rstrip("/")
-    fest = {
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": basis,
-        "Referer": f"{basis}/WebUntis/embedded.do?showSidebar=true",
-    }
+    fest = _duty_fest(http)
     kombis: list[tuple[str, str, dict[str, str] | None, str | None]] = []
     for key, text, braucht_csrf, braucht_jwt in DUTY_KOMBINATIONEN:
         extra: dict[str, str] = {}
@@ -873,16 +887,407 @@ async def sonde_duty_matrix(
     return sonden
 
 
+# --- ID-Abgleich: getStudents, Matrix-IDs, optionaler lesender DB-Abgleich, dutyOptions ---
+
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_DATUM_RE = re.compile(r"\d{4}-\d{2}-\d{2}([T ].*)?|\d{1,2}\.\d{1,2}\.\d{4}")
+UUID_SCHWELLE = 0.9
+
+
+def _ist_yyyymmdd(zahl: int) -> bool:
+    s = str(zahl)
+    return len(s) == 8 and 1900 <= int(s[:4]) <= 2100 and 1 <= int(s[4:6]) <= 12 and 1 <= int(s[6:]) <= 31
+
+
+def klassifiziere_wert(wert: Any) -> str:
+    """Formklasse eines Werts: leer, bool, numerisch, UUID, Datum, kurzer String, Freitext, Struktur."""
+    if wert is None or wert == "" or wert == [] or wert == {}:
+        return "leer"
+    if isinstance(wert, bool):
+        return "bool"
+    if isinstance(wert, int):
+        return "Datum" if _ist_yyyymmdd(wert) else "numerisch"
+    if isinstance(wert, float):
+        return "numerisch"
+    if isinstance(wert, (list, dict)):
+        return "Struktur"
+    text = str(wert).strip()
+    if not text:
+        return "leer"
+    if _UUID_RE.fullmatch(text):
+        return "UUID"
+    if _DATUM_RE.fullmatch(text):
+        return "Datum"
+    if re.fullmatch(r"-?\d+(\.\d+)?", text):
+        return "Datum" if text.isdigit() and _ist_yyyymmdd(int(text)) else "numerisch"
+    return "kurzer String" if len(text) <= 16 and not re.search(r"\s", text) else "Freitext"
+
+
+def profil_keys(eintraege: list[Any]) -> dict[str, dict[str, Any]]:
+    """Je Key ueber alle dict-Eintraege: Anzahl Eintraege, befuellt, Verteilung der Formklassen."""
+    dicts = [e for e in eintraege if isinstance(e, dict)]
+    profil: dict[str, dict[str, Any]] = {}
+    for key in sorted({str(k) for e in dicts for k in e}):
+        klassen = Counter(klassifiziere_wert(e.get(key)) for e in dicts if key in e)
+        befuellt = sum(n for k, n in klassen.items() if k != "leer")
+        profil[key] = {"n": len(dicts), "befuellt": befuellt, "klassen": {k: n for k, n in klassen.items() if k != "leer"}}
+    return profil
+
+
+def profil_zeilen(profil: dict[str, dict[str, Any]]) -> list[str]:
+    zeilen = []
+    for key, p in profil.items():
+        n, bef = p["n"], p["befuellt"]
+        form = ", ".join(f"{k} {round(100 * c / bef)}%" for k, c in sorted(p["klassen"].items(), key=lambda kv: -kv[1])) or "-"
+        zeilen.append(f"  {key}: befuellt {bef}/{n} ({round(100 * bef / n) if n else 0}%); Form: {form}")
+    return zeilen
+
+
+def uuid_keys(profil: dict[str, dict[str, Any]], schwelle: float = UUID_SCHWELLE) -> list[str]:
+    """Keys, deren befuellte Werte (zu mindestens `schwelle`) UUID-foermig sind: Kandidaten fuer externe_id."""
+    return [
+        k for k, p in profil.items() if p["befuellt"] and p["klassen"].get("UUID", 0) / p["befuellt"] >= schwelle
+    ]
+
+
+def _maskiere_beispiel(eintrag: Any) -> Any:
+    """Beispiel-Eintrag mit zusaetzlicher Vorsicht: Namensfelder (maskiere), UUIDs auf 4 Zeichen,
+    Datumswerte/Geburtsfelder als <Datum>, sonstige Strings ab 3 Zeichen auf 2 Zeichen + '…'."""
+    if isinstance(eintrag, dict):
+        return {k: _maskiere_beispiel_wert(str(k), v) for k, v in maskiere(eintrag).items()}
+    return eintrag
+
+
+def _maskiere_beispiel_wert(key: str, wert: Any) -> Any:
+    if "birth" in key.lower() or "geb" in key.lower() or klassifiziere_wert(wert) == "Datum":
+        return "<Datum>"
+    if isinstance(wert, str) and wert.endswith("…"):
+        return wert
+    if isinstance(wert, str) and _UUID_RE.fullmatch(wert.strip()):
+        return wert[:4] + "…"
+    if isinstance(wert, str) and len(wert) >= 3:
+        return wert[:2] + "…"
+    if isinstance(wert, (dict, list)):
+        return "<Struktur>"
+    return wert
+
+
+def fehlerklasse(exc: Exception) -> str:
+    text = str(exc).lower()
+    if "-32601" in text or "method not found" in text or "not found" in text:
+        return "Methode nicht vorhanden"
+    if "-8509" in text or "right" in text or "permission" in text or "403" in text or "forbidden" in text:
+        return "keine Berechtigung"
+    if "-8520" in text or "-8504" in text or "401" in text or "not authenticated" in text:
+        return "nicht authentifiziert"
+    return f"sonstiger Fehler ({type(exc).__name__})"
+
+
+async def sonde_students(client: Any, schuljahr: dict[str, Any] | None) -> Sonde:
+    """getStudents (jsonrpc.do): Anzahl, Keys, Formprofil je Key, UUID-Kandidat. Bei Fehler/leer
+    werden GERATENE lesende Alternativen versucht. Die Eintraege stehen nur intern in extra."""
+    name = "getStudents"
+    zeilen: list[str] = []
+    versuche: list[tuple[str, dict[str, Any], bool]] = [("getStudents", {}, False)]
+    if schuljahr and "id" in schuljahr:
+        versuche.append(("getStudents", {"schoolyearId": schuljahr["id"]}, True))
+    for methode, params, geraten in versuche:
+        pruefe_methode(methode)
+        label = f"{methode} {sorted(params)}" + (" [GERATEN]" if geraten else "")
+        try:
+            daten = await client.call(methode, params)
+        except Exception as exc:  # noqa: BLE001
+            zeilen.append(f"{label}: Fehlerklasse {fehlerklasse(exc)}")
+            continue
+        if not isinstance(daten, list) or not daten or not any(isinstance(e, dict) for e in daten):
+            zeilen.append(f"{label}: leer oder unerwartetes Format ({_beschreibe(daten)})")
+            continue
+        eintraege = [e for e in daten if isinstance(e, dict)]
+        profil = profil_keys(eintraege)
+        kandidaten = uuid_keys(profil)
+        zeilen.append(f"{label}: ✔")
+        zeilen += [f"Anzahl Eintraege: {len(eintraege)}", f"Keys: {sorted(profil)}", "Formprofil je Key:", *profil_zeilen(profil)]
+        zeilen.append("Beispiel (maskiert): " + json.dumps(_maskiere_beispiel(eintraege[0]), ensure_ascii=False, default=str))
+        zeilen.append("UUID-foermige Keys (Kandidat fuer externe_id): " + (", ".join(kandidaten) if kandidaten else "keiner"))
+        extra = {"eintraege": eintraege, "uuid_keys": kandidaten, "methode": label, "anzahl": len(eintraege)}
+        return Sonde(name, True, zeilen, roh={"anzahl": len(eintraege), "keys": sorted(profil), "uuid_keys": kandidaten}, tag="students", extra=extra)
+    return Sonde(name, False, zeilen, tag="students", extra={"eintraege": [], "uuid_keys": [], "anzahl": 0})
+
+
+_FEHLER_NORM = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def normalisiere_name(text: Any) -> str:
+    """Casefold, Umlaute -> ae/oe/ue, ß -> ss, restliche Akzente entfernt, alle Nicht-Buchstaben
+    (Bindestrich, Leerzeichen, Apostroph, Komma) entfernt: 'Müller-Lüdenscheidt' == 'mueller luedenscheidt'."""
+    t = str(text or "").casefold().translate(_FEHLER_NORM)
+    t = "".join(c for c in unicodedata.normalize("NFKD", t) if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def _ci(d: Any, *namen: str) -> Any:
+    if not isinstance(d, dict):
+        return None
+    low = {_norm(str(k)): v for k, v in d.items()}
+    for n in namen:
+        if _norm(n) in low and low[_norm(n)] not in (None, ""):
+            return low[_norm(n)]
+    return None
+
+
+def _name_key(eintraege: list[dict[str, Any]], kandidaten: tuple[str, ...]) -> str | None:
+    vorhandene = {_norm(str(k)): str(k) for e in eintraege for k in e}
+    for n in kandidaten:
+        if _norm(n) in vorhandene:
+            return vorhandene[_norm(n)]
+    return None
+
+
+def _skalar(v: Any) -> str | None:
+    return str(v) if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v) != "" else None
+
+
+def _eindeutigkeit(schluessel: list[str | None], index: Counter) -> tuple[int, int, int]:
+    eindeutig = mehrdeutig = fehlt = 0
+    for k in schluessel:
+        n = index.get(k, 0) if k else 0
+        eindeutig += n == 1
+        mehrdeutig += n > 1
+        fehlt += n == 0
+    return eindeutig, mehrdeutig, fehlt
+
+
+def _matrix_rows(result: Any) -> list[dict[str, Any]]:
+    ok, matrix = _finde(result, "matrix")
+    rows = matrix.get("rows") if ok and isinstance(matrix, dict) else None
+    return [r.get("studentDTO") for r in (rows or []) if isinstance(r, dict) and isinstance(r.get("studentDTO"), dict)]
+
+
+def abgleich_matrix(students: list[dict[str, Any]], dtos: list[dict[str, Any]]) -> dict[str, Any]:
+    """Zaehlt (keine Namen im Ergebnis): wie viele Matrix-IDs als Wert welches getStudents-Keys vorkommen
+    und wie viele Matrix-Schueler eindeutig/mehrdeutig/nicht ueber (Vor-, Nachname) bzw. displayName
+    gefunden werden. `zuordnung` (intern): Matrix-ID -> getStudents-Eintrag ueber den besten ID-Key."""
+    m = len(dtos)
+    ids = [_skalar(_ci(d, "id")) for d in dtos]
+    keys = sorted({str(k) for e in students for k in e})
+    treffer: dict[str, int] = {}
+    for k in keys:
+        werte = {_skalar(e.get(k)) for e in students} - {None}
+        n = sum(1 for i in ids if i is not None and i in werte)
+        if n:
+            treffer[k] = n
+    bester = max(treffer, key=lambda k: (treffer[k], k == "id"), default=None)
+    zuordnung: dict[str, dict[str, Any]] = {}
+    if bester:
+        by_wert = {_skalar(e.get(bester)): e for e in students if _skalar(e.get(bester))}
+        zuordnung = {i: by_wert[i] for i in ids if i in by_wert}
+    fk = _name_key(students, ("foreName", "firstName", "vorname"))
+    lk = _name_key(students, ("lastName", "surname", "nachname", "longName"))
+    dk = _name_key(students, ("displayName",))
+    idx = Counter(normalisiere_name(e.get(fk)) + "|" + normalisiere_name(e.get(lk)) for e in students) if fk and lk else Counter()
+    idx_dn: Counter = Counter()
+    for e in students:
+        f, la = normalisiere_name(e.get(fk)), normalisiere_name(e.get(lk))
+        for t in {f + la, la + f} if (f or la) else set():
+            idx_dn[t] += 1
+        if dk and e.get(dk):
+            idx_dn[normalisiere_name(e.get(dk))] += 1
+    namen = [normalisiere_name(_ci(d, "firstname", "foreName")) + "|" + normalisiere_name(_ci(d, "lastname", "surname", "longName")) for d in dtos]
+    namen = [n if n != "|" else None for n in namen]
+    dn = [normalisiere_name(_ci(d, "displayName")) or None for d in dtos]
+    ne, nm, nf = _eindeutigkeit(namen, idx)
+    de, dm, df = _eindeutigkeit(dn, idx_dn)
+    return {
+        "m": m, "id_treffer": treffer, "id_key": bester, "id_n": treffer.get(bester, 0) if bester else 0,
+        "name_keys": (fk, lk), "name": (ne, nm, nf), "display": (de, dm, df), "zuordnung": zuordnung,
+    }  # fmt: skip
+
+
+def abgleich_zeilen(a: dict[str, Any]) -> list[str]:
+    m = a["m"]
+    keys = ", ".join(f"{k}: {n}/{m}" for k, n in sorted(a["id_treffer"].items(), key=lambda kv: -kv[1])[:6]) or "kein Key"
+    ne, nm, nf = a["name"]
+    de, dm, df = a["display"]
+    return [
+        f"Matrix-Schueler: {m}",
+        f"studentDTO.id kommt in getStudents vor (Key: Treffer): {keys}",
+        f"Bester ID-Key: {a['id_key'] or 'keiner'} ({a['id_n']}/{m})",
+        f"Namensabgleich (Keys {a['name_keys'][0]}/{a['name_keys'][1]}): eindeutig {ne}, mehrdeutig {nm}, nicht gefunden {nf}",
+        f"displayName-Abgleich: eindeutig {de}, mehrdeutig {dm}, nicht gefunden {df}",
+    ]
+
+
+async def lade_schueler_readonly(session_factory: Any) -> list[tuple[str, str, str, int | None]]:
+    """NUR `SELECT externe_id, vorname, nachname, klasse_id FROM schueler`. Kein commit, keine Schreibzugriffe."""
+    from sqlalchemy import select
+
+    from app.models.schueler import Schueler
+
+    async with session_factory() as db:
+        result = await db.execute(select(Schueler.externe_id, Schueler.vorname, Schueler.nachname, Schueler.klasse_id))
+        return [(r[0], r[1], r[2], r[3]) for r in result.all()]
+
+
+def abgleich_db(students: list[dict[str, Any]], a: dict[str, Any], dtos: list[dict[str, Any]], db: list[tuple[Any, ...]], praefer_keys: list[str]) -> dict[str, Any]:
+    """Reine Zaehlung (keine Namen/externe_ids im Ergebnis). Schluessel mit den meisten externe_id-Treffern
+    (Vorrang UUID-foermige Keys) ist die Bruecke; Matrix-Schueler -> getStudents -> Bruecke -> Schueler."""
+    ext = {str(r[0]) for r in db if r[0]}
+    keys = sorted({str(k) for e in students for k in e})
+    treffer = {}
+    for k in keys:
+        n = sum(1 for e in students if _skalar(e.get(k)) in ext)
+        if n:
+            treffer[k] = n
+    bruecke = max(treffer, key=lambda k: (treffer[k], k in praefer_keys), default=None)
+    via_uuid = 0
+    if bruecke:
+        via_uuid = sum(1 for e in a["zuordnung"].values() if _skalar(e.get(bruecke)) in ext)
+    idx = Counter(normalisiere_name(r[1]) + "|" + normalisiere_name(r[2]) for r in db)
+    namen = [normalisiere_name(_ci(d, "firstname", "foreName")) + "|" + normalisiere_name(_ci(d, "lastname", "surname", "longName")) for d in dtos]
+    ne, nm, nf = _eindeutigkeit([n if n != "|" else None for n in namen], idx)
+    return {"anzahl_db": len(db), "treffer": treffer, "bruecke": bruecke, "via_uuid": via_uuid, "m": a["m"], "name": (ne, nm, nf)}
+
+
+def abgleich_db_zeilen(d: dict[str, Any], n_students: int) -> list[str]:
+    keys = ", ".join(f"{k}: {n}/{n_students} ({round(100 * n / n_students) if n_students else 0}%)" for k, n in sorted(d["treffer"].items(), key=lambda kv: -kv[1])[:6]) or "kein Key"
+    ne, nm, nf = d["name"]
+    return [
+        f"Schueler in DB (nur gelesen): {d['anzahl_db']}",
+        f"getStudents-Eintraege mit Wert in Schueler.externe_id (Key: Treffer): {keys}",
+        f"Bruecken-Key: {d['bruecke'] or 'keiner'}",
+        f"Matrix-Schueler -> getStudents -> externe_id -> Schueler: {d['via_uuid']}/{d['m']}",
+        f"Fallback (Vorname, Nachname normalisiert) gegen Schueler: eindeutig {ne}, mehrdeutig {nm}, keiner {nf}",
+    ]
+
+
+DUTY_OPTIONEN_VARIANTEN = (("[klasseId]", lambda k: [k]), ("[klasseId, null]", lambda k: [k, None]), ("[klasseId, 0]", lambda k: [k, 0]))
+
+
+async def sonde_duty_optionen(http: httpx.AsyncClient, k: Kontext, klasse_id: int, csrf: str | None, pfad: str = DEFAULT_RPC_PATH) -> list[Sonde]:
+    """GERATENE Parametervarianten (lesend, Kombination b), um an `dutyOptions` zu kommen."""
+    if not csrf:
+        return [Sonde("dutyOptions-Varianten", False, ["uebersprungen: kein CSRF-Token"], tag="dutyopt")]
+    headers = {**k.header(), **_duty_fest(http), "X-CSRF-TOKEN": csrf}
+    sonden = []
+    for label, bauen in DUTY_OPTIONEN_VARIANTEN:
+        name = f"dutyOptions-Variante {label} (Params GERATEN), klasseId={klasse_id}"
+        s = await rpc_web_sonde(http, pfad, DUTY_METHODE, bauen(klasse_id), headers, geraten=False, name=name, tag="dutyopt")
+        s.extra["gefunden"] = bool(s.extra.get("duty_options"))
+        sonden.append(s)
+    return sonden
+
+
+def duty_optionen_gefunden(sonden: list[Sonde]) -> list[str]:
+    for s in sonden:
+        if s.extra.get("duty_options"):
+            return list(s.extra["duty_options"])
+    return []
+
+
+def schlussfolgerung(f: dict[str, Any]) -> str:
+    if not f.get("students_ok"):
+        return "getStudents nicht verfuegbar → keine ID-Bruecke ermittelbar"
+    brk, key = f.get("bruecke"), f.get("id_key")
+    if f.get("db") and brk and f.get("via_uuid", 0) > 0 and f.get("id_n", 0) > 0:
+        return f"Schluessel `{brk}` aus getStudents entspricht Schueler.externe_id → Zuordnung ueber numerische ID (`{key}`) moeglich ({f['via_uuid']}/{f['m']})"
+    if not f.get("db") and f.get("uuid_keys") and f.get("id_n", 0) > 0:
+        return f"Schluessel `{f['uuid_keys'][0]}` aus getStudents ist UUID-foermig (Kandidat fuer externe_id), Bestaetigung nur mit --mit-db moeglich"
+    mehr = f.get("db_name", f.get("name", (0, 0, 0)))[1]
+    return f"keine ID-Bruecke gefunden → nur Namensabgleich ({mehr} mehrdeutig)"
+
+
+def _id_befund(sonden: list[Sonde]) -> list[str]:
+    st = next((s for s in sonden if s.tag == "students"), None)
+    zeilen: list[str] = []
+    if st is None:
+        return zeilen
+    uk = st.extra.get("uuid_keys", [])
+    zeilen.append(f"(a) getStudents: {'✔' if st.ok else '✖'}; UUID-Key vorhanden: " + (f"ja ({', '.join(uk)})" if uk else "nein"))
+    ab = next((s for s in sonden if s.tag == "abgleich"), None)
+    fakten: dict[str, Any] = {"students_ok": st.ok, "uuid_keys": uk}
+    if ab is not None and ab.extra.get("m") is not None:
+        zeilen.append(f"(b) Matrix-ID in getStudents: {ab.extra['id_n']}/{ab.extra['m']}" + (f" (Key {ab.extra['id_key']})" if ab.extra.get("id_key") else ""))
+        fakten.update(m=ab.extra["m"], id_n=ab.extra["id_n"], id_key=ab.extra["id_key"], name=ab.extra["name"])
+    else:
+        zeilen.append("(b) Matrix-ID in getStudents: nicht ermittelbar (keine Matrix)")
+    db = next((s for s in sonden if s.tag == "dbabgleich"), None)
+    if db is not None and db.extra.get("anzahl_db") is not None:
+        ne = db.extra["name"][0]
+        zeilen.append(f"(c) Abbildung auf Schueler: ueber UUID {db.extra['via_uuid']}/{db.extra['m']}, ueber Namen eindeutig {ne}/{db.extra['m']}")
+        fakten.update(db=True, bruecke=db.extra["bruecke"], via_uuid=db.extra["via_uuid"], db_name=db.extra["name"])
+    else:
+        zeilen.append("(c) Abbildung auf Schueler: nicht geprueft (ohne --mit-db oder DB-Fehler)")
+    opts = duty_optionen_gefunden([s for s in sonden if (s.tag or "").startswith("duty") or s.tag == "dutyopt"])
+    zeilen.append("(d) dutyOptions gefunden: " + (f"ja ({', '.join(opts)})" if opts else "nein"))
+    zeilen.append("(e) Schlussfolgerung: " + schlussfolgerung(fakten))
+    return zeilen
+
+
+async def hole_matrix_ergebnis(
+    http: httpx.AsyncClient, k: Kontext, klasse_id: int, duty_id: int, csrf: str | None, bisherige: list[Sonde], pfad: str
+) -> tuple[Any, str]:
+    """Matrix-`result` (Kombination b) fuer (Klasse, Dienst): zuerst aus dem schon laufenden Duty-Matrix-Lauf
+    wiederverwendet, sonst frisch geholt. Rueckgabe (result oder None, Hinweis)."""
+    marke = f"klasseId={klasse_id}, dutyId={duty_id}"
+    for s in bisherige:
+        if s.tag == "duty:b" and s.name.endswith(marke):
+            return s.extra.get("result"), "wiederverwendet" if s.extra.get("result") is not None else "Kombination b lieferte keine Daten"
+    if not csrf:
+        return None, "kein CSRF-Token"
+    headers = {**k.header(), **_duty_fest(http), "X-CSRF-TOKEN": csrf}
+    s = await rpc_web_sonde(http, pfad, DUTY_METHODE, [klasse_id, duty_id], headers, geraten=False, name=f"Duty (b) {marke}", tag="duty:b")
+    return s.extra.get("result"), "neu geholt" if s.extra.get("result") is not None else f"keine Daten ({s.kategorie})"
+
+
+async def sonden_id_abgleich(
+    students: Sonde, matrix_results: list[tuple[int, Any, str]], mit_db: bool, db_factory: Any = None
+) -> list[Sonde]:
+    """Reiner Abgleich (kein Netzwerk). `matrix_results`: (klasse_id, result|None, Hinweis)."""
+    if not students.ok:
+        return []
+    eintraege = students.extra["eintraege"]
+    zeilen, dtos = [], []
+    for klasse_id, result, hinweis in matrix_results:
+        rows = _matrix_rows(result) if result is not None else []
+        zeilen.append(f"Klasse {klasse_id}: {len(rows)} Matrix-Schueler ({hinweis})")
+        dtos += rows
+    if not dtos:
+        return [Sonde("ID-Abgleich Matrix ↔ getStudents", False, [*zeilen, "keine Matrix-Schueler vorhanden"], tag="abgleich", extra={"m": None})]
+    a = abgleich_matrix(eintraege, dtos)
+    sonden = [Sonde(
+        "ID-Abgleich Matrix ↔ getStudents", a["id_n"] > 0, [*zeilen, *abgleich_zeilen(a)],
+        roh={k: v for k, v in a.items() if k != "zuordnung"}, tag="abgleich",
+        extra={"m": a["m"], "id_n": a["id_n"], "id_key": a["id_key"], "name": a["name"]},
+    )]  # fmt: skip
+    if mit_db:
+        try:
+            if db_factory is None:
+                from app.core.database import async_session_factory as db_factory
+            db = await lade_schueler_readonly(db_factory)
+        except Exception as exc:  # noqa: BLE001
+            sonden.append(_fehler("DB-Abgleich (read-only)", exc))
+            sonden[-1].tag = "dbabgleich"
+            return sonden
+        d = abgleich_db(eintraege, a, dtos, db, students.extra["uuid_keys"])
+        sonden.append(Sonde("DB-Abgleich (read-only, nur Zahlen)", d["bruecke"] is not None, abgleich_db_zeilen(d, len(eintraege)), roh=d, tag="dbabgleich", extra=d))
+    return sonden
+
+
 async def fuehre_alle_sonden_aus(
     client: Any,
     http: httpx.AsyncClient,
     rpc_path: str = DEFAULT_RPC_PATH,
     klasse_id: int | None = None,
     duty_ids: list[int] | None = None,
+    abgleich_klassen: list[int] | None = None,
+    mit_db: bool = False,
+    db_factory: Any = None,
 ) -> list[Sonde]:
     schuljahr = await hole_schuljahr(client)
     klassen = await sonde_klassen(client, schuljahr)
     sonden = [await sonde_holidays(client, schuljahr), klassen]
+    students = await sonde_students(client, schuljahr)
+    sonden.append(students)
     sonden += await sonde_rpc_kandidaten(client)
     k = Kontext.aus_client(client, settings.webuntis_school)
     sonden.append(cookie_uebersicht(k))
@@ -897,8 +1302,17 @@ async def fuehre_alle_sonden_aus(
     klasse = klasse_id if klasse_id is not None else klassen.extra.get("erste_klasse_id")
     if isinstance(klasse, int):
         sonden += await sonde_duty_matrix(http, k, klasse, duty_ids or [26], csrf, token, rpc_path)
+        if any(x.kategorie == "ok" for x in sonden if (x.tag or "").startswith("duty:")):
+            sonden += await sonde_duty_optionen(http, k, klasse, csrf, rpc_path)
     else:
         sonden.append(Sonde("Duty-Matrix", False, ["uebersprungen: keine Klassen-ID (getKlassen leer, --klasse-id nicht angegeben)"]))
+    ziel_klassen = abgleich_klassen or ([klasse] if isinstance(klasse, int) else [])
+    if students.ok and ziel_klassen:
+        ergebnisse = []
+        for kid in ziel_klassen:
+            result, hinweis = await hole_matrix_ergebnis(http, k, kid, 26, csrf, sonden, rpc_path)
+            ergebnisse.append((kid, result, hinweis))
+        sonden += await sonden_id_abgleich(students, ergebnisse, mit_db, db_factory)
     return sonden
 
 
@@ -979,6 +1393,7 @@ def befund(sonden: list[Sonde]) -> list[str]:
     else:
         zeilen.append("Klassendienst-Indizien: nein (keine Stichwort-Treffer)")
     zeilen += _duty_befund(sonden)
+    zeilen += _id_befund(sonden)
     return zeilen
 
 
@@ -1000,6 +1415,8 @@ async def _main(
     rpc_params: Any,
     klasse_id: int | None = None,
     duty_ids: list[int] | None = None,
+    abgleich_klassen: list[int] | None = None,
+    mit_db: bool = False,
 ) -> None:
     async with WebUntisClient(settings) as client:
         async with httpx.AsyncClient(base_url=f"https://{settings.webuntis_server}", timeout=TIMEOUT) as http:
@@ -1008,7 +1425,7 @@ async def _main(
                     http, getattr(client, "_session_id", None), settings.webuntis_school, rpc_path, rpc_method, rpc_params
                 )
             else:
-                sonden = await fuehre_alle_sonden_aus(client, http, rpc_path, klasse_id, duty_ids)
+                sonden = await fuehre_alle_sonden_aus(client, http, rpc_path, klasse_id, duty_ids, abgleich_klassen, mit_db)
     _ausgabe(sonden)
     if json_pfad:
         with open(json_pfad, "w", encoding="utf-8") as f:
@@ -1027,6 +1444,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--rpc-params", default="{}", help="JSON-Params fuer --rpc-method (Default {})")
     parser.add_argument("--klasse-id", type=int, default=None, help="Klassen-ID fuer getStudentDutySchedulerData (Default: erste Klasse aus getKlassen)")
     parser.add_argument("--duty-id", type=int, action="append", default=None, help="Dienst-ID (Default 26; mehrfach angebbar)")
+    parser.add_argument("--abgleich-klasse-id", type=int, action="append", default=None, help="Klasse(n) fuer den ID-Abgleich Matrix <-> getStudents (Default: --klasse-id; mehrfach angebbar)")
+    parser.add_argument("--mit-db", action="store_true", help="zusaetzlich rein lesender Abgleich gegen die Tabelle schueler (nur Zahlen in der Ausgabe)")
     args = parser.parse_args(argv)
     args.duty_id = args.duty_id or [26]
     try:
@@ -1043,4 +1462,4 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     _args = parse_args()
-    asyncio.run(_main(_args.json, _args.rpc_path, _args.rpc_method, _args.rpc_params, _args.klasse_id, _args.duty_id))
+    asyncio.run(_main(_args.json, _args.rpc_path, _args.rpc_method, _args.rpc_params, _args.klasse_id, _args.duty_id, _args.abgleich_klasse_id, _args.mit_db))
