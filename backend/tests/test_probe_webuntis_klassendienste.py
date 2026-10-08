@@ -758,3 +758,320 @@ def test_parse_args_klasse_und_duty_ids():
     assert args.klasse_id == 3821 and args.duty_id == [26, 27]
     with pytest.raises(SystemExit):
         probe.parse_args(["--klasse-id", "abc"])
+
+
+# --- ID-Abgleich: getStudents, Matrix, DB (read-only), dutyOptions ---
+
+UUID_A = "3f2b8c1e-5a4d-4e6f-9a1b-0c2d3e4f5a6b"
+UUID_B = "7a1c9d2e-1b3f-4c5d-8e7f-6a5b4c3d2e1f"
+UUID_C = "0b9e8d7c-6a5f-4e3d-9c2b-1a0f9e8d7c6b"
+
+
+def _studenten():
+    return [
+        {"id": 52911, "foreName": "Anna-Lena", "longName": "Müller", "key": UUID_A, "name": "MuellerA", "birthDate": 20080315, "externKey": "x1"},
+        {"id": 52912, "foreName": "Jonas", "longName": "Groß", "key": UUID_B, "name": "GrossJ", "birthDate": 20070101, "externKey": "x2"},
+        {"id": 52913, "foreName": "Jonas", "longName": "Gross", "key": UUID_C, "name": "GrossJ2", "birthDate": 20070202, "externKey": ""},
+    ]
+
+
+@pytest.mark.parametrize(
+    "wert,klasse",
+    [
+        (5, "numerisch"), ("123", "numerisch"), (1.5, "numerisch"), (UUID_A, "UUID"), (UUID_A.upper(), "UUID"),
+        ("2026-08-01", "Datum"), ("01.08.2026", "Datum"), (20260801, "Datum"), ("MuellerA", "kurzer String"),
+        ("ein langer Satz mit Leerzeichen", "Freitext"), ("", "leer"), (None, "leer"), (True, "bool"), ([1], "Struktur"),
+    ],
+)
+def test_klassifiziere_wert(wert, klasse):
+    assert probe.klassifiziere_wert(wert) == klasse
+
+
+def test_profil_und_uuid_key_erkennung():
+    profil = probe.profil_keys(_studenten())
+    assert profil["id"]["klassen"] == {"numerisch": 3}
+    assert profil["externKey"]["befuellt"] == 2 and profil["externKey"]["n"] == 3
+    assert probe.uuid_keys(profil) == ["key"]
+    text = "\n".join(probe.profil_zeilen(profil))
+    assert "key: befuellt 3/3 (100%); Form: UUID 100%" in text and "externKey: befuellt 2/3 (67%)" in text
+    gemischt = probe.profil_keys([{"k": UUID_A}, {"k": "abc"}, {"k": "def"}])
+    assert probe.uuid_keys(gemischt) == []
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [("Müller", "Mueller"), ("Groß", "gross"), ("Anna-Lena", "anna lena"), ("ANNALENA", "Anna-Lena"), ("O'Brien", "obrien"), ("José", "jose")],
+)
+def test_namensnormalisierung(a, b):
+    assert probe.normalisiere_name(a) == probe.normalisiere_name(b)
+
+
+def test_namensnormalisierung_unterscheidet_verschiedene_namen():
+    assert probe.normalisiere_name("Mayer") != probe.normalisiere_name("Meier")
+    assert probe.normalisiere_name(None) == ""
+
+
+@pytest.mark.asyncio
+async def test_sonde_students_profil_beispiel_maskiert_und_uuid_key():
+    sonde = await probe.sonde_students(_client({"getStudents": _studenten()}), SCHULJAHR)
+    assert sonde.ok and sonde.extra["uuid_keys"] == ["key"]
+    text = _text(sonde)
+    assert "Anzahl Eintraege: 3" in text and "UUID-foermige Keys (Kandidat fuer externe_id): key" in text
+    for verboten in ("Anna", "Müller", "MuellerA", UUID_A, "20080315", "Lena"):
+        assert verboten not in text
+    assert "<Datum>" in text and "3f2b…" in text
+
+
+@pytest.mark.asyncio
+async def test_sonde_students_fehlerklasse_und_geratene_alternative():
+    aufrufe = []
+
+    async def call(method, params):
+        aufrufe.append((method, params))
+        if params == {}:
+            raise WebUntisError("WebUntis-Aufruf 'getStudents' fehlgeschlagen: {'code': -8509, 'message': 'no right for getStudents()'}")
+        return _studenten()
+
+    client = AsyncMock()
+    client.call.side_effect = call
+    sonde = await probe.sonde_students(client, SCHULJAHR)
+    assert aufrufe == [("getStudents", {}), ("getStudents", {"schoolyearId": 9})]
+    text = _text(sonde)
+    assert sonde.ok and "keine Berechtigung" in text and "[GERATEN]" in text
+
+
+@pytest.mark.asyncio
+async def test_sonde_students_nicht_verfuegbar():
+    sonde = await probe.sonde_students(_client({"getStudents": WebUntisError("{'code': -32601, 'message': 'Method not found'}")}), None)
+    assert not sonde.ok and "Methode nicht vorhanden" in _text(sonde)
+
+
+def test_fehlerklassen():
+    assert probe.fehlerklasse(WebUntisError("x -32601")) == "Methode nicht vorhanden"
+    assert probe.fehlerklasse(WebUntisError("-8509 no right")) == "keine Berechtigung"
+    assert probe.fehlerklasse(WebUntisError("-8520 not authenticated")) == "nicht authentifiziert"
+    assert probe.fehlerklasse(ValueError("zzz")).startswith("sonstiger Fehler")
+
+
+DTOS = [
+    {"id": 52911, "firstname": "Anna Lena", "lastname": "Mueller", "displayName": "Müller Anna-Lena", "catalogNo": 1},
+    {"id": 52912, "firstname": "Jonas", "lastname": "Gross", "displayName": "Gross Jonas"},  # mehrdeutig
+    {"id": 99999, "firstname": "Nobody", "lastname": "Nirgends", "displayName": "Nirgends Nobody"},
+]
+
+
+def test_abgleich_matrix_zahlen_ohne_namen():
+    a = probe.abgleich_matrix(_studenten(), DTOS)
+    assert a["m"] == 3 and a["id_key"] == "id" and a["id_n"] == 2 and a["id_treffer"] == {"id": 2}
+    assert a["name"] == (1, 1, 1)  # eindeutig: Anna Lena; mehrdeutig: Jonas Gross/Groß; nicht gefunden: Nobody
+    assert a["display"] == (1, 1, 1)
+    assert set(a["zuordnung"]) == {"52911", "52912"}
+    text = "\n".join(probe.abgleich_zeilen(a))
+    assert "id: 2/3" in text and "eindeutig 1, mehrdeutig 1, nicht gefunden 1" in text
+    for verboten in ("Anna", "Mueller", "Jonas", "Nobody"):
+        assert verboten not in text
+
+
+def test_abgleich_matrix_ohne_treffer():
+    a = probe.abgleich_matrix([{"id": 1, "foreName": "A", "longName": "B"}], [{"id": 7, "firstname": "X", "lastname": "Y"}])
+    assert a["id_key"] is None and a["id_n"] == 0 and a["name"] == (0, 0, 1)
+
+
+DB_ZEILEN = [(UUID_A, "Anna-Lena", "Müller", 1), (UUID_B, "Jonas", "Groß", 1), ("andere-id", "Jonas", "Groß", 2), ("fremd", "Zed", "Zorn", None)]
+
+
+def test_abgleich_db_zahlen():
+    a = probe.abgleich_matrix(_studenten(), DTOS)
+    d = probe.abgleich_db(_studenten(), a, DTOS, DB_ZEILEN, ["key"])
+    assert d["bruecke"] == "key" and d["treffer"] == {"key": 2}
+    assert d["via_uuid"] == 2 and d["m"] == 3
+    assert d["name"] == (1, 1, 1)  # Anna-Lena eindeutig, Jonas Groß doppelt in DB, Nobody keiner
+    text = "\n".join(probe.abgleich_db_zeilen(d, 3))
+    assert "key: 2/3 (67%)" in text and "ueber UUID" not in text and "2/3" in text
+    for verboten in (UUID_A, UUID_B, "Anna", "Müller", "andere-id", "fremd", "Zorn"):
+        assert verboten not in text
+
+
+def test_schlussfolgerung_faelle():
+    basis = {"students_ok": True, "uuid_keys": ["key"], "id_key": "id", "id_n": 2, "m": 3, "name": (1, 1, 1)}
+    s = probe.schlussfolgerung({**basis, "db": True, "bruecke": "key", "via_uuid": 2})
+    assert "Schluessel `key` aus getStudents entspricht Schueler.externe_id → Zuordnung ueber numerische ID" in s
+    assert "--mit-db" in probe.schlussfolgerung(basis)
+    k = probe.schlussfolgerung({**basis, "db": True, "bruecke": None, "via_uuid": 0, "db_name": (4, 3, 2)})
+    assert k == "keine ID-Bruecke gefunden → nur Namensabgleich (3 mehrdeutig)"
+    assert "nicht verfuegbar" in probe.schlussfolgerung({"students_ok": False})
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _FakeSession:
+    def __init__(self, protokoll):
+        self.protokoll = protokoll
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, stmt, *a, **k):
+        self.protokoll.append(("execute", str(stmt)))
+        return _FakeResult(DB_ZEILEN)
+
+    async def commit(self):
+        self.protokoll.append(("commit", ""))
+
+    def add(self, *a):
+        self.protokoll.append(("add", ""))
+
+    async def flush(self):
+        self.protokoll.append(("flush", ""))
+
+
+@pytest.mark.asyncio
+async def test_mit_db_fuehrt_nur_select_aus_und_gibt_keine_namen_oder_externe_ids_aus():
+    protokoll: list = []
+    students = await probe.sonde_students(_client({"getStudents": _studenten()}), SCHULJAHR)
+    sonden = await probe.sonden_id_abgleich(students, [(3836, {"matrix": {"rows": [{"studentDTO": d} for d in DTOS]}}, "test")], True, lambda: _FakeSession(protokoll))
+    assert [p[0] for p in protokoll] == ["execute"]
+    stmt = protokoll[0][1].upper().split()
+    assert stmt[0] == "SELECT" and not {"INSERT", "UPDATE", "DELETE", "DROP"} & set(stmt)
+    assert "SCHUELER.EXTERNE_ID" in protokoll[0][1].upper() and "FROM SCHUELER" in protokoll[0][1].upper()
+    ausgabe = "\n".join(_text(s) for s in sonden) + "\n".join(probe.befund([students, *sonden]))
+    for verboten in (UUID_A, UUID_B, UUID_C, "andere-id", "fremd", "Anna", "Müller", "Zorn", "Jonas", "Nobody"):
+        assert verboten not in ausgabe
+    assert "(c) Abbildung auf Schueler: ueber UUID 2/3, ueber Namen eindeutig 1/3" in ausgabe
+    assert "(b) Matrix-ID in getStudents: 2/3 (Key id)" in ausgabe
+    assert "(a) getStudents: ✔; UUID-Key vorhanden: ja (key)" in ausgabe
+    assert "Schluessel `key` aus getStudents entspricht Schueler.externe_id" in ausgabe
+
+
+@pytest.mark.asyncio
+async def test_ohne_mit_db_kein_db_zugriff():
+    def verboten():
+        raise AssertionError("DB-Zugriff ohne --mit-db")
+
+    students = await probe.sonde_students(_client({"getStudents": _studenten()}), SCHULJAHR)
+    sonden = await probe.sonden_id_abgleich(students, [(1, {"matrix": {"rows": [{"studentDTO": DTOS[0]}]}}, "t")], False, verboten)
+    assert all(s.tag != "dbabgleich" for s in sonden)
+    assert "(c) Abbildung auf Schueler: nicht geprueft" in "\n".join(probe.befund([students, *sonden]))
+
+
+@pytest.mark.asyncio
+async def test_db_fehler_bricht_nicht_ab():
+    def kaputt():
+        raise RuntimeError("keine DB")
+
+    students = await probe.sonde_students(_client({"getStudents": _studenten()}), SCHULJAHR)
+    sonden = await probe.sonden_id_abgleich(students, [(1, {"matrix": {"rows": [{"studentDTO": DTOS[0]}]}}, "t")], True, kaputt)
+    assert sonden[-1].tag == "dbabgleich" and not sonden[-1].ok
+
+
+@pytest.mark.asyncio
+async def test_lade_schueler_readonly_gegen_echte_test_db_nur_select(db_session):
+    """Echte Test-DB: der Statement-Text wird abgefangen; es wird nichts geschrieben."""
+    from sqlalchemy import event
+
+    statements: list[str] = []
+    bind = db_session.bind
+    sync_engine = getattr(bind, "sync_engine", bind)
+    event.listen(sync_engine, "before_cursor_execute", lambda c, cur, stmt, *a: statements.append(stmt))
+
+    class Factory:
+        def __call__(self):
+            return db_session_ctx(db_session)
+
+    class db_session_ctx:
+        def __init__(self, s):
+            self.s = s
+
+        async def __aenter__(self):
+            return self.s
+
+        async def __aexit__(self, *a):
+            return False
+
+    rows = await probe.lade_schueler_readonly(Factory())
+    assert isinstance(rows, list)
+    mine = [s for s in statements if "schueler" in s.lower()]
+    assert mine and all(s.lstrip().upper().startswith("SELECT") for s in mine)
+
+
+@pytest.mark.asyncio
+async def test_duty_optionen_varianten_und_fund():
+    req: list = []
+
+    def handler(request: httpx.Request):
+        req.append(json.loads(request.content)["params"])
+        assert request.headers["x-csrf-token"] == CSRF_WERT
+        if len(req) == 2:
+            return httpx.Response(200, json={"result": STRUKTUR_ERGEBNIS})
+        return httpx.Response(200, json={"result": {"matrix": {"columns": [], "rows": []}}})
+
+    async with _http_mit(handler) as http:
+        sonden = await probe.sonde_duty_optionen(http, _kontext(), 3821, CSRF_WERT)
+    assert req == [[3821], [3821, None], [3821, 0]]
+    assert all("GERATEN" in s.name for s in sonden)
+    assert probe.duty_optionen_gefunden(sonden) == ["26=Entschuldigungspflicht", "27=Attest"]
+    assert "result-Top-Level-Keys: ['config', 'dutyName', 'dutyOptions'" in _text(sonden[1])
+    assert "result-Top-Level-Keys: ['matrix']" in _text(sonden[0])
+    assert "(d) dutyOptions gefunden: ja (26=Entschuldigungspflicht, 27=Attest)" in "\n".join(probe.befund([probe.Sonde("s", True, [], tag="students", extra={"uuid_keys": []}), *sonden]))
+
+
+@pytest.mark.asyncio
+async def test_duty_optionen_ohne_csrf_und_ohne_fund():
+    async with _http_mit(lambda r: httpx.Response(404)) as http:
+        sonden = await probe.sonde_duty_optionen(http, _kontext(), 1, None)
+    assert len(sonden) == 1 and "uebersprungen" in _text(sonden[0])
+    befund = "\n".join(probe.befund([probe.Sonde("s", False, [], tag="students", extra={"uuid_keys": []})]))
+    assert "(d) dutyOptions gefunden: nein" in befund
+    assert "(e) Schlussfolgerung: getStudents nicht verfuegbar" in befund
+
+
+@pytest.mark.asyncio
+async def test_gesamtlauf_mit_abgleich_b_ok_ohne_geheimnisse():
+    client = _client(
+        {
+            "getCurrentSchoolyear": SCHULJAHR, "getHolidays": [], "getKlassen": [{"id": 3836, "name": "10a"}],
+            "getStudents": _studenten(), "getClassregCategories": WebUntisError("n"), "getClassregCategoryGroups": WebUntisError("n"),
+            "getRemarkCategories": WebUntisError("n"), "getStatusData": WebUntisError("n"),
+        }
+    )  # fmt: skip
+    client._http = httpx.AsyncClient()
+    aufrufe = []
+    ergebnis = {"matrix": {"columns": [], "rows": [{"studentDTO": d, "relations": [], "absences": []} for d in DTOS]}}
+
+    def handler(request: httpx.Request):
+        if request.url.path == "/WebUntis/embedded.do":
+            return _html(f'<meta name="_csrf" content="{CSRF_WERT}">')
+        if request.url.path.endswith("jsonStudentDutyService"):
+            body = json.loads(request.content)
+            if body["method"] == probe.DUTY_METHODE:
+                aufrufe.append((body["params"], "x-csrf-token" in request.headers))
+                if "x-csrf-token" in request.headers:
+                    return httpx.Response(200, json={"result": ergebnis})
+                return httpx.Response(403, text="Forbidden", headers={"content-type": "text/html"})
+        return httpx.Response(404, text="nix")
+
+    async with _http_mit(handler) as http:
+        sonden = await probe.fuehre_alle_sonden_aus(client, http, klasse_id=3836, duty_ids=[26], abgleich_klassen=[3836], mit_db=False)
+    # Matrix (Klasse 3836, Dienst 26, Kombination b) wird fuer den Abgleich wiederverwendet, nicht erneut geholt
+    assert [p for p, c in aufrufe if c and p == [3836, 26]] == [[3836, 26]]
+    assert [p for p, c in aufrufe if c and p != [3836, 26]] == [[3836], [3836, None], [3836, 0]]
+    text = "\n".join(_text(s) for s in sonden) + "\n".join(probe.befund(sonden))
+    assert "(b) Matrix-ID in getStudents: 2/3 (Key id)" in text and "wiederverwendet" in text
+    for verboten in (CSRF_WERT, "Mueller", "Nobody", UUID_A):
+        assert verboten not in text
+
+
+def test_parse_args_abgleich_und_mit_db():
+    args = probe.parse_args([])
+    assert args.abgleich_klasse_id is None and args.mit_db is False
+    args = probe.parse_args(["--klasse-id", "3836", "--abgleich-klasse-id", "3836", "--abgleich-klasse-id", "3837", "--mit-db"])
+    assert args.abgleich_klasse_id == [3836, 3837] and args.mit_db is True
