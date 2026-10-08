@@ -52,6 +52,18 @@ Der Sync-Ablauf (Klassen/Kategorien → ASV-BW-CSV-Import → Fehlzeiten/Klassen
 - **Retry-Verhalten:** schlägt ein Sync-Lauf fehl (WebUntis nicht erreichbar, CSV nicht lesbar), wird er bis zu `WEBUNTIS_SYNC_RETRY_MAX_ATTEMPTS`-mal (Default 4) im Abstand von `WEBUNTIS_SYNC_RETRY_DELAY_MINUTES` (Default 30) erneut versucht, bevor er endgültig abbricht und geloggt wird.
 - **Manueller Einzel-Sync:** `POST /admin/sync-now` (bzw. der Button "Sync jetzt ausführen" im Dashboard, siehe [SL.md](SL.md)) läuft **synchron im Request ohne den obigen Retry-Loop** und kann mehrere Minuten dauern — Timeouts eines vorgelagerten Reverse-Proxys in Produktion entsprechend großzügig setzen.
 
+## Klassendienste aus WebUntis (Entschuldigungs-/Attestpflicht)
+
+Schreibgeschützte Anzeige, ohne Einfluss auf Zähler, Eskalation oder Benachrichtigungen (API-Vertrag: TECH-SPEC.md Abschnitt 3a, Plan: `docs/superpowers/plans/2026-10-08-klassendienste-anzeige.md`). Backend ist umgesetzt, die Admin-Oberfläche folgt; bis dahin lassen sich die Dienste per `PUT /admin/klassendienst-typen` pflegen.
+
+- **Einrichtung:** Die Schulleitung trägt die WebUntis-**Dienst-IDs** ein (an der Schule bisher: 26 Entschuldigungspflicht, 27 Pflicht zur Vorlage ärztl. Atteste; weitere Dienste: 1 Klassenordner, 2 Klassensprecher, 3 Klassensprecher Stv.). Die IDs sind schuleigene WebUntis-Stammdaten. Pro Dienst gibt es Bezeichnung, **Kürzel** für das Badge (Vorschlag: erster Buchstabe, z. B. „E“, „A“) und eine optionale **Erklärung** (Hover-Text). Es gibt kein Seeding: ohne konfigurierte, aktive Dienste ist das Feature aus und es werden keine Aufrufe an den internen Dienst abgesetzt.
+- **Vorschlagsliste:** `GET /admin/klassendienst-typen/webuntis-optionen` holt die Dienst-Liste per `getStudentDutyOptions`. Schlägt das fehl oder ist die Antwortform unbekannt, kommt eine leere Liste mit Hinweistext; Dienste lassen sich dann von Hand eintragen. Die Antwortform ist noch nicht auf der echten Instanz bestätigt.
+- **Tages-Takt:** Der Import läuft im normalen Sync, aber höchstens einmal in 24 Stunden (`einstellung.klassendienste_letzter_sync_am`). Nach Änderungen an den Diensten wirkt der Import beim nächsten Sync nach Ablauf dieser Frist. Ein Fehler beim Klassendienst-Import bricht den normalen Sync nie ab; in diesem Fall wird er beim nächsten Sync erneut versucht.
+- **Nicht zuordenbare Schüler:** Die Zuordnung läuft nur über `getStudents[].key` = `Schueler.externe_id`. Fehlt der `key` oder gibt es den Schüler nicht in der Datenbank, wird er übersprungen. Im Log steht pro Klasse und Dienst eine Warnung der Form „N Schueler in Klasse X (Dienst Y) nicht zuordenbar und uebersprungen“, ohne Namen. Es gibt bewusst keinen Namens-Fallback.
+- **Fehler:** Schlägt eine Klasse fehl, bleiben ihre bisherigen Daten unverändert (Warnung im Log). Nach 5 Klassenfehlern in Folge bricht der Import ab (Zeitstempel bleibt leer, Wiederholung beim nächsten Sync). Der Dienst `jsonStudentDutyService` ist intern und nicht offiziell dokumentiert und kann sich bei WebUntis-Updates ändern.
+- **Dienst entfernen:** Ein aus der Liste entfernter Dienst wird gelöscht, seine importierten Zeiträume verschwinden mit. Zum vorübergehenden Ausblenden `aktiv` abschalten.
+- **Datenschutz:** Gespeichert werden nur Zuordnung, Dienst und Zeitraum; Schüler-Namen aus WebUntis werden weder gespeichert noch geloggt, ebenso wenig Token, Cookies oder CSRF-Werte.
+
 ## E-Mail-Versand
 
 - Pflichtangaben in `backend/.env`: `SMTP_HOST`, `SMTP_FROM_ADDRESS`, `DASHBOARD_BASE_URL` (Backend startet ohne diese nicht). Optional: `SMTP_PORT` (Default 587), `SMTP_USER`/`SMTP_PASSWORD`, `SMTP_USE_STARTTLS` (Default `true`; bei einem internen, unauthentifizierten Relay `false` setzen und `SMTP_USER` leer lassen).

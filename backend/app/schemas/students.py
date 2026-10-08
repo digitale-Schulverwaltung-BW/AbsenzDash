@@ -47,6 +47,16 @@ class TrendOut(BaseModel):
     fehlstunden: TrendWertOut
 
 
+class KlassendienstOut(BaseModel):
+    typ_id: int
+    kuerzel: str
+    bezeichnung: str
+    beschreibung: str | None
+    von: date
+    bis: date
+    aktiv_heute: bool
+
+
 class StudentOverviewOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,6 +71,7 @@ class StudentOverviewOut(BaseModel):
     fehlstunden: FehlzeitSplitOut | None = None
     klassenbuch_anzahl: int | None = None
     trend: TrendOut | None = None
+    klassendienste: list[KlassendienstOut] = []
 
 
 class StudentListOut(BaseModel):
@@ -128,6 +139,7 @@ class StudentDetailOut(BaseModel):
     massnahmen: list[MassnahmeOut]
     ausnahmen: list[AusnahmeOut]
     benachrichtigungen: list[BenachrichtigungOut]
+    klassendienste: list[KlassendienstOut] = []
 
 
 class MeasureCreateIn(BaseModel):

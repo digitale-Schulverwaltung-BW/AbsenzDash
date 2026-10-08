@@ -152,6 +152,9 @@ async def get_students(
     klasse_map = await student_query.load_klasse_map(db, klasse_ids)
 
     extras = await student_query.load_overview_extras(db, schueler_ids)
+    klassendienste_map = await student_query.load_klassendienste_map(
+        db, schueler_ids, _heute(), nur_heute_aktiv=True
+    )
     regel_ids = [
         extras[schueler.id]["letzte_benachrichtigung"].regel_id
         for schueler in schueler_list
@@ -173,6 +176,7 @@ async def get_students(
             fehlstunden=FehlzeitSplitOut(**rohzahlen[schueler.id]["fehlstunden"]),
             klassenbuch_anzahl=rohzahlen[schueler.id]["klassenbuch_anzahl"],
             trend=TrendOut(**trend_map[schueler.id]) if schueler.id in trend_map else None,
+            klassendienste=klassendienste_map[schueler.id],
         )
         for schueler in schueler_list
     ]
@@ -242,6 +246,15 @@ async def get_student_detail(
         for massnahme, typ_name, nutzer_name in detail["massnahmen"]
     ]
 
+    # Archivmodus (schuljahr_id): keine Klassendienste, sie gelten nur fuer das aktuelle Schuljahr.
+    klassendienste = (
+        []
+        if ist_historie
+        else (await student_query.load_klassendienste_map(db, [schueler.id], _heute(), nur_heute_aktiv=False))[
+            schueler.id
+        ]
+    )
+
     return StudentDetailOut(
         id=schueler.id,
         vorname=schueler.vorname,
@@ -256,6 +269,7 @@ async def get_student_detail(
         massnahmen=massnahmen,
         ausnahmen=detail["ausnahmen"],
         benachrichtigungen=benachrichtigungen,
+        klassendienste=klassendienste,
     )
 
 
