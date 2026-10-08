@@ -78,6 +78,7 @@ Für spätere Version, falls nötig, evtl. V1.5:
 ## Offene Punkte (Trend-Anzeige)
 
 - **Recherche: liefert WebUntis Ferien/Feiertage?** Aktuell gibt es keinen Kalender, daher zählt der Trend Kalendertage und wird von Ferien/Feiertagen verzerrt (siehe `docs/KL.md`, „Bekannte Grenzen"). Falls WebUntis Ferien/Feiertage liefert (z.B. über Holidays/Schulkalender-Methoden der JSON-RPC-API): Trend auf Unterrichtstage normieren und die Fenster ferienbewusst bilden.
+- **Klassendienste als Maßnahmen: Recherche per Sonde.** Ob WebUntis Klassendienste (Klassensprecher, Entschuldigungs-/Attestpflicht) per API liefert, ist offen. Das lesende Skript `backend/scripts/probe_webuntis_klassendienste.py` (inkl. interner Dienst `jsonrpc_web/jsonStudentDutyService`, siehe `docs/ADMIN.md`) muss noch auf der echten Instanz laufen; Ausgabe in den Chat einfügen, danach Umsetzungsplan. Die Sonde prüft zugleich `getHolidays` für die Ferien-Recherche oben.
 
 ## Technical debt
 
