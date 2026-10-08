@@ -20,3 +20,4 @@ class Einstellung(Base, TimestampMixin):
     initialer_import_abgeschlossen: Mapped[bool] = mapped_column(Boolean, default=False)
     asv_csv_zuletzt_importiert_mtime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     letzter_sync_am: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    klassendienste_letzter_sync_am: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
