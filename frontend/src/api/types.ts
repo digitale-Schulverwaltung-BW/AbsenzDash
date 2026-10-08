@@ -149,6 +149,35 @@ export interface Trend {
   fehlstunden: TrendWert;
 }
 
+export interface Klassendienst {
+  typ_id: number;
+  kuerzel: string;
+  bezeichnung: string;
+  beschreibung: string | null;
+  von: string;
+  bis: string;
+  aktiv_heute: boolean;
+}
+
+export interface KlassendienstTyp {
+  id?: number | null;
+  webuntis_dienst_id: number;
+  bezeichnung: string;
+  kuerzel: string;
+  beschreibung?: string | null;
+  aktiv: boolean;
+}
+
+export interface WebuntisDienstOption {
+  id: number;
+  bezeichnung: string;
+}
+
+export interface WebuntisDienstOptionen {
+  optionen: WebuntisDienstOption[];
+  hinweis: string | null;
+}
+
 export interface StudentOverview {
   id: number;
   vorname: string;
@@ -161,6 +190,7 @@ export interface StudentOverview {
   fehlstunden: FehlzeitSplit | null;
   klassenbuch_anzahl: number | null;
   trend?: Trend | null;
+  klassendienste?: Klassendienst[];
 }
 
 export interface StudentList {
@@ -222,6 +252,7 @@ export interface StudentDetail {
   massnahmen: Massnahme[];
   ausnahmen: Ausnahme[];
   benachrichtigungen: Benachrichtigung[];
+  klassendienste?: Klassendienst[];
 }
 
 export interface MassnahmenTyp {

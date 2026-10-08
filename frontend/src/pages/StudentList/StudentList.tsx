@@ -3,6 +3,7 @@ import type { StudentSortField } from "../../api/hooks/useStudents";
 import { useStudents } from "../../api/hooks/useStudents";
 import type { FehlzeitSplit, StudentOverview, TrendRichtung, TrendWert } from "../../api/types";
 import { EskalationsBadge } from "../../components/EskalationsBadge/EskalationsBadge";
+import { KlassendienstBadges } from "../../components/KlassendienstBadge/KlassendienstBadge";
 import { NotificationFlyout } from "../../components/NotificationFlyout/NotificationFlyout";
 import { anonymisiereName, istAnonymisierungAktiv, istAnonymisierungErlaubt } from "../../utils/anonymize";
 import { valueToColor } from "../../utils/colorScale";
@@ -217,6 +218,7 @@ export function StudentList() {
                   <Link to={`/schueler/${student.id}${anonymisieren ? "?a=1" : ""}`}>
                     {name.nachname}, {name.vorname}
                   </Link>
+                  {isHistoryMode ? null : <KlassendienstBadges klassendienste={student.klassendienste} />}
                 </td>
                 <td>{student.klasse?.name ?? "—"}</td>
                 <td

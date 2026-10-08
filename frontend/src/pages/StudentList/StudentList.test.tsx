@@ -182,6 +182,34 @@ describe("StudentList", () => {
     expect(screen.queryByText("Benachrichtigt")).not.toBeInTheDocument();
   });
 
+  it("shows Klassendienst badges next to the name with hover text, but not in history mode", () => {
+    const dienst = {
+      typ_id: 1,
+      kuerzel: "E",
+      bezeichnung: "Entschuldigungspflicht",
+      beschreibung: null,
+      von: "2026-09-28",
+      bis: "2027-07-26",
+      aktiv_heute: true,
+    };
+    mockData([{ ...BASE_STUDENT, klassendienste: [dienst] }]);
+
+    const { unmount } = renderList();
+    const row = screen.getByRole("row", { name: /Muster, Max/ });
+    expect(within(row).getByRole("img", { name: "Entschuldigungspflicht – seit 28.09.2026" })).toHaveTextContent("E");
+    unmount();
+
+    mockData([{ ...BASE_STUDENT, klassendienste: [dienst] }]);
+    renderList(["/schueler?schuljahr=27"]);
+    expect(screen.queryByRole("img", { name: /Entschuldigungspflicht/ })).not.toBeInTheDocument();
+  });
+
+  it("shows no Klassendienst badge for students without services", () => {
+    mockData([{ ...BASE_STUDENT, klassendienste: [] }]);
+    renderList();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
   it("sorts by clicking a column header, toggling asc/desc, and persists it in the URL", () => {
     mockData([]);
 

@@ -4,6 +4,7 @@ import { useStudentDetail } from "../../api/hooks/useStudentDetail";
 import { AusnahmenSection } from "../../components/StudentDetail/AusnahmenSection";
 import { BenachrichtigungenTable } from "../../components/StudentDetail/BenachrichtigungenTable";
 import { FehlzeitenTable } from "../../components/StudentDetail/FehlzeitenTable";
+import { KlassendiensteSection } from "../../components/StudentDetail/KlassendiensteSection";
 import { KlassenbuchTable } from "../../components/StudentDetail/KlassenbuchTable";
 import { MassnahmenSection } from "../../components/StudentDetail/MassnahmenSection";
 import { PdfExportSection } from "../../components/StudentDetail/PdfExportSection";
@@ -73,6 +74,7 @@ export function StudentDetail() {
           ))}
         </div>
       </section>
+      <KlassendiensteSection klassendienste={student.klassendienste} />
       <section className={styles.section}>
         <h3>Fehlzeiten</h3>
         <FehlzeitenTable fehlzeiten={student.fehlzeiten} excuseStatuses={catalog?.excuse_statuses ?? []} />
