@@ -11,3 +11,12 @@ export function heuteIso(now: Date = new Date()): string {
   const tag = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${monat}-${tag}`;
 }
+
+/** ISO-Zeitstempel -> lokale Uhrzeit "hh:mm"; nicht lesbare Werte werden unverändert zurückgegeben. */
+export function formatUhrzeitDe(iso: string): string {
+  const datum = new Date(iso);
+  if (Number.isNaN(datum.getTime())) return iso;
+  const stunde = String(datum.getHours()).padStart(2, "0");
+  const minute = String(datum.getMinutes()).padStart(2, "0");
+  return `${stunde}:${minute}`;
+}

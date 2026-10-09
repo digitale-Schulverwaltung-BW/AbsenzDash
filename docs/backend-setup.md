@@ -24,7 +24,7 @@ Nach jeder Modelländerung: `docker compose -f backend/docker-compose.yml run --
 ## Admin-Endpunkte (ab Plan 6)
 
 - **Migration:** Plan 6 bringt eine neue Alembic-Migration mit (`massnahmen_typ.aktiv`) — sie ist im oben beschriebenen `alembic upgrade head` enthalten und muss beim Deploy mitlaufen.
-- **`POST /admin/sync-now`** läuft synchron im Request und kann so lange dauern wie ein vollständiger WebUntis-Sync (mehrere Minuten) — Timeouts eines vorgelagerten Reverse-Proxys in der Produktion entsprechend großzügig setzen.
+- **`POST /admin/sync-now`** startet den Sync im Hintergrund und antwortet sofort mit `202`; Status über `GET /admin/sync-status`, Details in [ADMIN.md](ADMIN.md). Proxy-Timeouts sind dafür nicht mehr relevant. Neue Migration (Tabelle `sync_lauf`) beim Deploy mitlaufen lassen.
 - **`PUT /admin/sync-settings`** plant den APScheduler-Job sofort neu, aber nur im Worker-Prozess, der den Request bearbeitet hat. Beim aktuellen Single-Process-Deployment ist das unkritisch; bei mehreren Backend-Worker-Prozessen würden die übrigen erst nach einem Neustart mit dem neuen Cron-Wert laufen.
 - **`aktiv`-Flag** bei Maßnahmen-Typen und Entschuldigungsstatus: reines Anzeige-/Auswahlkriterium für das künftige Frontend, das Backend erzwingt es nicht (siehe TECH-SPEC.md Abschnitt 2).
 

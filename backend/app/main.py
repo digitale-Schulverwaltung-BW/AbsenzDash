@@ -10,6 +10,8 @@ from app.api.routes.dashboard import router as dashboard_router
 from app.core.config import settings
 from app.core.database import engine
 from app.core.migration_check import warn_if_migrations_pending
+from app.services import sync_lauf_service
+from app.services import sync_orchestrator
 from app.core.scheduler import create_scheduler, start_scheduler
 from app.core import scheduler as scheduler_module
 
@@ -24,6 +26,17 @@ async def lifespan(app: FastAPI):
 
     await warn_if_migrations_pending(engine)
 
+    try:
+        abgebrochen = await sync_lauf_service.verwaiste_laeufe_abbrechen()
+        if abgebrochen:
+            logging.getLogger(__name__).warning(
+                "%d beim letzten Beenden noch laufende Sync-Laeufe wurden als abgebrochen markiert", abgebrochen
+            )
+    except Exception:  # noqa: BLE001 - z.B. Migration steht noch aus; darf den Start nicht verhindern
+        logging.getLogger(__name__).warning(
+            "Verwaiste Sync-Laeufe konnten nicht aufgeraeumt werden", exc_info=True
+        )
+
     scheduler = create_scheduler()
     await start_scheduler(scheduler)
     app.state.scheduler = scheduler
@@ -34,7 +47,7 @@ async def lifespan(app: FastAPI):
         # keine neuen Job-Laeufe mehr anstoesst, bevor wir die noch laufenden
         # Sync-Tasks einsammeln.
         scheduler.shutdown(wait=False)
-        pending = list(scheduler_module._background_sync_tasks)
+        pending = list(scheduler_module._background_sync_tasks) + list(sync_orchestrator._manuelle_sync_tasks)
         for t in pending:
             t.cancel()
         if pending:

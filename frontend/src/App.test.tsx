@@ -37,6 +37,9 @@ vi.mock("./api/hooks/useRevokeExemption", () => ({
 vi.mock("./api/hooks/useUpdateSyncSettings", () => ({
   useUpdateSyncSettings: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
+vi.mock("./api/hooks/useSyncStatus", () => ({
+  useSyncStatus: () => ({ data: { laeuft: false, aktueller_lauf: null, letzter_lauf: null } }),
+}));
 vi.mock("./api/hooks/useTriggerSyncNow", () => ({
   useTriggerSyncNow: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, error: null }),
 }));

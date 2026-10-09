@@ -29,6 +29,7 @@ from app.schemas.admin import (
     SyncNowOut,
     SyncSettingsIn,
     SyncSettingsOut,
+    SyncStatusOut,
     TestEmailOut,
     ThresholdRuleIn,
     ThresholdRuleOut,
@@ -42,11 +43,12 @@ from app.services import (
     mailer,
     measure_type_service,
     schuljahr_historie_import_service,
+    sync_lauf_service,
     sync_settings_service,
     threshold_rule_service,
     webuntis_teacher_service,
 )
-from app.services.sync_orchestrator import SyncAlreadyRunningError, run_sync_once
+from app.services.sync_orchestrator import SyncAlreadyRunningError, starte_manuellen_sync
 
 logger = logging.getLogger(__name__)
 
@@ -163,47 +165,33 @@ async def put_sync_settings(
     return await sync_settings_service.update_sync_settings(db, scheduler, payload.sync_interval_cron, nutzer.id)
 
 
-@router.post("/sync-now")
+@router.post("/sync-now", status_code=status.HTTP_202_ACCEPTED)
 async def post_sync_now(
     nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SyncNowOut:
-    # nutzer.id wird vor dem try-Block gelesen: db.rollback() im Fehlerpfad
-    # expired alle an der Session haengenden Objekte (auch `nutzer`, da dieselbe
-    # Request-Session ueber die require_schulleitung-Dependency geladen wurde).
-    # Ein spaeterer Zugriff auf ein expired Attribut ausserhalb eines await
-    # loest unter AsyncSession einen MissingGreenlet-Fehler aus, statt einen
-    # sauberen Re-Query anzustossen.
+    """Startet den Sync im Hintergrund und antwortet sofort (202). Ergebnis und Fortschritt stehen
+    in der Tabelle sync_lauf und werden ueber GET /admin/sync-status abgefragt."""
     nutzer_id = nutzer.id
     try:
-        await run_sync_once(db)
+        lauf_id = await starte_manuellen_sync(nutzer_id)
     except SyncAlreadyRunningError:
         raise HTTPException(status.HTTP_409_CONFLICT, "Ein Sync-Lauf ist bereits aktiv, bitte spaeter erneut versuchen.")
-    except (WebUntisError, OSError, ValueError) as exc:
-        logger.exception("Sync fehlgeschlagen")
-        await db.rollback()
-        db.add(
-            AuditLog(
-                user_id=nutzer_id,
-                aktion="admin_sync_now_triggered",
-                resource_typ="einstellung",
-                details={"status": "fehler"},
-            )
-        )
-        await db.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Sync fehlgeschlagen. Details siehe Server-Log.")
-
-    abgeschlossen_am = datetime.now(timezone.utc)
     db.add(
         AuditLog(
             user_id=nutzer_id,
             aktion="admin_sync_now_triggered",
             resource_typ="einstellung",
-            details={"status": "ok"},
+            details={"status": "gestartet", "lauf_id": lauf_id},
         )
     )
     await db.commit()
-    return SyncNowOut(status="ok", abgeschlossen_am=abgeschlossen_am)
+    return SyncNowOut(status="gestartet", lauf_id=lauf_id)
+
+
+@router.get("/sync-status")
+async def get_sync_status(db: Annotated[AsyncSession, Depends(get_db)]) -> SyncStatusOut:
+    return await sync_lauf_service.get_sync_status(db)
 
 
 @router.post("/test-email")

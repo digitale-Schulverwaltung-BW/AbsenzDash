@@ -69,6 +69,28 @@ export interface SyncSettings {
   aktuelles_schuljahr: { id: number; name: string } | null;
 }
 
+export interface SyncAktuellerLauf {
+  id: number;
+  gestartet_am: string;
+  phase: string | null;
+  ausgeloest_von: "zeitplan" | "manuell";
+}
+
+export interface SyncLetzterLauf {
+  id: number;
+  status: "ok" | "fehler" | "abgebrochen";
+  gestartet_am: string;
+  beendet_am: string | null;
+  ausgeloest_von: "zeitplan" | "manuell";
+  fehler_kurz: string | null;
+}
+
+export interface SyncStatus {
+  laeuft: boolean;
+  aktueller_lauf: SyncAktuellerLauf | null;
+  letzter_lauf: SyncLetzterLauf | null;
+}
+
 export interface Abteilung {
   id: number;
   name: string;

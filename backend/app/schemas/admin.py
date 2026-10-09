@@ -123,7 +123,29 @@ class SyncSettingsIn(BaseModel):
 
 class SyncNowOut(BaseModel):
     status: str
-    abgeschlossen_am: datetime
+    lauf_id: int
+
+
+class SyncAktuellerLaufOut(BaseModel):
+    id: int
+    gestartet_am: datetime
+    phase: str | None
+    ausgeloest_von: str
+
+
+class SyncLetzterLaufOut(BaseModel):
+    id: int
+    status: str
+    gestartet_am: datetime
+    beendet_am: datetime | None
+    ausgeloest_von: str
+    fehler_kurz: str | None
+
+
+class SyncStatusOut(BaseModel):
+    laeuft: bool
+    aktueller_lauf: SyncAktuellerLaufOut | None
+    letzter_lauf: SyncLetzterLaufOut | None
 
 
 class TestEmailOut(BaseModel):

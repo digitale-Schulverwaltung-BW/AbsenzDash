@@ -24,6 +24,7 @@ from app.models.schuljahr import Schuljahr
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.schwellwert_stufe import SchwellwertStufe
 from app.models.stundenraster_periode import StundenrasterPeriode
+from app.models.sync_lauf import SyncLauf
 
 __all__ = [
     "Abteilung",
@@ -54,4 +55,5 @@ __all__ = [
     "SchwellwertRegel",
     "SchwellwertStufe",
     "StundenrasterPeriode",
+    "SyncLauf",
 ]
