@@ -5,8 +5,10 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import database
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
 from app.integrations.webuntis_duty_client import StudentDutyClient
@@ -14,6 +16,7 @@ from app.models.einstellung import Einstellung
 from app.models.schueler import Schueler
 from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
 from app.models.schuljahr import Schuljahr
+from app.services import sync_lauf_service
 from app.services.asv_csv_import import import_schueler
 from app.services.eskalations_pruefung import pruefe_schwellwerte
 from app.services.webuntis_abteilung_sync import sync_abteilungen
@@ -30,6 +33,9 @@ logger = logging.getLogger(__name__)
 KLASSENDIENSTE_MIN_ABSTAND = timedelta(hours=24)
 
 _sync_lock = asyncio.Lock()
+
+# Haelt starke Referenzen auf manuell gestartete Hintergrund-Syncs (siehe starte_manuellen_sync).
+_manuelle_sync_tasks: set[asyncio.Task[None]] = set()
 
 
 class SyncAlreadyRunningError(RuntimeError):
@@ -205,18 +211,98 @@ async def _sync_klassendienste_isoliert(
         einstellung.klassendienste_letzter_sync_am = jetzt
 
 
-async def run_sync_once(db: AsyncSession) -> None:
+def sync_laeuft() -> bool:
+    return _sync_lock.locked()
+
+
+async def _phase(lauf_id: int | None, phase: str) -> None:
+    """Fortschrittsanzeige; darf den Sync nie scheitern lassen."""
+    if lauf_id is None:
+        return
+    try:
+        await sync_lauf_service.phase_setzen(lauf_id, phase)
+    except Exception:  # noqa: BLE001
+        logger.warning("Sync-Phase '%s' konnte nicht gespeichert werden", phase, exc_info=True)
+
+
+async def _lauf_abschliessen(lauf_id: int, status: str, fehler_kurz: str | None = None) -> None:
+    try:
+        await sync_lauf_service.lauf_abschliessen(lauf_id, status, fehler_kurz)
+    except Exception:  # noqa: BLE001
+        logger.warning("Sync-Lauf %s konnte nicht als '%s' abgeschlossen werden", lauf_id, status, exc_info=True)
+
+
+async def _fuehre_lauf_aus(db: AsyncSession, lauf_id: int) -> None:
+    """Fuehrt den Sync fuer eine bereits angelegte sync_lauf-Zeile aus (Sperre haelt der Aufrufer) und
+    schliesst die Zeile ab. Exceptions werden unveraendert weitergereicht."""
+    try:
+        await _run_sync_once_impl(db, lauf_id)
+    except asyncio.CancelledError:
+        await _lauf_abschliessen(lauf_id, "abgebrochen")
+        raise
+    except Exception as exc:
+        await _lauf_abschliessen(lauf_id, "fehler", sync_lauf_service.fehler_kurz_aus(exc))
+        raise
+    await _lauf_abschliessen(lauf_id, "ok")
+
+
+async def run_sync_once(
+    db: AsyncSession, ausgeloest_von: str = "manuell", nutzer_id: int | None = None
+) -> None:
     if _sync_lock.locked():
         raise SyncAlreadyRunningError("Ein Sync-Lauf ist bereits aktiv.")
     async with _sync_lock:
-        await _run_sync_once_impl(db)
+        lauf_id = await sync_lauf_service.lauf_anlegen(ausgeloest_von, nutzer_id)
+        await _fuehre_lauf_aus(db, lauf_id)
 
 
-async def _run_sync_once_impl(db: AsyncSession) -> None:
+async def _manueller_sync_task(lauf_id: int) -> None:
+    try:
+        async with database.async_session_factory() as db:
+            await _fuehre_lauf_aus(db, lauf_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # _fuehre_lauf_aus hat den Lauf bereits als 'fehler' vermerkt; hier nur noch loggen.
+        logger.exception("Manueller Sync-Lauf %s fehlgeschlagen", lauf_id)
+        if isinstance(exc, SQLAlchemyError) or not isinstance(exc, (WebUntisError, OSError, ValueError)):
+            # z.B. Session konnte nicht geoeffnet werden, bevor _fuehre_lauf_aus lief: sicherstellen,
+            # dass die Zeile nicht auf 'laufend' stehen bleibt (idempotent).
+            await _lauf_abschliessen(lauf_id, "fehler", sync_lauf_service.fehler_kurz_aus(exc))
+
+
+async def starte_manuellen_sync(nutzer_id: int | None) -> int:
+    """Startet einen Sync-Lauf als Hintergrund-Task (ein Versuch, kein Retry) und liefert die lauf_id.
+
+    Wirft SyncAlreadyRunningError, wenn schon ein Lauf aktiv ist. Pruefung und Sperr-Erwerb passieren
+    ohne Suspendierung dazwischen (asyncio.Lock.acquire auf freier Sperre kehrt sofort zurueck), so
+    dass zwei gleichzeitige Aufrufe nicht beide starten. Die Sperre wird erst beim Ende des Tasks
+    freigegeben (done-Callback, daher auch bei Abbruch vor dem ersten Schritt)."""
+    if _sync_lock.locked():
+        raise SyncAlreadyRunningError("Ein Sync-Lauf ist bereits aktiv.")
+    await _sync_lock.acquire()
+    try:
+        lauf_id = await sync_lauf_service.lauf_anlegen("manuell", nutzer_id)
+        task = asyncio.create_task(_manueller_sync_task(lauf_id))
+    except BaseException:
+        _sync_lock.release()
+        raise
+    _manuelle_sync_tasks.add(task)
+
+    def _fertig(t: asyncio.Task[None]) -> None:
+        _manuelle_sync_tasks.discard(t)
+        _sync_lock.release()
+
+    task.add_done_callback(_fertig)
+    return lauf_id
+
+
+async def _run_sync_once_impl(db: AsyncSession, lauf_id: int | None = None) -> None:
     einstellung = await get_or_create_einstellung(db)
     heute = datetime.now(timezone.utc).date()
 
     aktuelles_schuljahr: Schuljahr | None = None
+    await _phase(lauf_id, "WebUntis-Stammdaten")
     webuntis_fehler: Exception | None = None
     try:
         async with WebUntisClient(settings) as client:
@@ -248,6 +334,7 @@ async def _run_sync_once_impl(db: AsyncSession) -> None:
         )
         webuntis_fehler = exc
 
+    await _phase(lauf_id, "Schüler-Import")
     await import_schueler(db)
 
     if webuntis_fehler is not None:
@@ -255,10 +342,14 @@ async def _run_sync_once_impl(db: AsyncSession) -> None:
 
     von, bis = _fehlzeiten_zeitraum(einstellung, heute, aktuelles_schuljahr.end_datum)
     async with WebUntisClient(settings) as client:
+        await _phase(lauf_id, "Fehlzeiten")
         await sync_fehlzeiten(client, db, von, bis)
+        await _phase(lauf_id, "Klassenbuch")
         await sync_klassenbuch(client, db, von, bis)
+        await _phase(lauf_id, "Klassendienste")
         await _sync_klassendienste_isoliert(client, db, einstellung, aktuelles_schuljahr.id)
 
+    await _phase(lauf_id, "Eskalationsprüfung")
     await pruefe_schwellwerte(db, heute, einstellung, settings)
 
     einstellung.letzter_sync_am = datetime.now(timezone.utc)
@@ -279,7 +370,7 @@ async def run_full_sync(session_factory: async_sessionmaker[AsyncSession]) -> No
     for attempt in range(1, max_attempts + 1):
         try:
             async with session_factory() as db:
-                await run_sync_once(db)
+                await run_sync_once(db, ausgeloest_von="zeitplan")
             return
         except (WebUntisError, OSError, ValueError) as exc:
             logger.warning("Sync-Lauf fehlgeschlagen (Versuch %d/%d): %s", attempt, max_attempts, exc)

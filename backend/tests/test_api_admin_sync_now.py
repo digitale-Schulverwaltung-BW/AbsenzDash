@@ -5,7 +5,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.integrations.webuntis_client import WebUntisError
 from app.main import app
 from app.models.audit_log import AuditLog
 from app.services.sync_orchestrator import SyncAlreadyRunningError
@@ -34,53 +33,33 @@ async def test_post_sync_now_rejects_non_schulleitung(db_session):
 
 
 @pytest.mark.asyncio
-async def test_post_sync_now_returns_ok_and_logs_audit_entry(db_session, monkeypatch):
+async def test_post_sync_now_returns_202_and_logs_audit_entry(db_session, monkeypatch):
     import app.api.routes.admin as admin_module
 
-    monkeypatch.setattr(admin_module, "run_sync_once", AsyncMock())
+    mock_start = AsyncMock(return_value=42)
+    monkeypatch.setattr(admin_module, "starte_manuellen_sync", mock_start)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/admin/sync-now", headers=HEADERS_SCHULLEITUNG)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-
-    admin_module.run_sync_once.assert_awaited_once()
+    assert response.status_code == 202
+    assert response.json() == {"status": "gestartet", "lauf_id": 42}
+    mock_start.assert_awaited_once()
     audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "admin_sync_now_triggered"))
-    audit_row = audit_result.scalar_one()
-    assert audit_row.details == {"status": "ok"}
+    assert audit_result.scalar_one().details == {"status": "gestartet", "lauf_id": 42}
 
 
 @pytest.mark.asyncio
 async def test_post_sync_now_returns_409_when_sync_already_running(db_session, monkeypatch):
     import app.api.routes.admin as admin_module
 
-    mock_run_once = AsyncMock(side_effect=SyncAlreadyRunningError("bereits aktiv"))
-    monkeypatch.setattr(admin_module, "run_sync_once", mock_run_once)
+    monkeypatch.setattr(
+        admin_module, "starte_manuellen_sync", AsyncMock(side_effect=SyncAlreadyRunningError("bereits aktiv"))
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/admin/sync-now", headers=HEADERS_SCHULLEITUNG)
 
     assert response.status_code == 409
-    mock_run_once.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_post_sync_now_returns_502_on_webuntis_error_without_retry(db_session, monkeypatch):
-    import app.api.routes.admin as admin_module
-
-    mock_run_once = AsyncMock(side_effect=WebUntisError("boom"))
-    monkeypatch.setattr(admin_module, "run_sync_once", mock_run_once)
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/admin/sync-now", headers=HEADERS_SCHULLEITUNG)
-
-    assert response.status_code == 502
-    mock_run_once.assert_awaited_once()
-
-    audit_result = await db_session.execute(select(AuditLog).where(AuditLog.aktion == "admin_sync_now_triggered"))
-    audit_row = audit_result.scalar_one()
-    assert audit_row.details == {"status": "fehler"}
