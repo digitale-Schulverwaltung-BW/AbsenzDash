@@ -78,11 +78,11 @@ class Absenzdash_Proxy {
 		$argumente = array(
 			'method'  => $request->get_method(),
 			'headers' => $header,
-			// War 15s (Plan 8) - zu knapp fuer POST /admin/sync-now bei einer ganzen Schule
-			// (WebUntis-Roundtrips + ASV-CSV-Import + Eskalations-Pruefung koennen das
-			// ueberschreiten, siehe ROADMAP.md Technical-Debt-Eintrag). Der Sync selbst laeuft
-			// im Backend unabhaengig vom Proxy-Timeout weiter, nur die Response fuer den Client
-			// ging bisher verloren.
+			// War 15s (Plan 8) und wurde auf 120s angehoben, als POST /admin/sync-now noch
+			// synchron bis zum Ende des Syncs blockierte. sync-now antwortet inzwischen sofort
+			// (202, der Sync laeuft im Backend im Hintergrund, Status ueber GET /admin/sync-status),
+			// ist also vom Timeout nicht mehr betroffen. Der Wert bleibt fuer andere, laenger
+			// dauernde Aufrufe (z.B. Schuljahr-Import, PDF-Export).
 			'timeout' => 120,
 		);
 		$content_type   = $request->get_header( 'content_type' );

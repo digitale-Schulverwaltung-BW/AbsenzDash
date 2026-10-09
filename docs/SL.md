@@ -66,7 +66,7 @@ Die Namen der Entschuldigungsstatus (z.B. "entsch.", "nicht entsch.") kommen aut
 - **Sync-Intervall (Cron-Ausdruck)** — legt fest, wie oft AbsenzDash Fehlzeiten und Klassenbucheinträge aus WebUntis abruft und die Schwellwerte prüft. Eine Änderung wird sofort für neu geplante Läufe wirksam.
 - **Schuljahresbeginn** und **für den Sync verwendetes Schuljahr** — werden automatisch aus WebUntis übernommen und sind rein informativ, hier nicht editierbar.
 - **Letzter Sync** — Zeitpunkt des letzten Laufs, zur groben Kontrolle, dass der Sync regelmäßig läuft.
-- **Sync jetzt ausführen** — stößt einen einzelnen Sync-Lauf sofort an, z.B. damit eine gerade geänderte Schwellwert-Regel nicht erst auf den nächsten geplanten Lauf warten muss. Dieser manuelle Lauf kann je nach Datenmenge einige Minuten dauern.
+- **Sync jetzt ausführen** — stößt einen einzelnen Sync-Lauf sofort an, z.B. damit eine gerade geänderte Schwellwert-Regel nicht erst auf den nächsten geplanten Lauf warten muss. Der Lauf wird im Hintergrund ausgeführt und kann je nach Datenmenge einige Minuten dauern: Sie sehen unter dem Button „Sync läuft seit hh:mm (Phase: …)“ und können die Seite währenddessen verlassen; der Button ist gesperrt, solange ein Sync läuft (auch ein zeitgesteuerter). Danach steht dort „Letzter Sync-Lauf: ok“ bzw. bei einem Fehler eine kurze Meldung mit Hinweis auf das Server-Log. Wird das Backend während des Laufs neu gestartet, erscheint er als „abgebrochen“ – dann einfach erneut starten.
 
 Technische Aspekte des Syncs (WebUntis-Zugangsdaten, ASV-BW-CSV-Datei, Retry-Verhalten bei Ausfällen) liegen im Verantwortungsbereich der IT — siehe [ADMIN.md](ADMIN.md).
 
