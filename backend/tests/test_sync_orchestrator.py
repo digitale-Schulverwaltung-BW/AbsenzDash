@@ -19,6 +19,7 @@ from app.models.schwellwert_stufe import SchwellwertStufe
 from app.services import sync_orchestrator
 from app.services.eskalations_pruefung import pruefe_schwellwerte as real_pruefe_schwellwerte
 from app.services.webuntis_klassen_sync import sync_klassen as real_sync_klassen
+from app.services.webuntis_klassendienst_sync import KlassendienstSyncErgebnis
 
 
 class _FakeWebUntisClient:
@@ -29,6 +30,8 @@ class _FakeWebUntisClient:
             return {"id": 28, "name": "2025/2026", "startDate": 20250915, "endDate": 20260729}
 
         self.call = AsyncMock(side_effect=_call)
+        self.http = None
+        self.session_id = None
 
     async def __aenter__(self):
         return self
@@ -49,6 +52,9 @@ def _patch_phases(monkeypatch):
     monkeypatch.setattr(sync_orchestrator, "sync_fehlzeiten", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "sync_klassenbuch", AsyncMock())
     monkeypatch.setattr(sync_orchestrator, "pruefe_schwellwerte", AsyncMock())
+    monkeypatch.setattr(
+        sync_orchestrator, "sync_klassendienste", AsyncMock(return_value=KlassendienstSyncErgebnis())
+    )
 
 
 @pytest.mark.asyncio
@@ -587,3 +593,74 @@ async def test_run_full_sync_end_to_end_triggers_benachrichtigung(db_session, mo
 
     result = await db_session.execute(select(Benachrichtigung).where(Benachrichtigung.schueler_id == schueler.id))
     assert result.scalar_one().status == "kein_empfaenger"
+
+
+async def _einstellung(db_session):
+    db_session.expire_all()
+    return (await db_session.execute(select(Einstellung))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_laufen_beim_ersten_sync_und_setzen_zeitstempel(db_session):
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    sync_orchestrator.sync_klassendienste.assert_awaited_once()
+    assert (await _einstellung(db_session)).klassendienste_letzter_sync_am is not None
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_laufen_nicht_wenn_letzter_lauf_juenger_als_24h(db_session):
+    juengst = datetime.now(timezone.utc) - timedelta(hours=23)
+    db_session.add(Einstellung(klassendienste_letzter_sync_am=juengst))
+    await db_session.commit()
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    sync_orchestrator.sync_klassendienste.assert_not_awaited()
+    gespeichert = (await _einstellung(db_session)).klassendienste_letzter_sync_am
+    assert abs((gespeichert - juengst).total_seconds()) < 1
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_laufen_wieder_nach_24h(db_session):
+    aelter = datetime.now(timezone.utc) - timedelta(hours=24, minutes=1)
+    db_session.add(Einstellung(klassendienste_letzter_sync_am=aelter))
+    await db_session.commit()
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    sync_orchestrator.sync_klassendienste.assert_awaited_once()
+    assert (await _einstellung(db_session)).klassendienste_letzter_sync_am > aelter
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_ohne_aktive_typen_setzen_zeitstempel_nicht(db_session):
+    sync_orchestrator.sync_klassendienste.return_value = KlassendienstSyncErgebnis(uebersprungen=True)
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    sync_orchestrator.sync_klassendienste.assert_awaited_once()
+    einstellung = await _einstellung(db_session)
+    assert einstellung.klassendienste_letzter_sync_am is None
+    assert einstellung.letzter_sync_am is not None
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_fehler_bricht_haupt_sync_nicht_ab(db_session):
+    sync_orchestrator.sync_klassendienste.side_effect = RuntimeError("interner Dienst kaputt")
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    einstellung = await _einstellung(db_session)
+    assert einstellung.letzter_sync_am is not None
+    assert einstellung.klassendienste_letzter_sync_am is None
+    sync_orchestrator.pruefe_schwellwerte.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_klassendienste_unerwarteter_fehler_bricht_haupt_sync_nicht_ab(db_session):
+    sync_orchestrator.sync_klassendienste.side_effect = KeyError("matrix")
+
+    await sync_orchestrator.run_full_sync(async_session_factory)
+
+    assert (await _einstellung(db_session)).letzter_sync_am is not None

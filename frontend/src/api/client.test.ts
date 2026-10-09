@@ -109,6 +109,23 @@ describe("apiPut", () => {
 
     await expect(apiPut("admin/schwellwerte/1", {})).rejects.toBeInstanceOf(ApiError);
   });
+
+  it("exposes the backend detail text on the ApiError", async () => {
+    window.absenzdashConfig = {
+      restUrl: "https://example.test/wp-json/absenzdash/v1/api",
+      nonce: "abc123",
+      basename: "/absenzdash",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Dienst-ID doppelt" }), { status: 409 })),
+    );
+
+    await expect(apiPut("admin/klassendienst-typen", [])).rejects.toMatchObject({
+      status: 409,
+      detail: "Dienst-ID doppelt",
+    });
+  });
 });
 
 describe("apiPostFormData", () => {

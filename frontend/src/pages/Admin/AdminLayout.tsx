@@ -4,6 +4,7 @@ import styles from "./AdminLayout.module.css";
 const TABS = [
   { path: "/admin/schwellwerte", label: "Schwellwert-Regeln" },
   { path: "/admin/massnahmen", label: "Maßnahmen-Katalog" },
+  { path: "/admin/klassendienste", label: "Klassendienste" },
   { path: "/admin/entschuldigungsstatus", label: "Entschuldigungsstatus" },
   { path: "/admin/sync", label: "Sync-Einstellungen" },
   { path: "/admin/schuljahr-import", label: "Schuljahr-Import" },

@@ -1,9 +1,12 @@
 export class ApiError extends Error {
   status: number;
+  /** `detail`-Text der Backend-Fehlerantwort (z. B. bei 409/422), falls vorhanden. */
+  detail: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail: string | null = null) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -40,6 +43,15 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function readErrorDetail(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const config = getConfig();
   const response = await fetch(`${config.restUrl}/${path}`, {
@@ -48,7 +60,11 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new ApiError(response.status, `PUT ${path} failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      `PUT ${path} failed with status ${response.status}`,
+      await readErrorDetail(response),
+    );
   }
   return (await response.json()) as T;
 }

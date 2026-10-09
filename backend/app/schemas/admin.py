@@ -61,6 +61,34 @@ class MeasureTypeOut(BaseModel):
     aktiv: bool = True
 
 
+class KlassendienstTypIn(BaseModel):
+    id: int | None = None
+    webuntis_dienst_id: int
+    bezeichnung: str
+    kuerzel: str
+    beschreibung: str | None = None
+    aktiv: bool = True
+
+
+class KlassendienstTypOut(BaseModel):
+    id: int
+    webuntis_dienst_id: int
+    bezeichnung: str
+    kuerzel: str
+    beschreibung: str | None
+    aktiv: bool
+
+
+class WebUntisDienstOptionOut(BaseModel):
+    id: int
+    bezeichnung: str
+
+
+class WebUntisDienstOptionenOut(BaseModel):
+    optionen: list[WebUntisDienstOptionOut]
+    hinweis: str | None = None
+
+
 class ExcuseStatusIn(BaseModel):
     id: int | None = None
     name: str

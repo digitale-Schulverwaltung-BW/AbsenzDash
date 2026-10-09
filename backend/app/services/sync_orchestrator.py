@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.integrations.webuntis_client import WebUntisClient, WebUntisError
+from app.integrations.webuntis_duty_client import StudentDutyClient
 from app.models.einstellung import Einstellung
 from app.models.schueler import Schueler
 from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
@@ -20,10 +21,13 @@ from app.services.webuntis_bereich_sync import sync_bereiche
 from app.services.webuntis_fehlzeit_sync import sync_fehlzeiten
 from app.services.webuntis_kategorie_sync import sync_kategorien
 from app.services.webuntis_klassen_sync import sync_klassen
+from app.services.webuntis_klassendienst_sync import sync_klassendienste
 from app.services.webuntis_klassenbuch_sync import sync_klassenbuch
 from app.services.webuntis_stundenraster_sync import sync_stundenraster
 
 logger = logging.getLogger(__name__)
+
+KLASSENDIENSTE_MIN_ABSTAND = timedelta(hours=24)
 
 _sync_lock = asyncio.Lock()
 
@@ -172,6 +176,35 @@ async def resolve_aktuelles_schuljahr(client: WebUntisClient, db: AsyncSession) 
     return schuljahr
 
 
+def _klassendienste_faellig(einstellung: Einstellung, jetzt: datetime) -> bool:
+    letzter = einstellung.klassendienste_letzter_sync_am
+    return letzter is None or jetzt - letzter >= KLASSENDIENSTE_MIN_ABSTAND
+
+
+async def _sync_klassendienste_isoliert(
+    client: WebUntisClient, db: AsyncSession, einstellung: Einstellung, schuljahr_id: int
+) -> None:
+    """Hoechstens einmal taeglich. Isoliert: ein Fehler des internen, nicht offiziell dokumentierten
+    Duty-Dienstes (oder der Klassendienst-Tabellen) darf den normalen Sync nie scheitern lassen.
+    Ohne aktive Klassendienst-Typen wird komplett uebersprungen und der Zeitstempel nicht gesetzt."""
+    jetzt = datetime.now(timezone.utc)
+    if not _klassendienste_faellig(einstellung, jetzt):
+        return
+    try:
+        async with db.begin_nested():
+            ergebnis = await sync_klassendienste(
+                StudentDutyClient(client, settings), db, jetzt.date(), schuljahr_id
+            )
+    except Exception as exc:  # noqa: BLE001 - bewusst breit: darf den Haupt-Sync nie abbrechen
+        logger.warning(
+            "Klassendienst-Import fehlgeschlagen (%s) -- uebrige Sync-Schritte laufen unveraendert weiter",
+            exc if isinstance(exc, (WebUntisError, OSError, ValueError, RuntimeError)) else type(exc).__name__,
+        )
+        return
+    if not ergebnis.uebersprungen:
+        einstellung.klassendienste_letzter_sync_am = jetzt
+
+
 async def run_sync_once(db: AsyncSession) -> None:
     if _sync_lock.locked():
         raise SyncAlreadyRunningError("Ein Sync-Lauf ist bereits aktiv.")
@@ -224,6 +257,7 @@ async def _run_sync_once_impl(db: AsyncSession) -> None:
     async with WebUntisClient(settings) as client:
         await sync_fehlzeiten(client, db, von, bis)
         await sync_klassenbuch(client, db, von, bis)
+        await _sync_klassendienste_isoliert(client, db, einstellung, aktuelles_schuljahr.id)
 
     await pruefe_schwellwerte(db, heute, einstellung, settings)
 

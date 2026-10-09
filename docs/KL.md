@@ -84,6 +84,14 @@ Darunter, tabellarisch:
 - **Benachrichtigungen** — Protokoll, wann welche Regel/Stufe eine E-Mail an wen ausgelöst hat. Steht dort "kein Empfänger ermittelbar", konnte für die erreichte Stufe niemand benachrichtigt werden (z.B. weil sich die zuständige Klassenlehrkraft noch nie im Dashboard angemeldet hat) — in diesem Fall lohnt sich ein Blick auf den Schüler auch ohne E-Mail.
 - **PDF-Export** — erzeugt eine Druckansicht/PDF mit den gewählten Abschnitten (Checkboxen), z.B. für eine Meldung nach §90 oder ein Bußgeldverfahren.
 
+## Klassendienste (Badges)
+
+Hat ein Schüler in WebUntis einen Klassendienst wie **Entschuldigungspflicht** oder **Pflicht zur Vorlage ärztl. Atteste**, erscheint in der Schülerliste hinter dem Namen ein kleines graues Badge mit dem **Kürzel** (z. B. „E“ oder „A“; die Schulleitung legt die Kürzel fest). Fahren Sie mit der Maus darüber (oder fokussieren Sie es per Tastatur), sehen Sie den Hover-Text: Bezeichnung, Erklärung (falls gepflegt) und seit wann der Dienst gilt, z. B. „Entschuldigungspflicht: … – seit 28.09.2026“. Die Liste zeigt nur Dienste, die **heute** gelten; im Schuljahr-Archiv gibt es keine Badges.
+
+Im Schüler-Detail zeigt der Abschnitt **Klassendienste (aus WebUntis, schreibgeschützt)** alle Zeiträume mit Dienst, Zeitraum von–bis und Status (aktiv, zukünftig, beendet). Ohne Dienste steht dort „Keine Klassendienste hinterlegt.“
+
+**Nur Anzeige:** Die Dienste werden einmal täglich aus WebUntis übernommen, lassen sich in AbsenzDash nicht ändern und haben keinen Einfluss auf Zähler, Eskalationsstufen oder Benachrichtigungen. Änderungen nehmen Sie in WebUntis vor; sie erscheinen nach dem nächsten Tagesimport. Fehlt ein erwartetes Badge, kann der Schüler nicht zugeordnet worden sein (Hinweis an die IT, siehe [ADMIN.md](ADMIN.md)).
+
 ## Wichtiger Hinweis: Ganztägiger Unterrichtsausfall wird nicht automatisch erkannt
 
 Fällt an einem Tag durch Stundenausfall oder Entfall faktisch der restliche Schultag eines Schülers weg (Beispiel: ein Schüler hat vormittags einzelne erfasste Fehlstunden, danach entfallen die übrigen Stunden der Klasse ersatzlos), erkennt AbsenzDash das **nicht automatisch** als durchgehende Ganztages-Fehlzeit. Die dafür nötigen Stundenplan-/Entfall-Daten stehen AbsenzDash aus WebUntis nicht zur Verfügung.

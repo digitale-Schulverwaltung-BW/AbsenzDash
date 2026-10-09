@@ -3,6 +3,7 @@ import { useNavOptions } from "./api/hooks/useNavOptions";
 import { Navigation } from "./components/Navigation/Navigation";
 import { AdminLayout } from "./pages/Admin/AdminLayout";
 import { ExcuseStatuses } from "./pages/Admin/ExcuseStatuses";
+import { KlassendienstTypen } from "./pages/Admin/KlassendienstTypen";
 import { MeasureTypes } from "./pages/Admin/MeasureTypes";
 import { SchuljahrImport } from "./pages/Admin/SchuljahrImport";
 import { SyncSettings } from "./pages/Admin/SyncSettings";
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="schuljahr-import" element={<SchuljahrImport />} />
           <Route path="entschuldigungsstatus" element={<ExcuseStatuses />} />
           <Route path="massnahmen" element={<MeasureTypes />} />
+          <Route path="klassendienste" element={<KlassendienstTypen />} />
           <Route path="schwellwerte" element={<ThresholdRules />} />
         </Route>
       </Route>

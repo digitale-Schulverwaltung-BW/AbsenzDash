@@ -26,6 +26,16 @@ class WebUntisClient:
         self._session_id: str | None = None
 
     @property
+    def http(self) -> httpx.AsyncClient:
+        """Der zugrunde liegende HTTP-Client (Cookie-Jar der Login-Session), z. B. fuer den
+        Duty-Client; nur fuer weitere lesende Aufrufe innerhalb der Session gedacht."""
+        return self._http
+
+    @property
+    def session_id(self) -> str | None:
+        return self._session_id
+
+    @property
     def _rpc_url(self) -> str:
         return f"https://{self._settings.webuntis_server}/WebUntis/jsonrpc.do"
 

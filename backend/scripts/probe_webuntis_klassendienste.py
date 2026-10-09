@@ -798,6 +798,7 @@ async def rpc_web_sonde(
             extra["result"] = result  # nur intern (fuer den ID-Abgleich), nie in Ausgabe/--json
             extra["duty_options"] = roh.get("dutyOptions") if isinstance(roh, dict) else None
         else:
+            extra["result"] = result  # nur intern, nie in Ausgabe/--json
             zeilen.append(_beschreibe(result))
             if isinstance(result, list):
                 zeilen.append(f"Keys: {sorted({k for e in result if isinstance(e, dict) for k in e})}")
@@ -1177,6 +1178,46 @@ async def sonde_duty_optionen(http: httpx.AsyncClient, k: Kontext, klasse_id: in
     return sonden
 
 
+OPTIONEN_METHODE = "getStudentDutyOptions"
+
+
+def optionen_struktur(result: Any) -> list[str]:
+    """Strukturausgabe fuer `getStudentDutyOptions`: Top-Level-Typ/Keys, Laenge und die ersten 3
+    Eintraege mit `id`/`label` im Klartext (Dienstbezeichnungen sind keine personenbezogenen Daten)."""
+    if isinstance(result, dict):
+        zeilen = [f"Top-Level: Objekt, Keys: {sorted(result.keys())}"]
+        liste = next((v for v in result.values() if isinstance(v, list)), None)
+        if liste is not None:
+            zeilen.append("Liste gefunden unter Key: " + next(k for k, v in result.items() if v is liste))
+    elif isinstance(result, list):
+        zeilen, liste = ["Top-Level: Liste"], result
+    else:
+        return [f"Top-Level: {type(result).__name__}"]
+    if liste is None:
+        return zeilen + ["keine Liste enthalten"]
+    zeilen.append(f"Laenge: {len(liste)}")
+    for eintrag in liste[:MAX_BEISPIELE]:
+        if isinstance(eintrag, dict):
+            teil = {k: eintrag[k] for k in ("id", "label") if k in eintrag}
+            zeilen.append(f"Eintrag: {json.dumps(teil, ensure_ascii=False)} (Keys: {sorted(eintrag.keys())})")
+        else:
+            zeilen.append(f"Eintrag: {type(eintrag).__name__}")
+    return zeilen
+
+
+async def sonde_duty_bezeichnungen(http: httpx.AsyncClient, k: Kontext, csrf: str | None, pfad: str = DEFAULT_RPC_PATH) -> Sonde:
+    """Lesender Aufruf `getStudentDutyOptions` (params []): liefert die Dienst-Liste, die die
+    Admin-Vorschlagsliste speist. Antwortform ist noch unbestaetigt; hier nur Strukturausgabe."""
+    name = f"{OPTIONEN_METHODE} (Dienst-Liste, Vorschlagsliste)"
+    if not csrf:
+        return Sonde(name, False, ["uebersprungen: kein CSRF-Token"], tag="dienstliste")
+    headers = {**k.header(), **_duty_fest(http), "X-CSRF-TOKEN": csrf}
+    s = await rpc_web_sonde(http, pfad, OPTIONEN_METHODE, [], headers, geraten=False, name=name, tag="dienstliste")
+    if s.kategorie == "ok":
+        s.zeilen = [s.zeilen[0], s.zeilen[1], *optionen_struktur(s.extra.get("result"))]
+    return s
+
+
 def duty_optionen_gefunden(sonden: list[Sonde]) -> list[str]:
     for s in sonden:
         if s.extra.get("duty_options"):
@@ -1299,6 +1340,7 @@ async def fuehre_alle_sonden_aus(
     sonden += csrf_sonden
     sonden += await sonde_duty_service(http, getattr(client, "_session_id", None), settings.webuntis_school, rpc_path)
     sonden.append(cookie_status_sonde(k))
+    sonden.append(await sonde_duty_bezeichnungen(http, k, csrf, rpc_path))
     klasse = klasse_id if klasse_id is not None else klassen.extra.get("erste_klasse_id")
     if isinstance(klasse, int):
         sonden += await sonde_duty_matrix(http, k, klasse, duty_ids or [26], csrf, token, rpc_path)

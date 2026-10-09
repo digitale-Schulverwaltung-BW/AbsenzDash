@@ -82,6 +82,33 @@ describe("StudentDetail", () => {
     expect(screen.getByText("2")).toBeInTheDocument(); // Klassenbuch-Einträge
   });
 
+  it("shows the Klassendienste section with an entry", () => {
+    mockUseStudentDetail.mockReturnValue({
+      data: {
+        ...DETAIL,
+        klassendienste: [
+          {
+            typ_id: 1,
+            kuerzel: "E",
+            bezeichnung: "Entschuldigungspflicht",
+            beschreibung: null,
+            von: "2026-09-28",
+            bis: "2027-07-26",
+            aktiv_heute: true,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    renderDetail();
+
+    expect(screen.getByRole("heading", { name: "Klassendienste (aus WebUntis, schreibgeschützt)" })).toBeInTheDocument();
+    expect(screen.getByText("28.09.2026 – 26.07.2027")).toBeInTheDocument();
+  });
+
   it("shows an error message when the detail request fails", () => {
     mockUseStudentDetail.mockReturnValue({ data: undefined, isLoading: false, isError: true } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
     mockUseStudentCatalog.mockReturnValue({ data: CATALOG, isLoading: false, isError: false } as any); // eslint-disable-line @typescript-eslint/no-explicit-any

@@ -22,6 +22,8 @@ from app.schemas.admin import (
     ExcuseStatusOut,
     HistorieImportPreviewOut,
     HistorieImportResultOut,
+    KlassendienstTypIn,
+    KlassendienstTypOut,
     MeasureTypeIn,
     MeasureTypeOut,
     SyncNowOut,
@@ -30,11 +32,13 @@ from app.schemas.admin import (
     TestEmailOut,
     ThresholdRuleIn,
     ThresholdRuleOut,
+    WebUntisDienstOptionenOut,
     WebUntisTeacherOut,
 )
 from app.services import (
     bereich_service,
     excuse_status_service,
+    klassendienst_typ_service,
     mailer,
     measure_type_service,
     schuljahr_historie_import_service,
@@ -99,6 +103,25 @@ async def put_measure_types(
     payload: list[MeasureTypeIn],
 ) -> list[MeasureTypeOut]:
     return await measure_type_service.replace_measure_types(db, payload, nutzer.id)
+
+
+@router.get("/klassendienst-typen")
+async def get_klassendienst_typen(db: Annotated[AsyncSession, Depends(get_db)]) -> list[KlassendienstTypOut]:
+    return await klassendienst_typ_service.list_klassendienst_typen(db)
+
+
+@router.put("/klassendienst-typen")
+async def put_klassendienst_typen(
+    nutzer: Annotated[Nutzer, Depends(require_schulleitung)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    payload: list[KlassendienstTypIn],
+) -> list[KlassendienstTypOut]:
+    return await klassendienst_typ_service.replace_klassendienst_typen(db, payload, nutzer.id)
+
+
+@router.get("/klassendienst-typen/webuntis-optionen")
+async def get_klassendienst_webuntis_optionen() -> WebUntisDienstOptionenOut:
+    return await klassendienst_typ_service.load_webuntis_optionen()
 
 
 @router.get("/excuse-statuses")

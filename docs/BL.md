@@ -35,6 +35,10 @@ Funktional identisch zur Klassenlehrkraft-Ansicht (siehe [KL.md](KL.md), Abschni
 
 Bei Eskalationsstufen, die zusätzlich die Bereichsleitung als Empfänger vorsehen (z.B. ab Stufe 2), erhalten Sie automatisch eine E-Mail — unabhängig davon, ob Sie sich gerade im Dashboard befinden. Im Abschnitt "Benachrichtigungen" eines Schülers sehen Sie, an wen konkret versendet wurde.
 
+## Klassendienste (Badges)
+
+In der Schülerliste und im Schüler-Detail sehen Sie für alle Klassen Ihres Bereichs auch die aus WebUntis übernommenen **Klassendienste** (z. B. Entschuldigungs- oder Attestpflicht) als Kürzel-Badge hinter dem Namen, mit Hover-Text (Bezeichnung, Erklärung, „seit TT.MM.JJJJ“). Details und Bedeutung: [KL.md](KL.md), Abschnitt „Klassendienste (Badges)“. **Nur Anzeige:** keine Änderung in AbsenzDash möglich, kein Einfluss auf Zähler, Eskalation oder Benachrichtigungen.
+
 ## Worauf Sie als Bereichsleitung besonders achten sollten
 
 Für Schulleitung und Bereichsleitung wird in der Übersicht zusätzlich hervorgehoben, wenn seit der letzten Benachrichtigung eines Schülers noch keine Maßnahme erfasst wurde — das sind Fälle, in denen eine Klassenlehrkraft ggf. an das Nachtragen einer Maßnahme erinnert werden sollte.

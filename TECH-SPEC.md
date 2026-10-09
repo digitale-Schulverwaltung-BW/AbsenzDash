@@ -132,6 +132,8 @@ PostgreSQL, SQLAlchemy 2.0-Style mit `Mapped[]`-Typannotationen (Verbesserung ge
 | `nutzer_klasse` (m:n)   | `nutzer_id`, `klasse_id`, `quelle` (`webuntis_seed`/`manuell`)                                                                                                                                                                                                            | löst SPECS.md Abschnitt 4 auf: WebUntis-geseedete + manuell im WP-Backend ergänzte Klassenlehrkraft-Zuordnungen in einer Tabelle, `quelle` unterscheidet Herkunft für Re-Sync-Verhalten (siehe 2.1) |
 | `nutzer_bereich` (m:n)  | `nutzer_id`, `bereich_id`                                                                                                                                                                                                                                                 | Bereichsleiter-Zuordnung                                                                                                                                                                            |
 | `stundenraster_periode` | `wochentag` (Integer, ISO-Wochentag-Konvention 1=Montag…7=Sonntag wie `date.isoweekday()` — **nicht** WebUntis' eigene Konvention 1=Sonntag…7=Samstag, siehe Abschnitt 1.4), `stunde_nr` (Integer, 1-basierter Index innerhalb des Wochentags, aus der nach `start_zeit` sortierten Reihenfolge abgeleitet — **nicht** aus WebUntis' `name`-Feld geparst), `start_zeit`/`end_zeit` (Integer, HHMM-Format wie in `fehlzeit`). Unique-Constraint auf (`wochentag`, `stunde_nr`) | Cache aus `getTimegridUnits` (Abschnitt 1.4), verwendet für die Fehlzeit-Stunden-Anzeige (`dauer_anzeige`). Full-Replace-Strategie: bei jedem erfolgreichen Sync mit mindestens einer verwertbaren Periode wird die Tabelle komplett neu geschrieben; schlägt der Abruf fehl, liefert eine leere/`None`-Antwort oder enthält die Antwort keine einzige verwertbare Periode (z.B. alle Tage mit unbekanntem Wochentag-Wert oder fehlerhaften `timeUnits`), bleibt der alte Tabellenstand unverändert (kein kritischer Sync-Schritt, siehe Abschnitt 1.4) |
+| `klassendienst_typ`     | `webuntis_dienst_id` (unique), `bezeichnung` (100), `kuerzel` (10), `beschreibung` (300, nullable), `aktiv` | von der Schulleitung gepflegte WebUntis-Klassendienste, kein Seeding (Abschnitt 3a) |
+| `schueler_klassendienst` | `schueler_id` (FK CASCADE), `klassendienst_typ_id` (FK CASCADE), `von`, `bis` (unique über Schüler, Typ, `von`) | importierte Zeiträume, nur Anzeige; `einstellung.klassendienste_letzter_sync_am` steuert den Tages-Takt |
 
 **Zum `aktiv`-Flag (`massnahmen_typ`, `excuse_status`):** Das `aktiv`-Flag wird ausschließlich als Filterkriterium für die künftige Erfassungs-Auswahl im Frontend vorgesehen; das Backend selbst validiert es aktuell nicht (ein deaktivierter Typ/Status bleibt technisch weiterhin verwendbar über die bestehenden Erfassungs-Endpunkte). Es dient damit vor allem dazu, historisch genutzte Katalogeinträge auszublenden, statt sie zu löschen — Löschen scheitert bei referenzierten Einträgen ohnehin mit `409` (siehe Abschnitt 3).
 
@@ -167,6 +169,8 @@ Backend: `get_wordpress_proxy_user()`-Äquivalent macht Get-or-Create/Update auf
 | `GET /students/{id}/export.pdf` | PDF-Export (SPECS.md Abschnitt 7) | alle (scope-geprüft) |
 | `GET/PUT /admin/threshold-rules` | Schwellwert-Regeln verwalten | nur `schulleitung` |
 | `GET/PUT /admin/measure-types` | Maßnahmen-Katalog pflegen | nur `schulleitung` |
+| `GET/PUT /admin/klassendienst-typen` | Klassendienst-Katalog pflegen (Abschnitt 3a) | nur `schulleitung` |
+| `GET /admin/klassendienst-typen/webuntis-optionen` | Vorschlagsliste der WebUntis-Dienste (`getStudentDutyOptions`), nie ein 500 (Abschnitt 3a) | nur `schulleitung` |
 | `GET/PUT /admin/sync-settings` | Sync-/Prüfintervall konfigurieren; Schuljahresbeginn und das vom Sync zuletzt aufgelöste `aktuelles_schuljahr` (`{id, name}`, aus `einstellung.aktuelles_schuljahr_id`, siehe Abschnitt 1.3a) werden nur angezeigt, nicht editierbar | nur `schulleitung` |
 | `POST /admin/sync-now` | Außerplanmäßigen WebUntis-Sync + Schwellwert-Prüfung synchron anstoßen (SPECS.md Abschnitt 7) | nur `schulleitung` |
 | `GET/PUT /admin/excuse-statuses` | Entschuldigungsstatus-Stammdaten pflegen — nur `zaehlt_als_entschuldigt` ist editierbar, Name/Langname read-only (automatisch per WebUntis-Sync gepflegt, Abschnitt 1.2/5) | nur `schulleitung` |
@@ -189,6 +193,38 @@ Scope-Prüfung (welche Schüler ein Nutzer sehen/bearbeiten darf) erfolgt server
 **Umgesetzt in [Plan 8](docs/superpowers/plans/2026-07-27-wordpress-plugin-proxy.md):** Der Browser spricht nicht direkt mit diesem Backend, sondern mit einer generischen WP-REST-Route (`Absenzdash_Proxy`, Namespace `absenzdash/v1`, Route `/api/(?P<pfad>.+)`), die den Request per `wp_remote_request()` mit den obigen Trusted-Headern weiterreicht — Passthrough für beliebige Pfade/Methoden, kein Endpunkt-Allowlist im Plugin.
 
 **Wichtig für die SPA (Plan 9):** WordPress verlangt für Cookie-authentifizierte REST-Aufrufe **immer** einen `X-WP-Nonce`-Header, unabhängig von der HTTP-Methode — auch bei `GET` (live am 2026-07-28 verifiziert, u.a. anhand von WordPress' eigenem `/wp-json/wp/v2/users/me`; eine ursprüngliche Plan-Annahme, GET würde den Nonce-Check umgehen, war falsch). Eine reine Adresszeilen-Navigation ohne Nonce wird von WordPress absichtlich als anonym behandelt (CSRF-Schutz). Die SPA muss den Nonce also bei jedem Request mitschicken; wird sie über den `[absenzdash]`-Shortcode eingebunden, liefert `wp_localize_script()` ihn bereits fertig (siehe `Absenzdash_Shortcode`), analog zum bestehenden Smoke-Test-JS.
+
+### 3a. Klassendienste (Entschuldigungs-/Attestpflicht), schreibgeschützte Anzeige
+
+Plan: [docs/superpowers/plans/2026-10-08-klassendienste-anzeige.md](docs/superpowers/plans/2026-10-08-klassendienste-anzeige.md). Backend umgesetzt (Phase 1/2), Frontend folgt. Kein Einfluss auf Zähler, Eskalation oder Benachrichtigungen.
+
+**Import** (`app/services/webuntis_klassendienst_sync.py`, Client `app/integrations/webuntis_duty_client.py`): interner, nicht offiziell dokumentierter Dienst `POST /WebUntis/jsonrpc_web/jsonStudentDutyService` (`getStudentDutySchedulerData [webuntisKlassenId, dienstId]`, `getStudentDutyOptions []`). Auth: Cookies der WebUntisClient-Session plus CSRF-Header (Name und Token als Skriptvariablen `csrfHeader`/`csrfToken` aus `GET /WebUntis/index.do`; bei HTTP 403 wird das Token genau einmal neu geholt). Schüler-Zuordnung: `studentDTO.id` → `getStudents[].key` → `Schueler.externe_id`; nicht zuordenbare Schüler werden übersprungen und pro Klasse gezählt/gewarnt (keine Namen), kein Namens-Fallback. Wochen (`relations`, Montag als YYYYMMDD) werden zu zusammenhängenden Zeiträumen verschmolzen (`von` = Montag der ersten Woche, `bis` = `endDate` der letzten Woche; Lücke = neuer Zeitraum). Pro Klasse und Typ Delete+Insert im Savepoint; ein Klassenfehler lässt die alten Zeilen der Klasse stehen, nach 5 Fehlern in Folge bricht der Lauf ab. Der Aufruf im Sync-Orchestrator ist isoliert und läuft höchstens alle 24 h (`einstellung.klassendienste_letzter_sync_am`); ohne aktive Typen wird komplett übersprungen (Zeitstempel bleibt leer).
+
+**`GET /admin/klassendienst-typen`** → `KlassendienstTyp[]` (sortiert nach `webuntis_dienst_id`):
+
+```json
+[{"id": 1, "webuntis_dienst_id": 26, "bezeichnung": "Entschuldigungspflicht", "kuerzel": "E",
+  "beschreibung": "Erklärung für den Hover-Text oder null", "aktiv": true}]
+```
+
+**`PUT /admin/klassendienst-typen`**: Body `[{id?: int, webuntis_dienst_id: int, bezeichnung: string, kuerzel: string, beschreibung?: string|null, aktiv?: bool=true}]`, Antwort wie GET. Im Stil von `measure-types`: Einträge mit `id` werden aktualisiert, ohne `id` angelegt, im Body fehlende werden **gelöscht**; die zugehörigen `schueler_klassendienst`-Zeilen verschwinden per `ON DELETE CASCADE` (importierte Anzeigedaten, keine manuelle Erfassung; vorübergehendes Ausblenden: `aktiv=false`). Validierung (422): `webuntis_dienst_id` ≥ 1 und eindeutig im Body, `bezeichnung` (nicht leer, ≤ 100), `kuerzel` (nicht leer, ≤ 10), `beschreibung` (≤ 300; leer/Leerraum wird `null`), unbekannte/doppelte `id`. Texte werden getrimmt. Kollision der `webuntis_dienst_id` in der DB (z. B. Tausch zweier IDs in einem Request): 409. Audit-Log `admin_klassendienst_typen_updated` (`details`: `anzahl_typen`, `entfernte_dienst_ids`).
+
+**`GET /admin/klassendienst-typen/webuntis-optionen`** → immer HTTP 200:
+
+```json
+{"optionen": [{"id": 26, "bezeichnung": "Entschuldigungspflicht"}], "hinweis": null}
+```
+
+Bei Fehlern (Login, 403, Netzwerk, unbekannte Antwortform) `{"optionen": [], "hinweis": "<Text für die Oberfläche>"}`. Die Antwortform von `getStudentDutyOptions` ist noch nicht per Sonde bestätigt; der Parser akzeptiert eine Liste `{id, label|name|longName|text}`, ein Objekt mit einer solchen Liste (z. B. `dutyOptions`) oder ein Objekt `{"26": "Name"}`.
+
+**`GET /students`** (Übersicht) und **`GET /students/{id}`** liefern zusätzlich `klassendienste: KlassendienstEintrag[]` (nur Typen mit `aktiv=true`, sortiert nach `von`, `kuerzel`; eine gesammelte Abfrage, keine N+1):
+
+```json
+{"typ_id": 1, "kuerzel": "E", "bezeichnung": "Entschuldigungspflicht", "beschreibung": "string|null",
+ "von": "2026-09-28", "bis": "2027-07-25", "aktiv_heute": true}
+```
+
+Übersicht: nur Zeiträume, die heute gelten (`von <= heute <= bis`, also immer `aktiv_heute=true`). Detail: vollständige Liste inklusive zukünftiger und beendeter Zeiträume (`aktiv_heute=false`). „Heute" ist das UTC-Kalenderdatum. Archivmodus (`schuljahr_id`): immer `[]`. Scope und Rollen wie bei den übrigen Endpunkten.
 
 ## 4. WordPress-Plugin-Datenhaltung
 

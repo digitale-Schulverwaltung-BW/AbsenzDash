@@ -14,12 +14,14 @@ from app.models.classreg_category import ClassregCategory
 from app.models.excuse_status import ExcuseStatus
 from app.models.fehlzeit import Fehlzeit
 from app.models.klasse import Klasse
+from app.models.klassendienst_typ import KlassendienstTyp
 from app.models.klassenbuch_eintrag import KlassenbuchEintrag
 from app.models.massnahme import Massnahme
 from app.models.massnahmen_typ import MassnahmenTyp
 from app.models.nutzer import Nutzer
 from app.models.schueler import Schueler
 from app.models.schueler_klasse_historie import SchuelerKlasseHistorie
+from app.models.schueler_klassendienst import SchuelerKlassendienst
 from app.models.schueler_zaehlerstand import SchuelerZaehlerstand
 from app.models.schwellwert_regel import SchwellwertRegel
 from app.models.stundenraster_periode import StundenrasterPeriode
@@ -609,3 +611,35 @@ async def load_student_detail(
         "fehlstunden": rohzahlen["fehlstunden"],
         "klassenbuch_anzahl": rohzahlen["klassenbuch_anzahl"],
     }
+
+
+async def load_klassendienste_map(
+    db: AsyncSession, schueler_ids: list[int], heute: date, nur_heute_aktiv: bool
+) -> dict[int, list[dict[str, Any]]]:
+    """Klassendienste (aus WebUntis importiert, schreibgeschuetzt) fuer alle uebergebenen Schueler in
+    EINER Abfrage (kein N+1). Nur aktive Typen. `nur_heute_aktiv=True` (Uebersicht): nur Zeitraeume,
+    die heute gelten; False (Detail): auch zukuenftige und beendete. Sortiert nach von, Kuerzel."""
+    ergebnis: dict[int, list[dict[str, Any]]] = {schueler_id: [] for schueler_id in schueler_ids}
+    if not schueler_ids:
+        return ergebnis
+    stmt = (
+        select(SchuelerKlassendienst, KlassendienstTyp)
+        .join(KlassendienstTyp, KlassendienstTyp.id == SchuelerKlassendienst.klassendienst_typ_id)
+        .where(SchuelerKlassendienst.schueler_id.in_(schueler_ids), KlassendienstTyp.aktiv.is_(True))
+        .order_by(SchuelerKlassendienst.von, KlassendienstTyp.kuerzel, KlassendienstTyp.id)
+    )
+    if nur_heute_aktiv:
+        stmt = stmt.where(SchuelerKlassendienst.von <= heute, SchuelerKlassendienst.bis >= heute)
+    for zeile, typ in (await db.execute(stmt)).all():
+        ergebnis[zeile.schueler_id].append(
+            {
+                "typ_id": typ.id,
+                "kuerzel": typ.kuerzel,
+                "bezeichnung": typ.bezeichnung,
+                "beschreibung": typ.beschreibung,
+                "von": zeile.von,
+                "bis": zeile.bis,
+                "aktiv_heute": zeile.von <= heute <= zeile.bis,
+            }
+        )
+    return ergebnis
