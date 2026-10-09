@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "../../api/client";
 import { useSyncSettings } from "../../api/hooks/useSyncSettings";
+import { useSyncStatus } from "../../api/hooks/useSyncStatus";
 import { useUpdateSyncSettings } from "../../api/hooks/useUpdateSyncSettings";
 import { useTriggerSyncNow } from "../../api/hooks/useTriggerSyncNow";
+import { formatUhrzeitDe } from "../../utils/datum";
 import styles from "../../components/StudentDetail/StudentDetail.module.css";
+
+const STATUS_TEXT: Record<string, string> = { ok: "ok", fehler: "Fehler", abgebrochen: "abgebrochen" };
 
 export function SyncSettings() {
   const { data, isLoading, isError } = useSyncSettings();
   const { mutate: updateSettings, isPending: isSaving, error: saveError } = useUpdateSyncSettings();
-  const { mutate: triggerSync, isPending: isSyncing, isSuccess: syncSucceeded, error: syncError } = useTriggerSyncNow();
+  const { mutate: triggerSync, isPending: isStarting, error: startError } = useTriggerSyncNow();
+  const { data: status } = useSyncStatus();
+  const laeuft = status?.laeuft ?? false;
+  const aktuell = status?.aktueller_lauf ?? null;
+  const letzter = status?.letzter_lauf ?? null;
   const [cron, setCron] = useState("");
 
   useEffect(() => {
@@ -48,11 +57,35 @@ export function SyncSettings() {
         Für den Sync verwendetes Schuljahr:{" "}
         {data.aktuelles_schuljahr ? data.aktuelles_schuljahr.name : "unbekannt (noch kein erfolgreicher Sync)"}
       </p>
-      <button type="button" onClick={() => triggerSync()} disabled={isSyncing}>
+      <button type="button" onClick={() => triggerSync()} disabled={isStarting || laeuft}>
         Sync jetzt ausführen
       </button>
-      {syncSucceeded && <p>Sync erfolgreich ausgeführt.</p>}
-      {syncError && <p className={styles.formError}>Sync fehlgeschlagen.</p>}
+      {startError && (
+        <p className={styles.formError}>
+          {startError instanceof ApiError && startError.status === 409
+            ? "Ein Sync läuft bereits."
+            : "Sync konnte nicht gestartet werden."}
+        </p>
+      )}
+      {laeuft && aktuell && (
+        <p role="status">
+          Sync läuft seit {formatUhrzeitDe(aktuell.gestartet_am)}
+          {aktuell.phase ? ` (Phase: ${aktuell.phase})` : ""}
+        </p>
+      )}
+      {!laeuft && letzter && (
+        <>
+          <p>
+            Letzter Sync-Lauf: {STATUS_TEXT[letzter.status] ?? letzter.status} ({formatUhrzeitDe(letzter.gestartet_am)},{" "}
+            {letzter.ausgeloest_von === "zeitplan" ? "Zeitplan" : "manuell"})
+          </p>
+          {letzter.status === "fehler" && (
+            <p className={styles.formError}>
+              {letzter.fehler_kurz ? `${letzter.fehler_kurz} — ` : ""}Details siehe Server-Log.
+            </p>
+          )}
+        </>
+      )}
     </section>
   );
 }

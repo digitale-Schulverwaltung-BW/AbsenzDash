@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDatumDe, heuteIso } from "./datum";
+import { formatDatumDe, formatUhrzeitDe, heuteIso } from "./datum";
 
 describe("datum", () => {
   it("formats ISO dates in German notation", () => {
@@ -12,5 +12,14 @@ describe("datum", () => {
 
   it("builds today's local ISO date", () => {
     expect(heuteIso(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+
+  it("formats an ISO timestamp as local hh:mm", () => {
+    const d = new Date(2026, 9, 9, 7, 5);
+    expect(formatUhrzeitDe(d.toISOString())).toBe("07:05");
+  });
+
+  it("returns unparsable timestamps unchanged", () => {
+    expect(formatUhrzeitDe("gestern")).toBe("gestern");
   });
 });
